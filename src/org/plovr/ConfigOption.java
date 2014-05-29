@@ -150,6 +150,7 @@ public enum ConfigOption {
     }
   }),
 
+  // THIS IS PART OF THE PROBLEM!
   WARNING_LEVEL("level", new ConfigUpdater() {
     @Override
     public void apply(String level, Config.Builder builder) {

@@ -511,6 +511,9 @@ public final class Config implements Comparable<Config> {
       level.setDebugOptionsForCompilationLevel(options);
     }
     options.setCodingConvention(new ClosureCodingConvention());
+    // WHAT WAS PASSED HERE TO com.google.javascript.jscomp.WarningLevel???
+    // If it wasn't a valid option, it should have raised a runtime
+    // exception....
     warningLevel.setOptionsForWarningLevel(options);
     options.prettyPrint = prettyPrint;
     options.printInputDelimiter = printInputDelimiter;
@@ -1199,6 +1202,7 @@ public final class Config implements Comparable<Config> {
 
     public void setWarningLevel(WarningLevel level) {
       Preconditions.checkNotNull(level);
+      // THIS IS ALSO PART OF THE PROBLEM. WE NEED TO CHECK WARNINGLEVEL
       this.warningLevel = level;
     }
 
