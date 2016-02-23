@@ -36,6 +36,19 @@ class RhinoErrorReporter {
   static final DiagnosticType TYPE_PARSE_ERROR =
       DiagnosticType.warning("JSC_TYPE_PARSE_ERROR", "{0}");
 
+  // This is separate from TYPE_PARSE_ERROR because there are many instances of this warning
+  // and it is unfeasible to fix them all right away.
+  static final DiagnosticType JSDOC_MISSING_BRACES_WARNING =
+      DiagnosticType.disabled("JSC_JSDOC_MISSING_BRACES_WARNING", "{0}");
+
+  // This is separate from TYPE_PARSE_ERROR because there are many instances of this warning
+  // and it is unfeasible to fix them all right away.
+  static final DiagnosticType JSDOC_MISSING_TYPE_WARNING =
+      DiagnosticType.disabled("JSC_JSDOC_MISSING_TYPE_WARNING", "{0}");
+
+  static final DiagnosticType TOO_MANY_TEMPLATE_PARAMS =
+      DiagnosticType.disabled("JSC_TOO_MANY_TEMPLATE_PARAMS", "{0}");
+
   // Special-cased errors, so that they can be configured via the
   // warnings API.
   static final DiagnosticType TRAILING_COMMA =
@@ -48,13 +61,14 @@ class RhinoErrorReporter {
   static final DiagnosticType DUPLICATE_PARAM =
       DiagnosticType.error("JSC_DUPLICATE_PARAM", "Parse error. {0}");
 
+  static final DiagnosticType INVALID_PARAM =
+      DiagnosticType.warning("JSC_INVALID_PARAM", "Parse error. {0}");
+
   static final DiagnosticType BAD_JSDOC_ANNOTATION =
       DiagnosticType.warning("JSC_BAD_JSDOC_ANNOTATION", "Parse error. {0}");
 
-  static final DiagnosticType MISPLACED_TYPE_ANNOTATION =
-      DiagnosticType.warning("JSC_MISPLACED_TYPE_ANNOTATION",
-          "Type annotations are not allowed here. " +
-          "Are you missing parentheses?");
+  static final DiagnosticType JSDOC_IN_BLOCK_COMMENT =
+      DiagnosticType.warning("JSC_JSDOC_IN_BLOCK_COMMENT", "Parse error. {0}");
 
   static final DiagnosticType INVALID_ES3_PROP_NAME = DiagnosticType.warning(
       "JSC_INVALID_ES3_PROP_NAME",
@@ -66,6 +80,24 @@ class RhinoErrorReporter {
   static final DiagnosticType PARSE_TREE_TOO_DEEP =
       DiagnosticType.error("PARSE_TREE_TOO_DEEP",
           "Parse tree too deep.");
+
+  static final DiagnosticType INVALID_OCTAL_LITERAL =
+      DiagnosticType.warning("INVALID_OCTAL_LITERAL",
+          "This style of octal literal is not supported in strict mode.");
+
+  static final DiagnosticType ES6_FEATURE =
+      DiagnosticType.error("ES6_FEATURE",
+          "{0}. Use --language_in=ECMASCRIPT6 or ECMASCRIPT6_STRICT " +
+          "to enable ES6 features.");
+
+  static final DiagnosticType ES6_TYPED =
+      DiagnosticType.error("ES6_TYPED",
+          "{0}. Use --language_in=ECMASCRIPT6_TYPED " +
+          "to enable ES6 typed features.");
+
+  static final DiagnosticType MISPLACED_TYPE_SYNTAX =
+      DiagnosticType.error("MISPLACED_TYPE_SYNTAX",
+          "Can only have JSDoc or inline type annotations, not both");
 
   // A map of Rhino messages to their DiagnosticType.
   private final Map<Pattern, DiagnosticType> typeMap;
@@ -84,48 +116,66 @@ class RhinoErrorReporter {
 
   private RhinoErrorReporter(AbstractCompiler compiler) {
     this.compiler = compiler;
-    typeMap = ImmutableMap.<Pattern, DiagnosticType>builder()
-        // Trailing comma
-        .put(replacePlaceHolders(
-            com.google.javascript.rhino.head.ScriptRuntime.getMessage0(
-                "msg.extra.trailing.comma")),
-            TRAILING_COMMA)
+    typeMap =
+        ImmutableMap.<Pattern, DiagnosticType>builder()
+            // Trailing comma
+            .put(
+                replacePlaceHolders(
+                    "Trailing comma is not legal in an ECMA-262 object initializer"),
+                TRAILING_COMMA)
 
-        // Duplicate parameter
-        .put(replacePlaceHolders(
-            com.google.javascript.rhino.head.ScriptRuntime.getMessage0(
-                "msg.dup.parms")),
-            DUPLICATE_PARAM)
+            // Duplicate parameter
+            .put(replacePlaceHolders("Duplicate parameter name \"{0}\""), DUPLICATE_PARAM)
 
-        // Unknown @annotations.
-        .put(replacePlaceHolders(
-            SimpleErrorReporter.getMessage0("msg.bad.jsdoc.tag")),
-            BAD_JSDOC_ANNOTATION)
+            .put(Pattern.compile("^invalid param name.*"), INVALID_PARAM)
 
-        // Unexpected @type annotations
-        .put(Pattern.compile("^Type annotations are not allowed here.*"),
-            MISPLACED_TYPE_ANNOTATION)
+            // Unknown @annotations.
+            .put(
+                replacePlaceHolders(SimpleErrorReporter.getMessage0("msg.bad.jsdoc.tag")),
+                BAD_JSDOC_ANNOTATION)
 
-        // Unexpected @type annotations
-        .put(Pattern.compile("^Keywords and reserved words" +
-            " are not allowed as unquoted property.*"),
-            INVALID_ES3_PROP_NAME)
+            .put(
+                Pattern.compile("^" + Pattern.quote(
+                    "Non-JSDoc comment has annotations. "
+                        + "Did you mean to start it with '/**'?")),
+                JSDOC_IN_BLOCK_COMMENT)
 
-        // Type annotation errors.
-        .put(Pattern.compile("^Bad type annotation.*"),
-            TYPE_PARSE_ERROR)
+            .put(
+                Pattern.compile(
+                    "^Keywords and reserved words" + " are not allowed as unquoted property.*"),
+                INVALID_ES3_PROP_NAME)
 
-        // Parse tree too deep.
-        .put(replacePlaceHolders(
-            com.google.javascript.rhino.head.ScriptRuntime.getMessage0(
-                "msg.too.deep.parser.recursion")),
-            PARSE_TREE_TOO_DEEP)
-        .build();
-  }
+            .put(Pattern.compile("^Too many template parameters"), TOO_MANY_TEMPLATE_PARAMS)
 
-  public static com.google.javascript.rhino.head.ErrorReporter
-      forNewRhino(AbstractCompiler compiler) {
-    return new NewRhinoErrorReporter(compiler);
+            // Type annotation warnings.
+            .put(
+                replacePlaceHolders(
+                    "Bad type annotation. Type annotations should have curly braces."),
+                JSDOC_MISSING_BRACES_WARNING)
+
+            .put(replacePlaceHolders("Missing type declaration."), JSDOC_MISSING_TYPE_WARNING)
+
+            // Type annotation errors.
+            .put(
+                Pattern.compile(
+                    "^Bad type annotation.*(?!Type annotations should have curly braces\\.)"),
+                TYPE_PARSE_ERROR)
+
+            // Parse tree too deep.
+            .put(replacePlaceHolders("Too deep recursion while parsing"), PARSE_TREE_TOO_DEEP)
+
+            // Octal literals
+            .put(Pattern.compile("^Octal .*literal.*"), INVALID_OCTAL_LITERAL)
+
+            .put(
+                Pattern.compile("^this language feature is only supported in es6 mode.*"),
+                ES6_FEATURE)
+
+            .put(Pattern.compile("^type syntax is only supported in ES6 typed mode.*"), ES6_TYPED)
+
+            .put(Pattern.compile("^Can only have JSDoc or inline type.*"), MISPLACED_TYPE_SYNTAX)
+
+            .build();
   }
 
   public static ErrorReporter forOldRhino(AbstractCompiler compiler) {
@@ -185,64 +235,6 @@ class RhinoErrorReporter {
     public void warning(String message, String sourceName, int line,
         int lineOffset) {
       super.warningAtLine(message, sourceName, line, lineOffset);
-    }
-  }
-
-  private static class NewRhinoErrorReporter extends RhinoErrorReporter
-      implements com.google.javascript.rhino.head.ast.IdeErrorReporter {
-
-    private NewRhinoErrorReporter(AbstractCompiler compiler) {
-      super(compiler);
-    }
-
-    @Override
-    public com.google.javascript.rhino.head.EvaluatorException
-        runtimeError(String message, String sourceName, int line,
-            String lineSource, int lineOffset) {
-      DiagnosticType type = mapError(message);
-      if (type != null) {
-        super.errorAtLine(message, sourceName, line, lineOffset);
-      }
-      return new com.google.javascript.rhino.head.EvaluatorException(
-          message, sourceName, line, lineSource, lineOffset);
-    }
-
-    @Override
-    public void error(String message, String sourceName, int line,
-        String sourceLine, int lineOffset) {
-      super.errorAtLine(message, sourceName, line, lineOffset);
-    }
-
-    @Override
-    public void error(String message, String sourceName,
-        int offset, int length) {
-      int line = 1;
-      int column = 0;
-      SourceFile file = this.compiler.getSourceFileByName(sourceName);
-      if (file != null) {
-        line = file.getLineOfOffset(offset);
-        column = file.getColumnOfOffset(offset);
-      }
-      super.errorAtLine(message, sourceName, line, column);
-    }
-
-    @Override
-    public void warning(String message, String sourceName, int line,
-        String sourceLine, int lineOffset) {
-      super.warningAtLine(message, sourceName, line, lineOffset);
-    }
-
-    @Override
-    public void warning(String message, String sourceName,
-        int offset, int length) {
-      int line = 1;
-      int column = 0;
-      SourceFile file = this.compiler.getSourceFileByName(sourceName);
-      if (file != null) {
-        line = file.getLineOfOffset(offset);
-        column = file.getColumnOfOffset(offset);
-      }
-      super.errorAtLine(message, sourceName, line, column);
     }
   }
 }

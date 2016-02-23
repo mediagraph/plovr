@@ -25,43 +25,38 @@ import junit.framework.TestCase;
  * Tests for {@link SyntacticScopeCreator}.
  *
  */
-public class SyntacticScopeCreatorTest extends TestCase {
+public final class SyntacticScopeCreatorTest extends TestCase {
+
+  private Compiler compiler;
+  private SyntacticScopeCreator scopeCreator;
+
+  @Override
+  protected void setUp() {
+    compiler = new Compiler();
+    CompilerOptions options = new CompilerOptions();
+    compiler.initOptions(options);
+    scopeCreator = SyntacticScopeCreator.makeUntyped(compiler);
+  }
 
   /**
    * Helper to create a top-level scope from a JavaScript string
    */
-  private static Scope getScope(String js) {
-    Compiler compiler = new Compiler();
-    Node root = compiler.parseTestCode(js);
-    assertEquals(0, compiler.getErrorCount());
-    Scope scope =
-        new SyntacticScopeCreator(compiler).createScope(root, null);
-    return scope;
+  private Scope getScope(String js) {
+    return scopeCreator.createScope(getRoot(js), null);
   }
 
-  /**
-   * Helper to traverse the tree creating the Scope object everywhere.
-   */
-  private static void testScopes(String js, int errorCount) {
-    Compiler compiler = new Compiler();
+  private Node getRoot(String js) {
     Node root = compiler.parseTestCode(js);
-    NodeTraversal.traverse(
-        compiler, root, new NodeTraversal.AbstractPostOrderCallback() {
-          @Override
-          public
-          void visit(NodeTraversal t, Node n, Node parent) {
-            t.getScope();
-          }
-        });
-    assertEquals(errorCount, compiler.getErrorCount());
+    assertEquals(0, compiler.getErrorCount());
+    return root;
   }
 
   public void testFunctionScope() {
     Scope scope = getScope("function foo() {}\n" +
-                           "var x = function bar(a1) {};" +
-                           "[function bar2() { var y; }];" +
-                           "if (true) { function z() {} }"
-                           );
+        "var x = function bar(a1) {};" +
+        "[function bar2() { var y; }];" +
+        "if (true) { function z() {} }");
+
     assertTrue(scope.isDeclared("foo", false));
     assertTrue(scope.isDeclared("x", false));
     assertTrue(scope.isDeclared("z", false));
@@ -74,69 +69,30 @@ public class SyntacticScopeCreatorTest extends TestCase {
     assertFalse(scope.isDeclared("", false));
   }
 
-  public void testScopeRootNode() {
-    String js = "function foo() {\n" +
-        " var x = 10;" +
-        "}";
-    Compiler compiler = new Compiler();
-    Node root = compiler.parseTestCode(js);
-    assertEquals(0, compiler.getErrorCount());
+  public void testNestedFunctionScope() {
+    Node root = getRoot("function f(x) { function g(y) {} }");
+    Scope globalScope = scopeCreator.createScope(root, null);
 
-    Scope globalScope =
-        new SyntacticScopeCreator(compiler).createScope(root, null);
+    Node fNode = root.getFirstChild();
+    Scope outerFScope = scopeCreator.createScope(fNode, globalScope);
+    assertTrue(outerFScope.isDeclared("x", false));
+
+    Node innerFNode = fNode.getLastChild().getFirstChild();
+    Scope innerFScope = scopeCreator.createScope(innerFNode, outerFScope);
+    assertFalse(innerFScope.isDeclared("x", false));
+    assertTrue(innerFScope.isDeclared("y", false));
+  }
+
+  public void testScopeRootNode() {
+    Node root = getRoot("function foo() { var x = 10; }");
+
+    Scope globalScope = scopeCreator.createScope(root, null);
     assertEquals(root, globalScope.getRootNode());
 
     Node fooNode = root.getFirstChild();
     assertEquals(Token.FUNCTION, fooNode.getType());
-    Scope fooScope =
-        new SyntacticScopeCreator(compiler).createScope(fooNode, null);
+    Scope fooScope = scopeCreator.createScope(fooNode, globalScope);
     assertEquals(fooNode, fooScope.getRootNode());
     assertTrue(fooScope.isDeclared("x", false));
-  }
-
-  public void testRedeclaration1() {
-     String js = "var a; var a;";
-     int errors = createGlobalScopeHelper(js);
-     assertEquals(1, errors);
-  }
-
-  public void testRedeclaration2() {
-    String js = "var a; /** @suppress {duplicate} */ var a;";
-    int errors = createGlobalScopeHelper(js);
-    assertEquals(0, errors);
-  }
-
-  public void testRedeclaration3() {
-    String js = " /** @suppress {duplicate} */ var a; var a; ";
-    int errors = createGlobalScopeHelper(js);
-    assertEquals(0, errors);
-  }
-
-
-  public void testFunctionScopeArguments() {
-    // A var declaration doesn't mask arguments
-    testScopes("function f() {var arguments}", 0);
-
-    testScopes("var f = function arguments() {}", 1);
-    testScopes("var f = function (arguments) {}", 1);
-    testScopes("function f() {try {} catch(arguments) {}}", 1);
-  }
-
-  /**
-   * Parse the supplied JS and create the global SyntaticScope object.
-   * @return The error count.
-   */
-  private int createGlobalScopeHelper(String js) {
-    Compiler compiler = new Compiler();
-    CompilerOptions options = new CompilerOptions();
-    options.checkSymbols = true;
-    compiler.initOptions(options);
-
-    Node root = compiler.parseTestCode(js);
-    assertEquals(0, compiler.getErrorCount());
-    Scope globalScope =
-      new SyntacticScopeCreator(compiler).createScope(root, null);
-    assertEquals(root, globalScope.getRootNode());
-    return compiler.getErrorCount();
   }
 }

@@ -16,29 +16,31 @@
 
 package com.google.template.soy.msgs.restricted;
 
-import com.google.template.soy.internal.base.Pair;
+import com.google.common.collect.ImmutableList;
 
-import java.util.List;
+import java.util.Objects;
+
+import javax.annotation.Nullable;
 
 /**
  * Represents a select statement within a message.
  *
- * @author Mohamed Eldawy
  */
-public class SoyMsgSelectPart extends SoyMsgPart {
+public final class SoyMsgSelectPart extends SoyMsgPart {
 
 
   /** The select variable name. */
   private final String selectVarName;
 
   /** The various cases for this select statement. The default statement has a null key. */
-  private final List<Pair<String, List<SoyMsgPart>>> cases;
+  private final ImmutableList<Case<String>> cases;
 
   /**
    * @param selectVarName The select variable name.
    * @param cases The list of cases for this select statement.
    */
-  public SoyMsgSelectPart(String selectVarName, List<Pair<String, List<SoyMsgPart>>> cases) {
+  public SoyMsgSelectPart(
+      String selectVarName, ImmutableList<Case<String>> cases) {
     this.selectVarName = selectVarName;
     this.cases = cases;
   }
@@ -50,8 +52,42 @@ public class SoyMsgSelectPart extends SoyMsgPart {
   }
 
   /** Returns the cases. */
-  public List<Pair<String, List<SoyMsgPart>>> getCases() {
+  public ImmutableList<Case<String>> getCases() {
     return cases;
   }
 
+  @Nullable
+  public ImmutableList<SoyMsgPart> lookupCase(String selectValue) {
+    // TODO(lukes): consider indexing the case in some way to speed lookups
+    ImmutableList<SoyMsgPart> caseParts = null;
+    ImmutableList<SoyMsgPart> defaultParts = null;
+    for (Case<String> case0 : getCases()) {
+      if (case0.spec() == null) {
+        defaultParts = case0.parts();
+      } else if (case0.spec().equals(selectValue)) {
+        caseParts = case0.parts();
+        break;
+      }
+    }
+
+    if (caseParts == null) {
+      return defaultParts;
+    }
+    return caseParts;
+  }
+
+
+  @Override public boolean equals(Object other) {
+    if (!(other instanceof SoyMsgSelectPart)) {
+      return false;
+    }
+    SoyMsgSelectPart otherSelect = (SoyMsgSelectPart) other;
+    return selectVarName.equals(otherSelect.selectVarName)
+        && cases.equals(otherSelect.cases);
+  }
+
+
+  @Override public int hashCode() {
+    return Objects.hash(SoyMsgSelectPart.class, selectVarName, cases);
+  }
 }

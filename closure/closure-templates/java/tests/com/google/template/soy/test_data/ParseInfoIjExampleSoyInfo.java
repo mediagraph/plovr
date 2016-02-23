@@ -13,14 +13,14 @@ import com.google.template.soy.parseinfo.SoyTemplateInfo;
 /**
  * Soy parse info for ParseInfoIjExample.soy.
  */
-public class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
+public final class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
 
 
   /** This Soy file's namespace. */
   public static final String __NAMESPACE__ = "examples.abc";
 
 
-  public static class TemplateName {
+  public static final class TemplateName {
     private TemplateName() {}
 
     /** The full template name of the .hello template. */
@@ -35,7 +35,7 @@ public class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
   /**
    * Param names from all templates in this Soy file.
    */
-  public static class Param {
+  public static final class Param {
     private Param() {}
 
     /** Listed by .aaa, .bbbCcc, .ddd (private). */
@@ -56,7 +56,7 @@ public class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
   /**
    * This template has no params.
    */
-  public static class HelloSoyTemplateInfo extends SoyTemplateInfo {
+  public static final class HelloSoyTemplateInfo extends SoyTemplateInfo {
 
     /** This template's full name. */
     public static final String __NAME__ = "examples.abc.hello";
@@ -67,9 +67,7 @@ public class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
       super(
           "examples.abc.hello",
           ImmutableMap.<String, ParamRequisiteness>of(),
-          ImmutableSortedSet.<String>of(),
-          false,
-          false);
+          ImmutableSortedSet.<String>of());
     }
 
     private static final HelloSoyTemplateInfo __INSTANCE__ =
@@ -88,7 +86,7 @@ public class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
   /**
    * Aaa template.
    */
-  public static class AaaSoyTemplateInfo extends SoyTemplateInfo {
+  public static final class AaaSoyTemplateInfo extends SoyTemplateInfo {
 
     /** This template's full name. */
     public static final String __NAME__ = "examples.abc.aaa";
@@ -125,9 +123,7 @@ public class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
               "boo",
               "gooDefault",
               "gooNondefault",
-              "moo"),
-          false,
-          true);
+              "moo"));
     }
 
     private static final AaaSoyTemplateInfo __INSTANCE__ =
@@ -147,7 +143,7 @@ public class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
    * Bbb Ccc
    * template.
    */
-  public static class BbbCccSoyTemplateInfo extends SoyTemplateInfo {
+  public static final class BbbCccSoyTemplateInfo extends SoyTemplateInfo {
 
     /** This template's full name. */
     public static final String __NAME__ = "examples.abc.bbbCcc";
@@ -183,9 +179,7 @@ public class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
           ImmutableSortedSet.<String>of(
               "boo",
               "gooDefault",
-              "gooNondefault"),
-          false,
-          true);
+              "gooNondefault"));
     }
 
     private static final BbbCccSoyTemplateInfo __INSTANCE__ =
@@ -205,13 +199,6 @@ public class ParseInfoIjExampleSoyInfo extends SoyFileInfo {
     super(
         "ParseInfoIjExample.soy",
         "examples.abc",
-        ImmutableSortedSet.<String>of(
-            Param.PPP_1,
-            Param.QQQ_22,
-            Param.RRR_3,
-            Param.SSS,
-            Param.XXX,
-            Param.YYY_ZZZ),
         ImmutableList.<SoyTemplateInfo>of(
             HELLO,
             AAA,

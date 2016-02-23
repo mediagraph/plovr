@@ -18,62 +18,78 @@ package com.google.template.soy.basicfunctions;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
-import com.google.template.soy.data.SoyData;
-import com.google.template.soy.data.SoyMapData;
-import com.google.template.soy.data.internal.AugmentedSoyMapData;
+import com.google.common.collect.Maps;
+import com.google.template.soy.data.SoyDict;
+import com.google.template.soy.data.SoyMap;
+import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.SoyValueProvider;
+import com.google.template.soy.data.internal.DictImpl;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
+import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuFunction;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 /**
  * Soy function that creates a new map equivalent to augmenting an existing map with additional
  * mappings.
  *
- * @author Kai Huang
  */
 @Singleton
 @SoyPureFunction
-class AugmentMapFunction extends SoyAbstractTofuFunction implements SoyJsSrcFunction {
+public final class AugmentMapFunction
+    implements SoyJavaFunction, SoyJsSrcFunction, SoyPySrcFunction {
 
-
-  @Inject
-  AugmentMapFunction() {}
+  @Inject AugmentMapFunction() {}
 
 
   @Override public String getName() {
     return "augmentMap";
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(2);
   }
 
+  @SuppressWarnings("ConstantConditions")  // IntelliJ
+  @Override public SoyValue computeForJava(List<SoyValue> args) {
+    SoyValue arg0 = args.get(0);
+    SoyValue arg1 = args.get(1);
 
-  @Override public SoyData compute(List<SoyData> args) {
-    SoyData arg0 = args.get(0);
-    SoyData arg1 = args.get(1);
+    Preconditions.checkArgument(arg0 instanceof SoyMap,
+        "First argument to augmentMap() function is not SoyMap.");
+    Preconditions.checkArgument(arg1 instanceof SoyMap,
+        "Second argument to augmentMap() function is not SoyMap.");
 
-    Preconditions.checkArgument(arg0 instanceof SoyMapData,
-        "First argument to augmentMap() function is not SoyMapData.");
-    Preconditions.checkArgument(arg1 instanceof SoyMapData,
-        "Second argument to augmentMap() function is not SoyMapData.");
-
-    AugmentedSoyMapData augmentedMap = new AugmentedSoyMapData((SoyMapData) arg0);
-    SoyMapData additionalMap = (SoyMapData) arg1;
-    for (String key : additionalMap.getKeys()) {
-      augmentedMap.putSingle(key, additionalMap.getSingle(key));
-    }
-    return augmentedMap;
+    // TODO: Support map with nonstring key.
+    Preconditions.checkArgument(arg0 instanceof SoyDict,
+        "First argument to augmentMap() function is not SoyDict. Currently, augmentMap() doesn't" +
+            " support maps that are not dicts (it is a todo).");
+    Preconditions.checkArgument(arg1 instanceof SoyDict,
+        "Second argument to augmentMap() function is not SoyDict. Currently, augmentMap() doesn't" +
+            " support maps that are not dicts (it is a todo).");
+    return augmentMap((SoyDict) arg0, (SoyDict) arg1);
   }
 
+  /**
+   * Combine the two maps.
+   */
+  public static SoyDict augmentMap(SoyDict first, SoyDict second) {
+    Map<String, SoyValueProvider> map =
+        Maps.newHashMapWithExpectedSize(first.getItemCnt() + second.getItemCnt());
+    map.putAll(first.asJavaStringMap());
+    map.putAll(second.asJavaStringMap());
+    return DictImpl.forProviderMap(map);
+  }
 
   @Override public JsExpr computeForJsSrc(List<JsExpr> args) {
     JsExpr arg0 = args.get(0);
@@ -83,4 +99,9 @@ class AugmentMapFunction extends SoyAbstractTofuFunction implements SoyJsSrcFunc
     return new JsExpr(exprText, Integer.MAX_VALUE);
   }
 
+  @Override public PyExpr computeForPySrc(List<PyExpr> args) {
+    PyFunctionExprBuilder fnBuilder = new PyFunctionExprBuilder("dict");
+    fnBuilder.addArg(args.get(0)).setUnpackedKwargs(args.get(1));
+    return fnBuilder.asPyExpr();
+  }
 }

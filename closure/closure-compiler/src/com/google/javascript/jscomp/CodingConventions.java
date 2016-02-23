@@ -18,12 +18,14 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.javascript.jscomp.newtypes.JSType;
+import com.google.javascript.jscomp.newtypes.RawNominalType;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.StaticSourceFile;
 import com.google.javascript.rhino.jstype.FunctionType;
-import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.JSTypeRegistry;
 import com.google.javascript.rhino.jstype.ObjectType;
-import com.google.javascript.rhino.jstype.StaticScope;
+import com.google.javascript.rhino.jstype.StaticTypedScope;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -32,14 +34,38 @@ import java.util.Map;
 
 /**
  * Helper classes for dealing with coding conventions.
+ * @author nicksantos@google.com (Nick Santos)
  */
-public class CodingConventions {
+public final class CodingConventions {
 
   private CodingConventions() {}
 
   /** Gets the default coding convention. */
   public static CodingConvention getDefault() {
     return new DefaultCodingConvention();
+  }
+
+  /**
+   * @param n The last statement of a block to check for an always throws
+   *     function call. Used by CheckMissingReturn.
+   * @param alwaysThrowsFunctionName The name of a function that always throws.
+   * @return {@code true} if n is call to alwaysThrowsFunctionName, otherwise
+   *     {@code false}.
+   */
+  public static boolean defaultIsFunctionCallThatAlwaysThrows(
+      Node n, String alwaysThrowsFunctionName) {
+    if (n.isExprResult()) {
+      if (!n.getFirstChild().isCall()) {
+        return false;
+      }
+    } else if (!n.isCall()) {
+      return false;
+    }
+    if (n.isExprResult()) {
+      n = n.getFirstChild();
+    }
+    // n is a call
+    return n.getFirstChild().matchesQualifiedName(alwaysThrowsFunctionName);
   }
 
   /**
@@ -85,10 +111,19 @@ public class CodingConventions {
     }
 
     @Override
+    public boolean isFunctionCallThatAlwaysThrows(Node n) {
+      return nextConvention.isFunctionCallThatAlwaysThrows(n);
+    }
+
+    @Override
     public boolean isExported(String name, boolean local) {
       return nextConvention.isExported(name, local);
     }
 
+    @Override
+    public String getPackageName(StaticSourceFile source) {
+      return nextConvention.getPackageName(source);
+    }
 
     @Override
     public final boolean isExported(String name) {
@@ -106,8 +141,18 @@ public class CodingConventions {
     }
 
     @Override
+    public boolean isClassFactoryCall(Node callNode) {
+      return nextConvention.isClassFactoryCall(callNode);
+    }
+
+    @Override
     public boolean isSuperClassReference(String propertyName) {
       return nextConvention.isSuperClassReference(propertyName);
+    }
+
+    @Override
+    public boolean extractIsModuleFile(Node node, Node parent) {
+      return nextConvention.extractIsModuleFile(node, parent);
     }
 
     @Override
@@ -153,10 +198,16 @@ public class CodingConventions {
     }
 
     @Override
-    public void applySingletonGetter(FunctionType functionType,
+    public void applySingletonGetterOld(FunctionType functionType,
         FunctionType getterType, ObjectType objectType) {
-      nextConvention.applySingletonGetter(
+      nextConvention.applySingletonGetterOld(
           functionType, getterType, objectType);
+    }
+
+    @Override
+    public void applySingletonGetterNew(
+        RawNominalType rawType, JSType getInstanceType, JSType instanceType) {
+      nextConvention.applySingletonGetterNew(rawType, getInstanceType, instanceType);
     }
 
     @Override
@@ -193,7 +244,8 @@ public class CodingConventions {
 
     @Override
     public void defineDelegateProxyPrototypeProperties(
-        JSTypeRegistry registry, StaticScope<JSType> scope,
+        JSTypeRegistry registry,
+        StaticTypedScope<com.google.javascript.rhino.jstype.JSType> scope,
         List<ObjectType> delegateProxyPrototypes,
         Map<String, String> delegateCallingConventions) {
       nextConvention.defineDelegateProxyPrototypeProperties(
@@ -212,12 +264,14 @@ public class CodingConventions {
 
     @Override
     public Bind describeFunctionBind(Node n) {
-      return describeFunctionBind(n, false);
+      return describeFunctionBind(n, false, false);
     }
 
     @Override
-    public Bind describeFunctionBind(Node n, boolean useTypeInfo) {
-      return nextConvention.describeFunctionBind(n, useTypeInfo);
+    public Bind describeFunctionBind(
+        Node n, boolean callerChecksTypes, boolean iCheckTypes) {
+      return nextConvention
+          .describeFunctionBind(n, callerChecksTypes, iCheckTypes);
     }
 
     @Override
@@ -269,13 +323,26 @@ public class CodingConventions {
     public boolean isOptionalParameter(Node parameter) {
       // be as lax as possible, but this must be mutually exclusive from
       // var_args parameters.
-      return false;
+      return parameter.isOptionalArg();
     }
 
     @Override
     public boolean isVarArgsParameter(Node parameter) {
       // be as lax as possible
+      return parameter.isVarArgs();
+    }
+
+    @Override
+    public boolean isFunctionCallThatAlwaysThrows(Node n) {
       return false;
+    }
+
+    @Override
+    public String getPackageName(StaticSourceFile source) {
+      // The package name of a source file is its file path.
+      String name = source.getName();
+      int lastSlash = name.lastIndexOf('/');
+      return lastSlash == -1 ? "" : name.substring(0, lastSlash);
     }
 
     @Override
@@ -295,7 +362,23 @@ public class CodingConventions {
 
     @Override
     public SubclassRelationship getClassesDefinedByCall(Node callNode) {
-      return null;
+      Node callName = callNode.getFirstChild();
+      if ((callName.matchesQualifiedName("$jscomp.inherits")
+          || callName.matchesQualifiedName("$jscomp$inherits"))
+          && callNode.getChildCount() == 3) {
+        Node subclass = callName.getNext();
+        Node superclass = subclass.getNext();
+
+        return new SubclassRelationship(
+            SubclassType.INHERITS, subclass, superclass);
+      } else {
+        return null;
+      }
+    }
+
+    @Override
+    public boolean isClassFactoryCall(Node callNode) {
+      return false;
     }
 
     @Override
@@ -304,14 +387,20 @@ public class CodingConventions {
     }
 
     @Override
+    public boolean extractIsModuleFile(Node node, Node parent) {
+      String message = "only implemented in ClosureCodingConvention";
+      throw new UnsupportedOperationException(message);
+    }
+
+    @Override
     public String extractClassNameIfProvide(Node node, Node parent) {
-      String message = "only implemented in GoogleCodingConvention";
+      String message = "only implemented in ClosureCodingConvention";
       throw new UnsupportedOperationException(message);
     }
 
     @Override
     public String extractClassNameIfRequire(Node node, Node parent) {
-      String message = "only implemented in GoogleCodingConvention";
+      String message = "only implemented in ClosureCodingConvention";
       throw new UnsupportedOperationException(message);
     }
 
@@ -347,8 +436,14 @@ public class CodingConventions {
     }
 
     @Override
-    public void applySingletonGetter(FunctionType functionType,
+    public void applySingletonGetterOld(FunctionType functionType,
         FunctionType getterType, ObjectType objectType) {
+      // do nothing.
+    }
+
+    @Override
+    public void applySingletonGetterNew(
+        RawNominalType rawType, JSType getInstanceType, JSType instanceType) {
       // do nothing.
     }
 
@@ -384,7 +479,8 @@ public class CodingConventions {
 
     @Override
     public void defineDelegateProxyPrototypeProperties(
-        JSTypeRegistry registry, StaticScope<JSType> scope,
+        JSTypeRegistry registry,
+        StaticTypedScope<com.google.javascript.rhino.jstype.JSType> scope,
         List<ObjectType> delegateProxyPrototypes,
         Map<String, String> delegateCallingConventions) {
       // do nothing.
@@ -417,19 +513,19 @@ public class CodingConventions {
 
     @Override
     public Bind describeFunctionBind(Node n) {
-      return describeFunctionBind(n, false);
+      return describeFunctionBind(n, false, false);
     }
 
     @Override
-    public Bind describeFunctionBind(Node n, boolean useTypeInfo) {
+    public Bind describeFunctionBind(
+        Node n, boolean callerChecksTypes, boolean iCheckTypes) {
       if (!n.isCall()) {
         return null;
       }
 
       Node callTarget = n.getFirstChild();
-      String name = callTarget.getQualifiedName();
-      if (name != null) {
-        if (name.equals("Function.prototype.bind.call")) {
+      if (callTarget.isQualifiedName()) {
+        if (callTarget.matchesQualifiedName("Function.prototype.bind.call")) {
           // goog.bind(fn, self, args...);
           Node fn = callTarget.getNext();
           if (fn == null) {
@@ -444,14 +540,15 @@ public class CodingConventions {
       if (callTarget.isGetProp()
           && callTarget.getLastChild().getString().equals("bind")) {
         Node maybeFn = callTarget.getFirstChild();
-        JSType maybeFnType = maybeFn.getJSType();
+        com.google.javascript.rhino.jstype.JSType maybeFnType =
+            maybeFn.getJSType();
         FunctionType fnType = null;
-        if (useTypeInfo && maybeFnType != null) {
+        if (iCheckTypes && maybeFnType != null) {
           fnType = maybeFnType.restrictByNotNullOrUndefined()
               .toMaybeFunctionType();
         }
 
-        if (fnType != null || maybeFn.isFunction()) {
+        if (fnType != null || callerChecksTypes || maybeFn.isFunction()) {
           // (function(){}).bind(self, args...);
           Node thisValue = callTarget.getNext();
           Node parameters = safeNext(thisValue);
@@ -467,7 +564,7 @@ public class CodingConventions {
       return ImmutableList.of();
     }
 
-    private Node safeNext(Node n) {
+    private static Node safeNext(Node n) {
       if (n != null) {
         return n.getNext();
       }

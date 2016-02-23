@@ -16,19 +16,20 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
+import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.jscomp.TypeValidator.TypeMismatch;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.TypeIRegistry;
 import com.google.javascript.rhino.jstype.FunctionType;
 import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.JSTypeNative;
-import com.google.javascript.rhino.jstype.JSTypeRegistry;
 import com.google.javascript.rhino.jstype.ObjectType;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -46,7 +47,7 @@ import java.util.Set;
  *
  * @author johnlenz@google.com (John Lenz)
  */
-public class InlineProperties implements CompilerPass {
+final class InlineProperties implements CompilerPass {
 
   private final AbstractCompiler compiler;
 
@@ -62,39 +63,47 @@ public class InlineProperties implements CompilerPass {
   private static final PropertyInfo INVALIDATED = new PropertyInfo(
       null, null);
 
-  private final Map<String, PropertyInfo> props = Maps.newHashMap();
+  private final Map<String, PropertyInfo> props = new HashMap<>();
 
   private Set<JSType> invalidatingTypes;
 
   InlineProperties(AbstractCompiler compiler) {
     this.compiler = compiler;
     buildInvalidatingTypeSet();
+    invalidateExternProperties();
   }
 
   // TODO(johnlenz): this is a direct copy of the invalidation code
   // from AmbiguateProperties, if in the end we don't need to modify it
   // we should move it to a common location.
   private void buildInvalidatingTypeSet() {
-    JSTypeRegistry registry = compiler.getTypeRegistry();
-    invalidatingTypes = Sets.newHashSet(
-        registry.getNativeType(JSTypeNative.ALL_TYPE),
-        registry.getNativeType(JSTypeNative.NO_OBJECT_TYPE),
-        registry.getNativeType(JSTypeNative.NO_TYPE),
-        registry.getNativeType(JSTypeNative.NULL_TYPE),
-        registry.getNativeType(JSTypeNative.VOID_TYPE),
-        registry.getNativeType(JSTypeNative.FUNCTION_FUNCTION_TYPE),
-        registry.getNativeType(JSTypeNative.FUNCTION_INSTANCE_TYPE),
-        registry.getNativeType(JSTypeNative.FUNCTION_PROTOTYPE),
-        registry.getNativeType(JSTypeNative.GLOBAL_THIS),
-        registry.getNativeType(JSTypeNative.OBJECT_TYPE),
-        registry.getNativeType(JSTypeNative.OBJECT_PROTOTYPE),
-        registry.getNativeType(JSTypeNative.OBJECT_FUNCTION_TYPE),
-        registry.getNativeType(JSTypeNative.TOP_LEVEL_PROTOTYPE),
-        registry.getNativeType(JSTypeNative.UNKNOWN_TYPE));
+    TypeIRegistry registry = compiler.getTypeIRegistry();
+    invalidatingTypes = new HashSet<>(ImmutableSet.of(
+        (JSType) registry.getNativeType(JSTypeNative.ALL_TYPE),
+        (JSType) registry.getNativeType(JSTypeNative.NO_OBJECT_TYPE),
+        (JSType) registry.getNativeType(JSTypeNative.NO_TYPE),
+        (JSType) registry.getNativeType(JSTypeNative.NULL_TYPE),
+        (JSType) registry.getNativeType(JSTypeNative.VOID_TYPE),
+        (JSType) registry.getNativeType(JSTypeNative.FUNCTION_FUNCTION_TYPE),
+        (JSType) registry.getNativeType(JSTypeNative.FUNCTION_INSTANCE_TYPE),
+        (JSType) registry.getNativeType(JSTypeNative.FUNCTION_PROTOTYPE),
+        (JSType) registry.getNativeType(JSTypeNative.GLOBAL_THIS),
+        (JSType) registry.getNativeType(JSTypeNative.OBJECT_TYPE),
+        (JSType) registry.getNativeType(JSTypeNative.OBJECT_PROTOTYPE),
+        (JSType) registry.getNativeType(JSTypeNative.OBJECT_FUNCTION_TYPE),
+        (JSType) registry.getNativeType(JSTypeNative.TOP_LEVEL_PROTOTYPE),
+        (JSType) registry.getNativeType(JSTypeNative.UNKNOWN_TYPE)));
 
-    for (TypeMismatch mis : compiler.getTypeValidator().getMismatches()) {
+    for (TypeMismatch mis : compiler.getTypeMismatches()) {
       addInvalidatingType(mis.typeA);
       addInvalidatingType(mis.typeB);
+    }
+  }
+
+  private void invalidateExternProperties() {
+    // Invalidate properties defined in externs.
+    for (String name : compiler.getExternProperties()) {
+      props.put(name, INVALIDATED);
     }
   }
 
@@ -104,7 +113,7 @@ public class InlineProperties implements CompilerPass {
   private void addInvalidatingType(JSType type) {
     type = type.restrictByNotNullOrUndefined();
     if (type.isUnionType()) {
-      for (JSType alt : type.toMaybeUnionType().getAlternates()) {
+      for (JSType alt : type.toMaybeUnionType().getAlternatesWithoutStructuralTyping()) {
         addInvalidatingType(alt);
       }
     }
@@ -121,7 +130,7 @@ public class InlineProperties implements CompilerPass {
     if (type.isUnionType()) {
       type = type.restrictByNotNullOrUndefined();
       if (type.isUnionType()) {
-        for (JSType alt : type.toMaybeUnionType().getAlternates()) {
+        for (JSType alt : type.toMaybeUnionType().getAlternatesWithoutStructuralTyping()) {
           if (isInvalidatingType(alt)) {
             return true;
           }
@@ -146,8 +155,7 @@ public class InlineProperties implements CompilerPass {
   private JSType getJSType(Node n) {
     JSType jsType = n.getJSType();
     if (jsType == null) {
-      return compiler.getTypeRegistry().getNativeType(
-          JSTypeNative.UNKNOWN_TYPE);
+      return compiler.getTypeIRegistry().getNativeType(JSTypeNative.UNKNOWN_TYPE);
     } else {
       return jsType;
     }
@@ -155,10 +163,9 @@ public class InlineProperties implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverseRoots(
-        compiler, new GatherCandidates(), externs, root);
-    NodeTraversal.traverseRoots(
-        compiler, new ReplaceCandidates(), externs, root);
+    // Find and replace the properties in non-extern AST.
+    NodeTraversal.traverseEs6(compiler, root, new GatherCandidates());
+    NodeTraversal.traverseEs6(compiler, root, new ReplaceCandidates());
   }
 
   class GatherCandidates extends AbstractPostOrderCallback {
@@ -169,10 +176,7 @@ public class InlineProperties implements CompilerPass {
       String propName = null;
       if (n.isGetProp()) {
         propName = n.getLastChild().getString();
-        if (t.getInput().isExtern()) {
-          // Any extern reference invalidates
-          invalidatingPropRef = true;
-        } else if (parent.isAssign()) {
+        if (parent.isAssign()) {
           invalidatingPropRef = !maybeCandidateDefinition(t, n, parent);
         } else if (NodeUtil.isLValue(n)) {
           // Other LValue references invalidate
@@ -186,15 +190,10 @@ public class InlineProperties implements CompilerPass {
         }
       } else if (n.isStringKey()) {
         propName = n.getString();
-        if (t.getInput().isExtern()) {
-          // Any extern reference invalidates
-          invalidatingPropRef = true;
-        } else {
-          // For now, any object literal key invalidates
-          // TODO(johnlenz): support prototype properties like:
-          //   foo.prototype = { a: 1, b: 2 };
-          invalidatingPropRef = true;
-        }
+        // For now, any object literal key invalidates
+        // TODO(johnlenz): support prototype properties like:
+        //   foo.prototype = { a: 1, b: 2 };
+        invalidatingPropRef = true;
       }
 
       if (invalidatingPropRef) {
@@ -217,12 +216,12 @@ public class InlineProperties implements CompilerPass {
       if (src.isThis()) {
         // This is a simple assignment like:
         //    this.foo = 1;
-        if (inContructor(t)) {
+        if (inConstructor(t)) {
           // This maybe a valid assignment.
           isCandidate = maybeStoreCandidateValue(
               getJSType(src), propName, value);
         }
-      } else if (t.inGlobalScope()
+      } else if (t.inGlobalHoistScope()
           && src.isGetProp()
           && src.getLastChild().getString().equals("prototype")) {
         // This is a prototype assignment like:
@@ -262,8 +261,11 @@ public class InlineProperties implements CompilerPass {
       return false;
     }
 
-    private boolean inContructor(NodeTraversal t) {
-      Node root = t.getScopeRoot();
+    private boolean inConstructor(NodeTraversal t) {
+      Node root = t.getEnclosingFunction();
+      if (root == null) {
+        return false;
+      }
       JSDocInfo info = NodeUtil.getBestJSDocInfo(root);
       return info != null && info.isConstructor();
     }
@@ -292,11 +294,7 @@ public class InlineProperties implements CompilerPass {
     private boolean isMatchingType(Node n, JSType src) {
       src = src.restrictByNotNullOrUndefined();
       JSType dest = getJSType(n).restrictByNotNullOrUndefined();
-      if (!isInvalidatingType(dest)
-          && dest.isSubtype(src)) {
-        return true;
-      }
-      return false;
+      return !isInvalidatingType(dest) && dest.isSubtype(src);
     }
   }
 }

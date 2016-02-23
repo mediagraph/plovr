@@ -19,37 +19,35 @@ package com.google.javascript.jscomp;
 import static com.google.javascript.rhino.jstype.JSTypeNative.GLOBAL_THIS;
 
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+import com.google.javascript.jscomp.CodingConvention.SubclassRelationship;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.StaticSourceFile;
+import com.google.javascript.rhino.StaticSymbolTable;
 import com.google.javascript.rhino.Token;
 import com.google.javascript.rhino.TokenStream;
-import com.google.javascript.rhino.jstype.JSType;
-import com.google.javascript.rhino.jstype.StaticReference;
-import com.google.javascript.rhino.jstype.StaticScope;
-import com.google.javascript.rhino.jstype.StaticSlot;
-import com.google.javascript.rhino.jstype.StaticSourceFile;
-import com.google.javascript.rhino.jstype.StaticSymbolTable;
+import com.google.javascript.rhino.TypeI;
+import com.google.javascript.rhino.jstype.StaticTypedRef;
+import com.google.javascript.rhino.jstype.StaticTypedScope;
+import com.google.javascript.rhino.jstype.StaticTypedSlot;
 
-import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
  * Builds a global namespace of all the objects and their properties in
  * the global scope. Also builds an index of all the references to those names.
  *
+ * @author nicksantos@google.com (Nick Santos)
  */
 class GlobalNamespace
-    implements StaticScope<JSType>,
+    implements StaticTypedScope<TypeI>,
     StaticSymbolTable<GlobalNamespace.Name, GlobalNamespace.Ref> {
 
   private AbstractCompiler compiler;
@@ -67,10 +65,10 @@ class GlobalNamespace
   private int currentPreOrderIndex = 0;
 
   /** Global namespace tree */
-  private List<Name> globalNames = new ArrayList<Name>();
+  private List<Name> globalNames = new ArrayList<>();
 
   /** Maps names (e.g. "a.b.c") to nodes in the global namespace tree */
-  private Map<String, Name> nameMap = new HashMap<String, Name>();
+  private Map<String, Name> nameMap = new HashMap<>();
 
   /**
    * Creates an instance that may emit warnings when building the namespace.
@@ -109,7 +107,7 @@ class GlobalNamespace
   }
 
   @Override
-  public StaticScope<JSType> getParentScope() {
+  public StaticTypedScope<TypeI> getParentScope() {
     return null;
   }
 
@@ -125,8 +123,8 @@ class GlobalNamespace
   }
 
   @Override
-  public JSType getTypeOfThis() {
-    return compiler.getTypeRegistry().getNativeObjectType(GLOBAL_THIS);
+  public TypeI getTypeOfThis() {
+    return compiler.getTypeIRegistry().getNativeObjectType(GLOBAL_THIS);
   }
 
   @Override
@@ -136,7 +134,7 @@ class GlobalNamespace
   }
 
   @Override
-  public StaticScope<JSType> getScope(Name slot) {
+  public StaticTypedScope<TypeI> getScope(Name slot) {
     return this;
   }
 
@@ -184,6 +182,20 @@ class GlobalNamespace
       this.scope = scope;
       this.node = node;
     }
+
+    @Override
+    public boolean equals(Object obj) {
+      Preconditions.checkState(obj instanceof AstChange);
+      AstChange other = (AstChange) obj;
+      return Objects.equals(this.module, other.module)
+          && Objects.equals(this.scope, other.scope)
+          && Objects.equals(this.node, other.node);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(this.module, this.scope, this.node);
+    }
   }
 
   /**
@@ -191,7 +203,7 @@ class GlobalNamespace
    * to see if they've added any references to the global namespace.
    * @param newNodes New nodes to check.
    */
-  void scanNewNodes(List<AstChange> newNodes) {
+  void scanNewNodes(Set<AstChange> newNodes) {
     BuildGlobalNamespace builder = new BuildGlobalNamespace();
 
     for (AstChange info : newNodes) {
@@ -217,11 +229,11 @@ class GlobalNamespace
   private void process() {
     if (externsRoot != null) {
       inExterns = true;
-      NodeTraversal.traverse(compiler, externsRoot, new BuildGlobalNamespace());
+      NodeTraversal.traverseEs6(compiler, externsRoot, new BuildGlobalNamespace());
     }
     inExterns = false;
 
-    NodeTraversal.traverse(compiler, root, new BuildGlobalNamespace());
+    NodeTraversal.traverseEs6(compiler, root, new BuildGlobalNamespace());
     generated = true;
   }
 
@@ -244,7 +256,7 @@ class GlobalNamespace
    * @param name A variable or qualified property name (e.g. "a" or "a.b.c.d")
    * @return The top variable name (e.g. "a")
    */
-  private String getTopVarName(String name) {
+  private static String getTopVarName(String name) {
     int firstDotIndex = name.indexOf('.');
     return firstDotIndex == -1 ? name : name.substring(0, firstDotIndex);
   }
@@ -258,21 +270,11 @@ class GlobalNamespace
    * @return Whether the name reference is a global variable reference
    */
   private boolean isGlobalVarReference(String name, Scope s) {
-    Scope.Var v = s.getVar(name);
+    Var v = s.getVar(name);
     if (v == null && externsScope != null) {
       v = externsScope.getVar(name);
     }
     return v != null && !v.isLocal();
-  }
-
-  /**
-   * Gets whether a scope is the global scope.
-   *
-   * @param s A scope
-   * @return Whether the scope is the global scope
-   */
-  private boolean isGlobalScope(Scope s) {
-    return s.getParent() == null;
   }
 
   // -------------------------------------------------------------------------
@@ -314,16 +316,20 @@ class GlobalNamespace
         case Token.GETTER_DEF:
         case Token.SETTER_DEF:
         case Token.STRING_KEY:
+        case Token.MEMBER_FUNCTION_DEF:
           // This may be a key in an object literal declaration.
           name = null;
           if (parent != null && parent.isObjectLit()) {
             name = getNameForObjLitKey(n);
+          } else if (parent != null && parent.isClassMembers()) {
+            name = getNameForClassMembers(n);
           }
           if (name == null) {
             return;
           }
           isSet = true;
           switch (n.getType()) {
+            case Token.MEMBER_FUNCTION_DEF:
             case Token.STRING_KEY:
               type = getValueType(n.getFirstChild());
               break;
@@ -342,6 +348,8 @@ class GlobalNamespace
           if (parent != null) {
             switch (parent.getType()) {
               case Token.VAR:
+              case Token.LET:
+              case Token.CONST:
                 isSet = true;
                 Node rvalue = n.getFirstChild();
                 type = rvalue == null ? Name.Type.OTHER : getValueType(rvalue);
@@ -355,17 +363,22 @@ class GlobalNamespace
               case Token.GETPROP:
                 return;
               case Token.FUNCTION:
-                Node gramps = parent.getParent();
-                if (gramps == null || NodeUtil.isFunctionExpression(parent)) {
+                Node grandparent = parent.getParent();
+                if (grandparent == null || NodeUtil.isFunctionExpression(parent)) {
                   return;
                 }
                 isSet = true;
                 type = Name.Type.FUNCTION;
                 break;
+              case Token.CATCH:
               case Token.INC:
               case Token.DEC:
                 isSet = true;
                 type = Name.Type.OTHER;
+                break;
+              case Token.CLASS:
+                isSet = true;
+                type = Name.Type.CLASS;
                 break;
               default:
                 if (NodeUtil.isAssignmentOp(parent) &&
@@ -417,8 +430,9 @@ class GlobalNamespace
         return;
       }
 
+      scope = scope.getClosestHoistScope();
       if (isSet) {
-        if (isGlobalScope(scope)) {
+        if (scope.isGlobal()) {
           handleSetFromGlobal(module, scope, n, parent, name, isPropAssign, type);
         } else {
           handleSetFromLocal(module, scope, n, parent, name);
@@ -448,40 +462,40 @@ class GlobalNamespace
       Node parent = n.getParent();
       Preconditions.checkState(parent.isObjectLit());
 
-      Node gramps = parent.getParent();
-      if (gramps == null) {
+      Node grandparent = parent.getParent();
+      if (grandparent == null) {
         return null;
       }
 
-      Node greatGramps = gramps.getParent();
+      Node greatGrandparent = grandparent.getParent();
       String name;
-      switch (gramps.getType()) {
+      switch (grandparent.getType()) {
         case Token.NAME:
           // VAR
-          //   NAME (gramps)
+          //   NAME (grandparent)
           //     OBJLIT (parent)
           //       STRING (n)
-          if (greatGramps == null || !greatGramps.isVar()) {
+          if (greatGrandparent == null || !NodeUtil.isNameDeclaration(greatGrandparent)) {
             return null;
           }
-          name = gramps.getString();
+          name = grandparent.getString();
           break;
         case Token.ASSIGN:
-          // ASSIGN (gramps)
+          // ASSIGN (grandparent)
           //   NAME|GETPROP
           //   OBJLIT (parent)
           //     STRING (n)
-          Node lvalue = gramps.getFirstChild();
+          Node lvalue = grandparent.getFirstChild();
           name = lvalue.getQualifiedName();
           break;
         case Token.STRING_KEY:
           // OBJLIT
-          //   STRING (gramps)
+          //   STRING (grandparent)
           //     OBJLIT (parent)
           //       STRING (n)
-          if (greatGramps != null &&
-              greatGramps.isObjectLit()) {
-            name = getNameForObjLitKey(gramps);
+          if (greatGrandparent != null &&
+              greatGrandparent.isObjectLit()) {
+            name = getNameForObjLitKey(grandparent);
           } else {
             return null;
           }
@@ -499,13 +513,41 @@ class GlobalNamespace
     }
 
     /**
+     * Gets the fully qualified name corresponding to an class member function,
+     * as long as it and its prefix property names are valid JavaScript
+     * identifiers.
+     *
+     * For example, if called with node {@code n} representing "y" in any of
+     * the following expressions, the result would be "x.y":
+     * <code> class x{y(){}}; </code>
+     * <code> var x = class{y(){}}; </code>
+     * <code> var x; x = class{y(){}}; </code>
+     *
+     * @param n A child of an CLASS_MEMBERS node
+     * @return The global name, or null if {@code n} doesn't correspond to
+     *   a class member function that can be named
+     */
+    String getNameForClassMembers(Node n) {
+      Node parent = n.getParent();
+      Preconditions.checkState(parent.isClassMembers());
+      String className = NodeUtil.getClassName(parent.getParent());
+      return className == null ? null : className + '.' + n.getString();
+    }
+
+    /**
      * Gets the type of a value or simple expression.
      *
      * @param n An r-value in an assignment or variable declaration (not null)
      * @return A {@link Name.Type}
      */
     Name.Type getValueType(Node n) {
+      // Shorthand assignment of extended object literal
+      if (n == null) {
+        return Name.Type.OTHER;
+      }
       switch (n.getType()) {
+        case Token.CLASS:
+          return Name.Type.CLASS;
         case Token.OBJECTLIT:
           return Name.Type.OBJECTLIT;
         case Token.FUNCTION:
@@ -563,7 +605,7 @@ class GlobalNamespace
             currentPreOrderIndex++);
         nameObj.addRef(get);
         Ref.markTwins(set, get);
-      } else if (isTypeDeclaration(n, parent)) {
+      } else if (isTypeDeclaration(n)) {
         // Names with a @constructor or @enum annotation are always collapsed
         nameObj.setDeclaredType();
       }
@@ -579,7 +621,7 @@ class GlobalNamespace
      * @return Whether the set operation is either a constructor or enum
      *     declaration
      */
-    private boolean isTypeDeclaration(Node n, Node parent) {
+    private boolean isTypeDeclaration(Node n) {
       Node valueNode = NodeUtil.getRValueOfLValue(n);
       JSDocInfo info = NodeUtil.getBestJSDocInfo(n);
       // Heed the annotations only if they're sensibly used.
@@ -638,7 +680,9 @@ class GlobalNamespace
       Ref.Type type = Ref.Type.DIRECT_GET;
       if (parent != null) {
         switch (parent.getType()) {
+          case Token.EXPR_RESULT:
           case Token.IF:
+          case Token.INSTANCEOF:
           case Token.TYPEOF:
           case Token.VOID:
           case Token.NOT:
@@ -647,14 +691,17 @@ class GlobalNamespace
           case Token.NEG:
             break;
           case Token.CALL:
-            type = n == parent.getFirstChild()
-                   ? Ref.Type.CALL_GET
-                   : Ref.Type.ALIASING_GET;
+            if (n == parent.getFirstChild()) {
+              // It is a call target
+              type = Ref.Type.CALL_GET;
+            } else if (isClassDefiningCall(parent)) {
+              type = Ref.Type.DIRECT_GET;
+            } else {
+              type = Ref.Type.ALIASING_GET;
+            }
             break;
           case Token.NEW:
-            type = n == parent.getFirstChild()
-                   ? Ref.Type.DIRECT_GET
-                   : Ref.Type.ALIASING_GET;
+            type = n == parent.getFirstChild() ? Ref.Type.DIRECT_GET : Ref.Type.ALIASING_GET;
             break;
           case Token.OR:
           case Token.AND:
@@ -684,6 +731,20 @@ class GlobalNamespace
       handleGet(module, scope, n, parent, name, type);
     }
 
+    private boolean isClassDefiningCall(Node callNode) {
+      CodingConvention convention = compiler.getCodingConvention();
+      // Look for goog.inherits, goog.mixin
+      SubclassRelationship classes =
+          convention.getClassesDefinedByCall(callNode);
+      if (classes != null) {
+        return true;
+      }
+
+      // Look for calls to goog.addSingletonGetter calls.
+      String className = convention.getSingletonGetterClassName(callNode);
+      return className != null;
+    }
+
     /**
      * Determines whether the result of a hook (x?y:z) or boolean expression
      * (x||y) or (x&&y) is assigned to a specific global name.
@@ -702,8 +763,11 @@ class GlobalNamespace
       Node prev = parent;
       for (Node anc : parent.getAncestors()) {
         switch (anc.getType()) {
+          case Token.INSTANCEOF:
           case Token.EXPR_RESULT:
           case Token.VAR:
+          case Token.LET:
+          case Token.CONST:
           case Token.IF:
           case Token.WHILE:
           case Token.FOR:
@@ -860,8 +924,9 @@ class GlobalNamespace
    * correspond to JavaScript objects whose properties we should consider
    * collapsing.
    */
-  static class Name implements StaticSlot<JSType> {
+  static class Name implements StaticTypedSlot<TypeI> {
     enum Type {
+      CLASS,
       OBJECTLIT,
       FUNCTION,
       GET,
@@ -881,9 +946,10 @@ class GlobalNamespace
 
     Type type;
     private boolean declaredType = false;
-    private boolean hasDeclaredTypeDescendant = false;
+    private boolean isDeclared = false;
     int globalSets = 0;
     int localSets = 0;
+    int localSetsWithNoCollapse = 0;
     int aliasingGets = 0;
     int totalGets = 0;
     int callGets = 0;
@@ -901,7 +967,7 @@ class GlobalNamespace
 
     Name addProperty(String name, boolean inExterns) {
       if (props == null) {
-        props = new ArrayList<Name>();
+        props = new ArrayList<>();
       }
       Name node = new Name(name, this, inExterns);
       props.add(node);
@@ -932,7 +998,7 @@ class GlobalNamespace
     }
 
     @Override
-    public JSType getType() {
+    public TypeI getType() {
       return null;
     }
 
@@ -948,9 +1014,18 @@ class GlobalNamespace
           break;
         case SET_FROM_LOCAL:
           localSets++;
+          JSDocInfo info = ref.getNode() == null ? null :
+              NodeUtil.getBestJSDocInfo(ref.getNode());
+          if (info != null && info.isNoCollapse()) {
+            localSetsWithNoCollapse++;
+          }
           break;
         case PROTOTYPE_GET:
         case DIRECT_GET:
+          Node node = ref.getNode();
+          if (node != null && node.isGetProp() && node.getParent().isExprResult()) {
+            docInfo = node.getJSDocInfo();
+          }
           totalGets++;
           break;
         case ALIASING_GET:
@@ -983,12 +1058,18 @@ class GlobalNamespace
           }
         }
 
+        JSDocInfo info;
         switch (ref.type) {
           case SET_FROM_GLOBAL:
             globalSets--;
             break;
           case SET_FROM_LOCAL:
             localSets--;
+            info = ref.getNode() == null ? null :
+                NodeUtil.getBestJSDocInfo(ref.getNode());
+            if (info != null && info.isNoCollapse()) {
+              localSetsWithNoCollapse--;
+            }
             break;
           case PROTOTYPE_GET:
           case DIRECT_GET:
@@ -1017,7 +1098,7 @@ class GlobalNamespace
 
     void addRefInternal(Ref ref) {
       if (refs == null) {
-        refs = Lists.newArrayList();
+        refs = new ArrayList<>();
       }
       refs.add(ref);
     }
@@ -1048,10 +1129,51 @@ class GlobalNamespace
       return false;
     }
 
+    boolean isCollapsingExplicitlyDenied() {
+      if (docInfo == null) {
+        Ref ref = getDeclaration();
+        if (ref != null) {
+          docInfo = getDocInfoForDeclaration(ref);
+        }
+      }
+
+      return docInfo != null && docInfo.isNoCollapse();
+    }
+
+    boolean isInlinableGlobalAlias() {
+      // Only simple aliases with direct usage are inlinable.
+      if (inExterns || globalSets != 1 || localSets != 0 || !canCollapse()) {
+        return false;
+      }
+
+      // Only allow inlining of simple references.
+      for (Ref ref : getRefs()) {
+        switch (ref.type) {
+          case SET_FROM_GLOBAL:
+            // Expect one global set
+            continue;
+          case SET_FROM_LOCAL:
+            throw new IllegalStateException();
+          case ALIASING_GET:
+          case DIRECT_GET:
+          case PROTOTYPE_GET:
+          case CALL_GET:
+            continue;
+          case DELETE_PROP:
+            return false;
+          default:
+            throw new IllegalStateException();
+        }
+      }
+      return true;
+    }
+
     boolean canCollapse() {
-      return !inExterns && !isGetOrSetDefinition() && (declaredType ||
+      return !inExterns && !isGetOrSetDefinition() &&
+          !isCollapsingExplicitlyDenied() &&
+          (declaredType ||
           (parent == null || parent.canCollapseUnannotatedChildNames()) &&
-          (globalSets > 0 || localSets > 0) &&
+          (globalSets > 0 || localSets > 0) && localSetsWithNoCollapse == 0 &&
           deleteProps == 0);
     }
 
@@ -1070,6 +1192,10 @@ class GlobalNamespace
       // it's probably not worth the effort.
       Preconditions.checkNotNull(declaration);
       if (declaration.getTwin() != null) {
+        return false;
+      }
+
+      if (isCollapsingExplicitlyDenied()) {
         return false;
       }
 
@@ -1093,23 +1219,33 @@ class GlobalNamespace
 
     /** Whether this is an object literal that needs to keep its keys. */
     boolean shouldKeepKeys() {
-      return type == Type.OBJECTLIT && aliasingGets > 0;
+      return type == Type.OBJECTLIT &&
+          (aliasingGets > 0 || isCollapsingExplicitlyDenied());
     }
 
     boolean needsToBeStubbed() {
-      return globalSets == 0 && localSets > 0;
+      return globalSets == 0 && localSets > 0 && localSetsWithNoCollapse == 0 &&
+          !isCollapsingExplicitlyDenied();
     }
 
     void setDeclaredType() {
       declaredType = true;
       for (Name ancestor = parent; ancestor != null;
            ancestor = ancestor.parent) {
-        ancestor.hasDeclaredTypeDescendant = true;
+        ancestor.isDeclared = true;
       }
     }
 
     boolean isDeclaredType() {
       return declaredType;
+    }
+
+    boolean isConstructor() {
+      Node declNode = declaration.node;
+      Node rvalueNode = NodeUtil.getRValueOfLValue(declNode);
+      JSDocInfo jsdoc = NodeUtil.getBestJSDocInfo(declNode);
+      return rvalueNode != null && rvalueNode.isFunction()
+          && jsdoc != null && jsdoc.isConstructor();
     }
 
     /**
@@ -1120,8 +1256,8 @@ class GlobalNamespace
      * For example, if foo.bar.DomHelper is a class, then foo and foo.bar are
      * considered namespaces.
      */
-    boolean isNamespace() {
-      return hasDeclaredTypeDescendant && type == Type.OBJECTLIT;
+    boolean isNamespaceObjectLit() {
+      return isDeclared && type == Type.OBJECTLIT;
     }
 
     /**
@@ -1149,13 +1285,22 @@ class GlobalNamespace
     private static JSDocInfo getDocInfoForDeclaration(Ref ref) {
       if (ref.node != null) {
         Node refParent = ref.node.getParent();
+        if (refParent == null) {
+          // May happen when inlineAliases removes refs from the AST.
+          return null;
+        }
         switch (refParent.getType()) {
           case Token.FUNCTION:
           case Token.ASSIGN:
+          case Token.CLASS:
             return refParent.getJSDocInfo();
           case Token.VAR:
+          case Token.LET:
+          case Token.CONST:
             return ref.node == refParent.getFirstChild() ?
                 refParent.getJSDocInfo() : ref.node.getJSDocInfo();
+          case Token.OBJECTLIT:
+            return ref.node.getJSDocInfo();
         }
       }
 
@@ -1169,7 +1314,7 @@ class GlobalNamespace
    * A global name reference. Contains references to the relevant parse tree
    * node and its ancestors that may be affected.
    */
-  static class Ref implements StaticReference<JSType> {
+  static class Ref implements StaticTypedRef<TypeI> {
 
     // Note: we are more aggressive about collapsing @enum and @constructor
     // declarations than implied here, see Name#canCollapse
@@ -1243,16 +1388,12 @@ class GlobalNamespace
     }
 
     @Override
-    public StaticSlot<JSType> getSymbol() {
+    public StaticTypedSlot<TypeI> getSymbol() {
       return name;
     }
 
     JSModule getModule() {
       return module;
-    }
-
-    String getSourceName() {
-      return source == null ? "" : source.getName();
     }
 
     Ref getTwin() {
@@ -1283,63 +1424,10 @@ class GlobalNamespace
     static Ref createRefForTesting(Type type) {
       return new Ref(type, -1);
     }
-  }
 
-
-  /**
-   * An experimental compiler pass for tracking what symbols were added/removed
-   * at each stage of compilation.
-   *
-   * When "global namespace tracker" mode is on, we rebuild the global namespace
-   * after each pass, and diff it against the last namespace built.
-   */
-  static class Tracker implements CompilerPass {
-    private final AbstractCompiler compiler;
-    private final PrintStream stream;
-    private final Predicate<String> isInterestingSymbol;
-
-    private Set<String> previousSymbolsInTree = ImmutableSet.of();
-
-    /**
-       @param stream The stream to print logs to.
-     * @param isInterestingSymbol A predicate to determine which symbols
-     *     we care about.
-     */
-    Tracker(AbstractCompiler compiler, PrintStream stream,
-        Predicate<String> isInterestingSymbol) {
-      this.compiler = compiler;
-      this.stream = stream;
-      this.isInterestingSymbol = isInterestingSymbol;
-    }
-
-    @Override public void process(Node externs, Node root) {
-      GlobalNamespace namespace = new GlobalNamespace(compiler, externs, root);
-
-      Set<String> currentSymbols = Sets.newTreeSet();
-      for (String name : namespace.getNameIndex().keySet()) {
-        if (isInterestingSymbol.apply(name)) {
-          currentSymbols.add(name);
-        }
-      }
-
-      String passName = compiler.getLastPassName();
-      if (passName == null) {
-        passName = "[Unknown pass]";
-      }
-
-      for (String sym : currentSymbols) {
-        if (!previousSymbolsInTree.contains(sym)) {
-          stream.println(String.format("%s: Added by %s", sym, passName));
-        }
-      }
-
-      for (String sym : previousSymbolsInTree) {
-        if (!currentSymbols.contains(sym)) {
-          stream.println(String.format("%s: Removed by %s", sym, passName));
-        }
-      }
-
-      previousSymbolsInTree = currentSymbols;
+    @Override
+    public String toString() {
+      return node.toString();
     }
   }
 }

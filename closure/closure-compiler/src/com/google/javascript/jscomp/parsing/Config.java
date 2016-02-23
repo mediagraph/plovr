@@ -27,19 +27,27 @@ import java.util.Set;
  *
  * @author nicksantos@google.com (Nick Santos)
  */
-public class Config {
+public final class Config {
 
   /** JavaScript mode */
   public enum LanguageMode {
     ECMASCRIPT3,
     ECMASCRIPT5,
     ECMASCRIPT5_STRICT,
+    ECMASCRIPT6,
+    ECMASCRIPT6_STRICT,
+    ECMASCRIPT6_TYPED,  // Implies STRICT.
   }
 
   /**
    * Whether to parse the descriptions of JsDoc comments.
    */
   final boolean parseJsDocDocumentation;
+
+  /**
+   * Whether to preserve whitespace when extracting text from JsDoc comments.
+   */
+  final boolean preserveJsDocWhitespace;
 
   /**
    * Whether we're in IDE mode.
@@ -62,24 +70,20 @@ public class Config {
    */
   final LanguageMode languageMode;
 
-  /**
-   * Accept `const' keyword.
-   */
-  final boolean acceptConstKeyword;
-
-  /**
-   * Annotation names.
-   */
+  Config(Set<String> annotationWhitelist, Set<String> suppressionNames,
+      boolean isIdeMode, LanguageMode languageMode) {
+    this(annotationWhitelist, suppressionNames, isIdeMode, isIdeMode, false, languageMode);
+  }
 
   Config(Set<String> annotationWhitelist, Set<String> suppressionNames,
-      boolean isIdeMode, LanguageMode languageMode,
-      boolean acceptConstKeyword) {
+      boolean isIdeMode, boolean parseJsDocDocumentation, boolean preserveJsDocWhitespace,
+      LanguageMode languageMode) {
     this.annotationNames = buildAnnotationNames(annotationWhitelist);
-    this.parseJsDocDocumentation = isIdeMode;
+    this.parseJsDocDocumentation = parseJsDocDocumentation;
+    this.preserveJsDocWhitespace = preserveJsDocWhitespace;
     this.suppressionNames = suppressionNames;
     this.isIdeMode = isIdeMode;
     this.languageMode = languageMode;
-    this.acceptConstKeyword = acceptConstKeyword;
   }
 
   /**

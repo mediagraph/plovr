@@ -25,7 +25,6 @@ import com.google.javascript.rhino.Node;
  * some useless code removal, some minimizations).
  *
  * @author dcc@google.com (Devin Coughlin)
- * @author acleung@google.com (Alan Leung)(
  */
 class PeepholeOptimizationsPass implements CompilerPass {
   private AbstractCompiler compiler;
@@ -52,23 +51,19 @@ class PeepholeOptimizationsPass implements CompilerPass {
     this.retraverseOnChange = retraverse;
   }
 
-  public AbstractCompiler getCompiler() {
-    return compiler;
-  }
-
   @Override
   public void process(Node externs, Node root) {
     compiler.addChangeHandler(handler);
     beginTraversal();
     NodeTraversal.traverseChangedFunctions(compiler, new FunctionCallback() {
         @Override
-        public void visit(AbstractCompiler compiler, Node root) {
+        public void enterFunction(AbstractCompiler compiler, Node root) {
           if (root.isFunction()) {
             root = root.getLastChild();
           }
           do {
             handler.reset();
-            NodeTraversal.traverse(compiler, root, new PeepCallback());
+            NodeTraversal.traverseEs6(compiler, root, new PeepCallback());
           } while (retraverseOnChange && handler.hasCodeChanged());
         }
       });

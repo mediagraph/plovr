@@ -16,19 +16,20 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 
 import junit.framework.TestCase;
-import java.util.Arrays;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Tests for {@link JSModule}
  *
  */
-public class JSModuleTest extends TestCase {
+public final class JSModuleTest extends TestCase {
   private JSModule mod1;
   private JSModule mod2;  // depends on mod1
   private JSModule mod3;  // depends on mod1
@@ -37,7 +38,7 @@ public class JSModuleTest extends TestCase {
 
   @Override
   protected void setUp() {
-    List<JSModule> modulesInDepOrder = new ArrayList<JSModule>();
+    List<JSModule> modulesInDepOrder = new ArrayList<>();
 
     mod1 = new JSModule("mod1");
     modulesInDepOrder.add(mod1);
@@ -61,7 +62,7 @@ public class JSModuleTest extends TestCase {
   }
 
   public void testDependencies() {
-    assertEquals(ImmutableSet.of(), mod1.getAllDependencies());
+    assertThat(mod1.getAllDependencies()).isEmpty();
     assertEquals(ImmutableSet.of(mod1), mod2.getAllDependencies());
     assertEquals(ImmutableSet.of(mod1), mod3.getAllDependencies());
     assertEquals(ImmutableSet.of(mod1, mod2, mod3), mod4.getAllDependencies());
@@ -135,28 +136,5 @@ public class JSModuleTest extends TestCase {
     mod.sortInputsByDeps(compiler);
 
     assertEquals(expected, mod.getInputs());
-  }
-
-  public void testSortJsModules() throws Exception {
-    // already in order:
-    assertEquals(ImmutableList.of(mod1, mod2, mod3, mod4),
-        Arrays.asList(JSModule.sortJsModules(
-            ImmutableList.of(mod1, mod2, mod3, mod4))));
-    assertEquals(ImmutableList.of(mod1, mod3, mod2, mod4),
-        Arrays.asList(JSModule.sortJsModules(
-            ImmutableList.of(mod1, mod3, mod2, mod4))));
-
-    // one out of order:
-    assertEquals(ImmutableList.of(mod1, mod3, mod2, mod4),
-        Arrays.asList(JSModule.sortJsModules(
-            ImmutableList.of(mod4, mod3, mod2, mod1))));
-    assertEquals(ImmutableList.of(mod1, mod3, mod2, mod4),
-        Arrays.asList(JSModule.sortJsModules(
-            ImmutableList.of(mod3, mod1, mod2, mod4))));
-
-    // more out of order:
-    assertEquals(ImmutableList.of(mod1, mod3, mod2, mod4),
-        Arrays.asList(JSModule.sortJsModules(
-            ImmutableList.of(mod4, mod3, mod1, mod2))));
   }
 }

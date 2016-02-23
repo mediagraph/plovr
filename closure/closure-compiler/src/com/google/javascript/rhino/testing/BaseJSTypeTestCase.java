@@ -39,6 +39,7 @@
 
 package com.google.javascript.rhino.testing;
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.rhino.JSTypeExpression;
 import com.google.javascript.rhino.Node;
@@ -54,6 +55,8 @@ import com.google.javascript.rhino.jstype.TemplatizedType;
 import junit.framework.TestCase;
 
 public abstract class BaseJSTypeTestCase extends TestCase {
+  protected static final Joiner LINE_JOINER = Joiner.on('\n');
+
   protected JSTypeRegistry registry;
   protected TestErrorReporter errorReporter;
 
@@ -454,21 +457,21 @@ public abstract class BaseJSTypeTestCase extends TestCase {
       "/**\n"
       + " * @constructor\n"
       + " * @param {*=} opt_value\n"
+      + " * @return {!Object}\n"
       + " */\n"
       + "function Object(opt_value) {}\n"
       + "\n"
       + "/**\n"
       + " * @constructor\n"
-      + " * @extends {Object}\n"
       + " * @param {...*} var_args\n"
       + " */\n"
       + "\n"
       + "function Function(var_args) {}\n"
       + "/**\n"
       + " * @constructor\n"
-      + " * @extends {Object}\n"
       + " * @param {...*} var_args\n"
-      + " * @return {!Array}\n"
+      + " * @return {!Array.<?>}\n"
+      + " * @template T\n"
       + " */\n"
       + "function Array(var_args) {}\n"
       + "\n"
@@ -502,7 +505,6 @@ public abstract class BaseJSTypeTestCase extends TestCase {
       + "\n"
       + "/**\n"
       + " * @constructor\n"
-      + " * @extends {Object}\n"
       + " * @param {*=} opt_str\n"
       + " * @return {string}\n"
       + " */\n"

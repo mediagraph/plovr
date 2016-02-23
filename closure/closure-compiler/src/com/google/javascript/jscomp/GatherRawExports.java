@@ -17,10 +17,10 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.Node;
 
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -34,9 +34,15 @@ class GatherRawExports extends AbstractPostOrderCallback
 
   private final AbstractCompiler compiler;
 
-  private static final String GLOBAL_THIS_NAMES[] = { "window", "top" };
+  // TODO(johnlenz): "goog$global" should be part of a coding convention.
+  // Note: GatherRawExports runs after property renaming and
+  // collapse properties, so the two entries here protect goog.global in the
+  // two common cases "collapse properties and renaming on" or both off
+  // but not the case where only property renaming is on.
+  private static final String GLOBAL_THIS_NAMES[] = {
+    "window", "top", "goog$global", "goog.global" };
 
-  private final Set<String> exportedVariables = Sets.newHashSet();
+  private final Set<String> exportedVariables = new HashSet<>();
 
   GatherRawExports(AbstractCompiler compiler) {
     this.compiler = compiler;
@@ -45,31 +51,25 @@ class GatherRawExports extends AbstractPostOrderCallback
   @Override
   public void process(Node externs, Node root) {
     Preconditions.checkState(compiler.getLifeCycleStage().isNormalized());
-    NodeTraversal.traverse(compiler, root, this);
+    NodeTraversal.traverseEs6(compiler, root, this);
   }
 
   @Override
   public void visit(NodeTraversal t, Node n, Node parent) {
     Node sibling = n.getNext();
-    if (sibling != null
-        && sibling.isString()
-        && NodeUtil.isGet(parent)) {
-      // TODO(johnlenz): Should we warn if we see a property name that
-      // hasn't been exported?
-      if (isGlobalThisObject(t, n)) {
-        exportedVariables.add(sibling.getString());
-      }
+    if (sibling != null && sibling.isString() && NodeUtil.isGet(parent)
+        && isGlobalThisObject(t, n)) {
+      exportedVariables.add(sibling.getString());
     }
   }
 
-  private boolean isGlobalThisObject(NodeTraversal t, Node n) {
+  private static boolean isGlobalThisObject(NodeTraversal t, Node n) {
     if (n.isThis()) {
-      return t.inGlobalScope();
-    } else if (n.isName()) {
-      String varName = n.getString();
+      return t.inGlobalHoistScope();
+    } else if (n.isQualifiedName()) {
       int items = GLOBAL_THIS_NAMES.length;
       for (int i = 0; i < items; i++) {
-        if (varName.equals(GLOBAL_THIS_NAMES[i])) {
+        if (n.matchesQualifiedName(GLOBAL_THIS_NAMES[i])) {
           return true;
         }
       }

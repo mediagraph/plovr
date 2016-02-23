@@ -41,9 +41,9 @@ package com.google.javascript.rhino.jstype;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.javascript.rhino.jstype.JSType.EqCache;
 
 import java.io.Serializable;
-import java.util.Arrays;
 
 /**
  * Manages a mapping from TemplateType to its resolved JSType. Provides utility
@@ -64,6 +64,7 @@ public class TemplateTypeMap implements Serializable {
   // instance. These fully-resolved values are necessary for determining the
   // equivalence of two TemplateTypeMap instances.
   private final ImmutableList<JSType> resolvedTemplateValues;
+  private boolean inRecursiveEquivalenceCheck = false;
   final JSTypeRegistry registry;
 
   TemplateTypeMap(JSTypeRegistry registry,
@@ -142,11 +143,7 @@ public class TemplateTypeMap implements Serializable {
     return getTemplateTypeIndex(key) != -1;
   }
 
-  /**
-   * Returns the JSType value associated with the specified template key. If no
-   * JSType value is associated, returns UNKNOWN_TYPE.
-   */
-  public JSType getTemplateType(TemplateType key) {
+  JSType getUnresolvedOriginalTemplateType(TemplateType key) {
     int index = getTemplateTypeIndex(key);
     return (index == -1) ? registry.getNativeType(JSTypeNative.UNKNOWN_TYPE) :
          templateValues.get(index);
@@ -175,10 +172,15 @@ public class TemplateTypeMap implements Serializable {
     return -1;
   }
 
-  private JSType getResolvedTemplateType(TemplateType key) {
-    int index = getTemplateTypeIndex(key);
+  /**
+   * Returns the JSType value associated with the specified template key. If no
+   * JSType value is associated, returns UNKNOWN_TYPE.
+   */
+  public JSType getResolvedTemplateType(TemplateType key) {
+    TemplateTypeMap resolvedMap = this.addUnknownValues();
+    int index = resolvedMap.getTemplateTypeIndex(key);
     return (index == -1) ? registry.getNativeType(JSTypeNative.UNKNOWN_TYPE) :
-         resolvedTemplateValues.get(index);
+         resolvedMap.resolvedTemplateValues.get(index);
   }
 
   /**
@@ -195,35 +197,51 @@ public class TemplateTypeMap implements Serializable {
    */
   public boolean checkEquivalenceHelper(
       TemplateTypeMap that, EquivalenceMethod eqMethod) {
-    ImmutableList<TemplateType> thisKeys = getTemplateKeys();
-    ImmutableList<TemplateType> thatKeys = that.getTemplateKeys();
+    return checkEquivalenceHelper(that, eqMethod, EqCache.create());
+  }
 
-    EquivalenceMatch[] thatMatches = new EquivalenceMatch[thatKeys.size()];
-    Arrays.fill(thatMatches, EquivalenceMatch.NO_KEY_MATCH);
+  public boolean checkEquivalenceHelper(TemplateTypeMap that,
+      EquivalenceMethod eqMethod, EqCache eqCache) {
+    boolean result = false;
+    if (!this.inRecursiveEquivalenceCheck &&
+        !that.inRecursiveEquivalenceCheck) {
+      this.inRecursiveEquivalenceCheck = true;
+      that.inRecursiveEquivalenceCheck = true;
+
+      result = checkEquivalenceHelper(eqMethod, this, that, eqCache)
+          && checkEquivalenceHelper(eqMethod, that, this, eqCache);
+
+      this.inRecursiveEquivalenceCheck = false;
+      that.inRecursiveEquivalenceCheck = false;
+    }
+    return result;
+  }
+
+  private static boolean checkEquivalenceHelper(EquivalenceMethod eqMethod,
+    TemplateTypeMap thisMap, TemplateTypeMap thatMap, EqCache eqCache) {
+    ImmutableList<TemplateType> thisKeys = thisMap.getTemplateKeys();
+    ImmutableList<TemplateType> thatKeys = thatMap.getTemplateKeys();
 
     for (int i = 0; i < thisKeys.size(); i++) {
       TemplateType thisKey = thisKeys.get(i);
-      JSType thisType = getResolvedTemplateType(thisKey);
+      JSType thisType = thisMap.getResolvedTemplateType(thisKey);
       EquivalenceMatch thisMatch = EquivalenceMatch.NO_KEY_MATCH;
 
       for (int j = 0; j < thatKeys.size(); j++) {
         TemplateType thatKey = thatKeys.get(j);
-        JSType thatType = that.getResolvedTemplateType(thatKey);
+        JSType thatType = thatMap.getResolvedTemplateType(thatKey);
 
         // Cross-compare every key-value pair in this TemplateTypeMap with
         // those in that TemplateTypeMap. Update the Equivalence match for both
         // key-value pairs involved.
         if (thisKey == thatKey) {
           EquivalenceMatch newMatchType = EquivalenceMatch.VALUE_MISMATCH;
-          if (thisType.checkEquivalenceHelper(thatType, eqMethod)) {
+          if (thisType.checkEquivalenceHelper(thatType, eqMethod, eqCache)) {
             newMatchType = EquivalenceMatch.VALUE_MATCH;
           }
 
           if (thisMatch != EquivalenceMatch.VALUE_MATCH) {
             thisMatch = newMatchType;
-          }
-          if (thatMatches[j] != EquivalenceMatch.VALUE_MATCH) {
-            thatMatches[j] = newMatchType;
           }
         }
       }
@@ -232,13 +250,6 @@ public class TemplateTypeMap implements Serializable {
         return false;
       }
     }
-
-    for (int i = 0; i < thatMatches.length; i++) {
-      if (failedEquivalenceCheck(thatMatches[i], eqMethod)) {
-        return false;
-      }
-    }
-
     return true;
   }
 
@@ -247,7 +258,7 @@ public class TemplateTypeMap implements Serializable {
    * condition for an equivalence check, given the EquivalenceMethod used for
    * the check.
    */
-  private boolean failedEquivalenceCheck(
+  private static boolean failedEquivalenceCheck(
       EquivalenceMatch eqMatch, EquivalenceMethod eqMethod) {
     return eqMatch == EquivalenceMatch.VALUE_MISMATCH ||
         (eqMatch == EquivalenceMatch.NO_KEY_MATCH &&
@@ -319,11 +330,32 @@ public class TemplateTypeMap implements Serializable {
   }
 
   boolean hasAnyTemplateTypesInternal() {
-    for (JSType templateValue : templateValues) {
+    for (JSType templateValue : addUnknownValues().resolvedTemplateValues) {
       if (templateValue.hasAnyTemplateTypes()) {
         return true;
       }
     }
     return false;
+  }
+
+  @Override
+  public String toString() {
+    String s = "";
+
+    int len = Math.max(Math.max(templateKeys.size(), templateValues.size()),
+        resolvedTemplateValues.size());
+    s += "{ ";
+    for (int i = 0; i < len; i++) {
+      s += "(";
+      s += (i < templateKeys.size()) ? templateKeys.get(i) : "";
+      s += ",";
+      s += (i < templateValues.size()) ? templateValues.get(i) : "";
+      s += ",";
+      s += (i < resolvedTemplateValues.size()) ? resolvedTemplateValues.get(i) : "";
+      s += ") ";
+    }
+    s += "}";
+
+    return s;
   }
 }

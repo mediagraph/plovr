@@ -16,24 +16,26 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
 import com.google.javascript.rhino.Node;
+
+import java.util.ArrayList;
 
 /**
  * Tests for {@link RuntimeTypeCheck}.
  *
  */
-public class RuntimeTypeCheckTest extends CompilerTestCase {
+public final class RuntimeTypeCheckTest extends CompilerTestCase {
 
   public RuntimeTypeCheckTest() {
     super("/** @const */ var undefined;");
-    enableTypeCheck(CheckLevel.WARNING);
+    enableTypeCheck();
   }
 
   @Override
   protected void setUp() {
     super.enableLineNumberCheck(false);
     enableNormalize();
+    compareJsDoc = false;
   }
 
   public void testValue() {
@@ -240,11 +242,11 @@ public class RuntimeTypeCheckTest extends CompilerTestCase {
 
   private void testChecks(String js, String expected) {
     Compiler compiler = new Compiler();
-    compiler.init(Lists.<SourceFile>newArrayList(),
-                  Lists.<SourceFile>newArrayList(),
+    compiler.init(new ArrayList<SourceFile>(),
+                   new ArrayList<SourceFile>(),
                   new CompilerOptions());
-    Node base = compiler.loadLibraryCode("base");
-    Node typeCheck = compiler.loadLibraryCode("runtime_type_check");
+    Node base = compiler.loadLibraryCode("base", true);
+    Node typeCheck = compiler.loadLibraryCode("runtime_type_check", true);
     test(js,
          compiler.toSource(base) + ";"
          + compiler.toSource(typeCheck) + ";"

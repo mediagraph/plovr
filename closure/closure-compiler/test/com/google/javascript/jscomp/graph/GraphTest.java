@@ -16,19 +16,22 @@
 
 package com.google.javascript.jscomp.graph;
 
-import com.google.javascript.jscomp.graph.Graph;
-import com.google.javascript.jscomp.graph.LinkedDirectedGraph;
-import com.google.javascript.jscomp.graph.LinkedUndirectedGraph;
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.javascript.jscomp.graph.Annotatable;
 import com.google.javascript.jscomp.graph.Annotation;
-import com.google.javascript.jscomp.graph.GraphNode;
-import com.google.javascript.jscomp.graph.SubGraph;
 import com.google.javascript.jscomp.graph.DiGraph;
+import com.google.javascript.jscomp.graph.Graph;
 import com.google.javascript.jscomp.graph.Graph.GraphEdge;
+import com.google.javascript.jscomp.graph.GraphNode;
+import com.google.javascript.jscomp.graph.LinkedDirectedGraph;
+import com.google.javascript.jscomp.graph.LinkedUndirectedGraph;
+import com.google.javascript.jscomp.graph.SubGraph;
 import com.google.javascript.jscomp.graph.UndiGraph;
 
 import junit.framework.TestCase;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -37,7 +40,7 @@ import java.util.Set;
  * Tests for the graph data structure.
  *
  */
-public class GraphTest extends TestCase {
+public final class GraphTest extends TestCase {
 
   public void testDirectedSimple() {
     DiGraph<String, String> graph =
@@ -46,46 +49,46 @@ public class GraphTest extends TestCase {
     graph.createNode("b");
     graph.createNode("c");
     graph.connect("a", "->", "b");
-    assertTrue(graph.hasNode("a"));
-    assertTrue(graph.hasNode("b"));
-    assertTrue(graph.hasNode("c"));
-    assertFalse(graph.hasNode("d"));
-    assertTrue(graph.isConnected("a", "b"));
-    assertTrue(graph.isConnected("b", "a"));
-    assertFalse(graph.isConnected("a", "c"));
-    assertFalse(graph.isConnected("b", "c"));
-    assertFalse(graph.isConnected("c", "a"));
-    assertFalse(graph.isConnected("c", "b"));
-    assertFalse(graph.isConnected("a", "a"));
-    assertFalse(graph.isConnected("b", "b"));
-    assertFalse(graph.isConnected("b", "c"));
-    assertTrue(graph.isConnectedInDirection("a", "b"));
-    assertFalse(graph.isConnectedInDirection("b", "a"));
-    assertFalse(graph.isConnectedInDirection("a", "c"));
-    assertFalse(graph.isConnectedInDirection("b", "c"));
-    assertFalse(graph.isConnectedInDirection("c", "a"));
-    assertFalse(graph.isConnectedInDirection("c", "b"));
+    assertThat(graph.hasNode("a")).isTrue();
+    assertThat(graph.hasNode("b")).isTrue();
+    assertThat(graph.hasNode("c")).isTrue();
+    assertThat(graph.hasNode("d")).isFalse();
+    assertThat(graph.isConnected("a", "b")).isTrue();
+    assertThat(graph.isConnected("b", "a")).isTrue();
+    assertThat(graph.isConnected("a", "c")).isFalse();
+    assertThat(graph.isConnected("b", "c")).isFalse();
+    assertThat(graph.isConnected("c", "a")).isFalse();
+    assertThat(graph.isConnected("c", "b")).isFalse();
+    assertThat(graph.isConnected("a", "a")).isFalse();
+    assertThat(graph.isConnected("b", "b")).isFalse();
+    assertThat(graph.isConnected("b", "c")).isFalse();
+    assertThat(graph.isConnectedInDirection("a", "b")).isTrue();
+    assertThat(graph.isConnectedInDirection("b", "a")).isFalse();
+    assertThat(graph.isConnectedInDirection("a", "c")).isFalse();
+    assertThat(graph.isConnectedInDirection("b", "c")).isFalse();
+    assertThat(graph.isConnectedInDirection("c", "a")).isFalse();
+    assertThat(graph.isConnectedInDirection("c", "b")).isFalse();
 
     // Removal.
     graph.disconnect("a", "b");
-    assertFalse(graph.isConnected("a", "b"));
-    assertFalse(graph.isConnected("b", "a"));
+    assertThat(graph.isConnected("a", "b")).isFalse();
+    assertThat(graph.isConnected("b", "a")).isFalse();
 
     // Disconnect both ways.
     graph.connect("a", "->", "b");
     graph.connect("b", "->", "a");
     graph.disconnect("a", "b");
-    assertFalse(graph.isConnected("a", "b"));
-    assertFalse(graph.isConnected("b", "a"));
+    assertThat(graph.isConnected("a", "b")).isFalse();
+    assertThat(graph.isConnected("b", "a")).isFalse();
 
     // Disconnect one way.
     graph.connect("a", "->", "b");
     graph.connect("b", "->", "a");
     graph.disconnectInDirection("a", "b");
-    assertTrue(graph.isConnected("b", "a"));
-    assertTrue(graph.isConnected("a", "b"));
-    assertFalse(graph.isConnectedInDirection("a", "b"));
-    assertTrue(graph.isConnectedInDirection("b", "a"));
+    assertThat(graph.isConnected("b", "a")).isTrue();
+    assertThat(graph.isConnected("a", "b")).isTrue();
+    assertThat(graph.isConnectedInDirection("a", "b")).isFalse();
+    assertThat(graph.isConnectedInDirection("b", "a")).isTrue();
   }
 
   public void testUndirectedSimple() {
@@ -95,24 +98,24 @@ public class GraphTest extends TestCase {
     graph.createNode("b");
     graph.createNode("c");
     graph.connect("a", "--", "b");
-    assertTrue(graph.hasNode("a"));
-    assertTrue(graph.hasNode("b"));
-    assertTrue(graph.hasNode("c"));
-    assertFalse(graph.hasNode("d"));
-    assertTrue(graph.isConnected("a", "b"));
-    assertTrue(graph.isConnected("b", "a"));
-    assertFalse(graph.isConnected("a", "c"));
-    assertFalse(graph.isConnected("b", "c"));
-    assertFalse(graph.isConnected("c", "a"));
-    assertFalse(graph.isConnected("c", "b"));
-    assertFalse(graph.isConnected("a", "a"));
-    assertFalse(graph.isConnected("b", "b"));
-    assertFalse(graph.isConnected("b", "c"));
+    assertThat(graph.hasNode("a")).isTrue();
+    assertThat(graph.hasNode("b")).isTrue();
+    assertThat(graph.hasNode("c")).isTrue();
+    assertThat(graph.hasNode("d")).isFalse();
+    assertThat(graph.isConnected("a", "b")).isTrue();
+    assertThat(graph.isConnected("b", "a")).isTrue();
+    assertThat(graph.isConnected("a", "c")).isFalse();
+    assertThat(graph.isConnected("b", "c")).isFalse();
+    assertThat(graph.isConnected("c", "a")).isFalse();
+    assertThat(graph.isConnected("c", "b")).isFalse();
+    assertThat(graph.isConnected("a", "a")).isFalse();
+    assertThat(graph.isConnected("b", "b")).isFalse();
+    assertThat(graph.isConnected("b", "c")).isFalse();
 
     // Removal.
     graph.disconnect("a", "b");
-    assertFalse(graph.isConnected("a", "b"));
-    assertFalse(graph.isConnected("b", "a"));
+    assertThat(graph.isConnected("a", "b")).isFalse();
+    assertThat(graph.isConnected("b", "a")).isFalse();
   }
 
   public void testDirectedSelfLoop() {
@@ -121,27 +124,27 @@ public class GraphTest extends TestCase {
     graph.createNode("a");
     graph.createNode("b");
     graph.connect("a", "->", "a");
-    assertTrue(graph.isConnected("a", "a"));
-    assertFalse(graph.isConnected("a", "b"));
-    assertFalse(graph.isConnected("b", "a"));
-    assertTrue(graph.isConnectedInDirection("a", "a"));
-    assertFalse(graph.isConnectedInDirection("a", "b"));
-    assertFalse(graph.isConnectedInDirection("b", "a"));
+    assertThat(graph.isConnected("a", "a")).isTrue();
+    assertThat(graph.isConnected("a", "b")).isFalse();
+    assertThat(graph.isConnected("b", "a")).isFalse();
+    assertThat(graph.isConnectedInDirection("a", "a")).isTrue();
+    assertThat(graph.isConnectedInDirection("a", "b")).isFalse();
+    assertThat(graph.isConnectedInDirection("b", "a")).isFalse();
 
     // Removal.
     graph.disconnect("a", "a");
-    assertFalse(graph.isConnected("a", "a"));
+    assertThat(graph.isConnected("a", "a")).isFalse();
 
     // Disconnect both ways.
     graph.connect("a", "->", "a");
     graph.disconnect("a", "a");
-    assertFalse(graph.isConnected("a", "a"));
-    assertFalse(graph.isConnected("a", "a"));
+    assertThat(graph.isConnected("a", "a")).isFalse();
+    assertThat(graph.isConnected("a", "a")).isFalse();
 
     // Disconnect one way.
     graph.connect("a", "->", "a");
     graph.disconnectInDirection("a", "a");
-    assertFalse(graph.isConnected("a", "a"));
+    assertThat(graph.isConnected("a", "a")).isFalse();
   }
 
   public void testUndirectedSelfLoop() {
@@ -150,13 +153,13 @@ public class GraphTest extends TestCase {
     graph.createNode("a");
     graph.createNode("b");
     graph.connect("a", "--", "a");
-    assertTrue(graph.isConnected("a", "a"));
-    assertFalse(graph.isConnected("a", "b"));
-    assertFalse(graph.isConnected("b", "a"));
+    assertThat(graph.isConnected("a", "a")).isTrue();
+    assertThat(graph.isConnected("a", "b")).isFalse();
+    assertThat(graph.isConnected("b", "a")).isFalse();
 
     // Removal.
     graph.disconnect("a", "a");
-    assertFalse(graph.isConnected("a", "a"));
+    assertThat(graph.isConnected("a", "a")).isFalse();
   }
 
   public void testDirectedInAndOutEdges() {
@@ -178,7 +181,7 @@ public class GraphTest extends TestCase {
 
     // Removal.
     graph.disconnect("a", "b");
-    assertFalse(graph.isConnected("a", "b"));
+    assertThat(graph.isConnected("a", "b")).isFalse();
   }
 
   public void testUndirectedNeighbors() {
@@ -200,7 +203,7 @@ public class GraphTest extends TestCase {
 
     // Removal.
     graph.disconnect("a", "b");
-    assertFalse(graph.isConnected("a", "b"));
+    assertThat(graph.isConnected("a", "b")).isFalse();
   }
 
   public void testDirectedGetFirstEdge() {
@@ -210,8 +213,8 @@ public class GraphTest extends TestCase {
     graph.createNode("b");
     graph.createNode("c");
     graph.connect("a", "-", "b");
-    assertEquals(graph.getFirstEdge("a", "b").getValue(), "-");
-    assertEquals(graph.getFirstEdge("b", "a").getValue(), "-");
+    assertThat("-").isEqualTo(graph.getFirstEdge("a", "b").getValue());
+    assertThat("-").isEqualTo(graph.getFirstEdge("b", "a").getValue());
     assertNull(graph.getFirstEdge("a", "c"));
   }
 
@@ -222,8 +225,8 @@ public class GraphTest extends TestCase {
     graph.createNode("b");
     graph.createNode("c");
     graph.connect("a", "-", "b");
-    assertEquals(graph.getFirstEdge("a", "b").getValue(), "-");
-    assertEquals(graph.getFirstEdge("b", "a").getValue(), "-");
+    assertThat("-").isEqualTo(graph.getFirstEdge("a", "b").getValue());
+    assertThat("-").isEqualTo(graph.getFirstEdge("b", "a").getValue());
     assertNull(graph.getFirstEdge("a", "c"));
   }
 
@@ -304,15 +307,15 @@ public class GraphTest extends TestCase {
     graph.createNode("b");
     graph.createNode("c");
     graph.createNode("d");
-    assertEquals(0, graph.getNodeDegree("a"));
+    assertThat(graph.getNodeDegree("a")).isEqualTo(0);
     graph.connect("a", "-", "b");
-    assertEquals(1, graph.getNodeDegree("a"));
+    assertThat(graph.getNodeDegree("a")).isEqualTo(1);
     graph.connect("b", "-", "c");
-    assertEquals(1, graph.getNodeDegree("a"));
+    assertThat(graph.getNodeDegree("a")).isEqualTo(1);
     graph.connect("a", "-", "c");
-    assertEquals(2, graph.getNodeDegree("a"));
+    assertThat(graph.getNodeDegree("a")).isEqualTo(2);
     graph.connect("d", "-", "a");
-    assertEquals(3, graph.getNodeDegree("a"));
+    assertThat(graph.getNodeDegree("a")).isEqualTo(3);
   }
 
   public void testDirectedConnectIfNotFound() {
@@ -326,13 +329,13 @@ public class GraphTest extends TestCase {
     graph.createNode("a");
     graph.createNode("b");
     graph.connectIfNotFound("a", "-", "b");
-    assertEquals(1, graph.getNodeDegree("a"));
+    assertThat(graph.getNodeDegree("a")).isEqualTo(1);
     graph.connectIfNotFound("a", "-", "b");
-    assertEquals(1, graph.getNodeDegree("a"));
+    assertThat(graph.getNodeDegree("a")).isEqualTo(1);
     graph.connectIfNotFound("a", null, "b");
-    assertEquals(2, graph.getNodeDegree("a"));
+    assertThat(graph.getNodeDegree("a")).isEqualTo(2);
     graph.connectIfNotFound("a", null, "b");
-    assertEquals(2, graph.getNodeDegree("a"));
+    assertThat(graph.getNodeDegree("a")).isEqualTo(2);
   }
 
   public void testSimpleSubGraph() {
@@ -354,9 +357,9 @@ public class GraphTest extends TestCase {
       // exception expected
     }
 
-    assertFalse(subGraph.isIndependentOf("a"));
-    assertFalse(subGraph.isIndependentOf("b"));
-    assertTrue(subGraph.isIndependentOf("c"));
+    assertThat(subGraph.isIndependentOf("a")).isFalse();
+    assertThat(subGraph.isIndependentOf("b")).isFalse();
+    assertThat(subGraph.isIndependentOf("c")).isTrue();
   }
 
   private <T extends GraphNode<String, String>> void assertListCount(
@@ -366,19 +369,17 @@ public class GraphTest extends TestCase {
         count--;
       }
     }
-    assertTrue(count == 0);
+    assertThat(count).isEqualTo(0);
   }
 
   private <T extends GraphNode<String, String>> void assertSetEquals(
       List<T> list, String ... targets) {
-    Set<String> set = new HashSet<String>();
+    Set<String> set = new HashSet<>();
     for (GraphNode<String, String> node : list) {
       set.add(node.getValue());
     }
-    Set<String> otherSet = new HashSet<String>();
-    for (String target : targets) {
-      otherSet.add(target);
-    }
-    assertTrue(otherSet.equals(set));
+    Set<String> otherSet = new HashSet<>();
+    Collections.addAll(otherSet, targets);
+    assertThat(otherSet).isEqualTo(set);
   }
 }

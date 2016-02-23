@@ -23,42 +23,35 @@ import com.google.template.soy.data.restricted.NullData;
 import com.google.template.soy.data.restricted.StringData;
 
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 
 /**
  * Abstract base class for all nodes in a Soy data tree.
  *
- * @author Kai Huang
+ * <p> Important: Even though this class is not marked 'final', do not extend this class.
+ *
  */
-public abstract class SoyData {
+public abstract class SoyData extends SoyAbstractValue {
 
 
   /**
-   * Creation function for creating a SoyData object out of any existing primitive, data object, or
-   * data structure.
-   *
-   * <p> Important: Avoid using this function if you know the type of the object at compile time.
-   * For example, if the object is a primitive, it can be passed directly to methods such as
-   * {@code SoyMapData.put()} or {@code SoyListData.add()}. If the object is a Map or an Iterable,
-   * you can directly create the equivalent SoyData object using the constructor of
-   * {@code SoyMapData} or {@code SoyListData}.
-   *
-   * <p> If the given object is already a SoyData object, then it is simply returned.
-   * Otherwise a new SoyData object will be created that is equivalent to the given primitive, data
-   * object, or data structure (even if the given object is null!).
-   *
-   * <p> Note that in order for the conversion process to succeed, the given data structure must
-   * correspond to a valid SoyData tree. Some requirements include:
-   * (a) all Maps within your data structure must have string keys that are identifiers,
-   * (b) all non-leaf nodes must be Maps or Lists,
-   * (c) all leaf nodes must be null, boolean, int, double, or String (corresponding to Soy
-   *     primitive data types null, boolean, integer, float, string).
+   * Creates deprecated SoyData objects from standard Java data structures.
    *
    * @param obj The existing object or data structure to convert.
    * @return A SoyData object or tree that corresponds to the given object.
    * @throws SoyDataException If the given object cannot be converted to SoyData.
+   * @deprecated It's best to pass whatever object you have directly to the Soy templates you're
+   *     using -- Soy understands primitives, lists, and maps natively, and if you install runtime
+   *     support you can also pass protocol buffers. If you're interacting directly with the Soy
+   *     runtime and need SoyValue objects, use SoyValueHelper instead.
    */
+  @Deprecated
   public static SoyData createFromExistingData(Object obj) {
+
+    // Important: This is frozen for backwards compatibility, For future changes (pun not intended),
+    // use SoyValueHelper, which works with the new interfaces SoyValue and SoyValueProvider.
 
     if (obj == null) {
       return NullData.INSTANCE;
@@ -70,6 +63,8 @@ public abstract class SoyData {
       return BooleanData.forValue((Boolean) obj);
     } else if (obj instanceof Integer) {
       return IntegerData.forValue((Integer) obj);
+    } else if (obj instanceof Long) {
+      return IntegerData.forValue((Long) obj);
     } else if (obj instanceof Map<?, ?>) {
       @SuppressWarnings("unchecked")
       Map<String, ?> objCast = (Map<String, ?>) obj;
@@ -81,6 +76,18 @@ public abstract class SoyData {
     } else if (obj instanceof Float) {
       // Automatically convert float to double.
       return FloatData.forValue((Float) obj);
+    } else if (obj instanceof Future<?>) {
+      // Note: In the old SoyData, we don't support late-resolution of Futures. We immediately
+      // resolve the Future object here. For late-resolution, use SoyValueHelper.convert().
+      try {
+        return createFromExistingData(((Future<?>) obj).get());
+      } catch (InterruptedException e) {
+        throw new SoyDataException(
+            "Encountered InterruptedException when resolving Future object.", e);
+      } catch (ExecutionException e) {
+        throw new SoyDataException(
+            "Encountered ExecutionException when resolving Future object.", e);
+      }
     } else {
       throw new SoyDataException(
           "Attempting to convert unrecognized object to Soy data (object type " +
@@ -89,100 +96,47 @@ public abstract class SoyData {
   }
 
 
-  /** A special case of {@link #createFromExistingData(Object)}. */
-  public static SoyData createFromExistingData(String str) {
-    if (str == null) {
-      return NullData.INSTANCE;
-    } else {
-      return StringData.forValue(str);
-    }
+  // -----------------------------------------------------------------------------------------------
+  // Adapting old implementations to the new interface.
+
+
+  // The old SoyData has method toBoolean(), while the new SoyValue has method coerceToBoolean().
+  // This adapts old implementations to the new interface.
+  @SuppressWarnings("deprecation")
+  @Override public boolean coerceToBoolean() {
+   return toBoolean();
   }
 
 
   /**
-   * Converts this data object into a string (e.g. when used in a string context).
-   * @return The value of this data object if coerced into a string.
-   */
-  @Override public abstract String toString();
-
-
-  /**
+   * This was a required method in the old SoyData interface. For new data classes, please use
+   * interface SoyValue, which has the method coerceToBoolean().
+   *
    * Converts this data object into a boolean (e.g. when used in a boolean context). In other words,
    * this method tells whether this object is truthy.
    * @return The value of this data object if coerced into a boolean. I.e. true if this object is
    *     truthy, false if this object is falsy.
    */
+  @Deprecated
   public abstract boolean toBoolean();
 
 
+  // The old SoyData has method toString(), while the new SoyValue has method coerceToString().
+  // This adapts old implementations to the new interface.
+  @SuppressWarnings("deprecation")
+  @Override public String coerceToString() {
+    return toString();
+  }
+
+
   /**
-   * Compares this data object against another for equality in the sense of the operator '==' for
-   * Soy expressions.
+   * This was a required method in the old SoyData interface. For new data classes, please use
+   * interface SoyValue, which has the method coerceToString().
    *
-   * @param other The other data object to compare against.
-   * @return True if the two objects are equal.
+   * Converts this data object into a string (e.g. when used in a string context).
+   * @return The value of this data object if coerced into a string.
    */
-  @Override public abstract boolean equals(Object other);
-
-
-  /**
-   * Precondition: Only call this method if you know that this SoyData object is a boolean.
-   * This method gets the boolean value of this boolean object.
-   * @return The boolean value of this boolean object.
-   * @throws SoyDataException If this object is not actually a boolean.
-   */
-  public boolean booleanValue() {
-    throw new SoyDataException("Expecting boolean value but instead encountered type "
-        + getClass().getSimpleName());
-  }
-
-
-  /**
-   * Precondition: Only call this method if you know that this SoyData object is an integer.
-   * This method gets the integer value of this integer object.
-   * @return The integer value of this integer object.
-   * @throws SoyDataException If this object is not actually an integer.
-   */
-  public int integerValue() {
-    throw new SoyDataException("Expecting integer value but instead encountered type "
-        + getClass().getSimpleName());
-  }
-
-
-  /**
-   * Precondition: Only call this method if you know that this SoyData object is a float.
-   * This method gets the float value of this float object.
-   * @return The float value of this float object.
-   * @throws SoyDataException If this object is not actually a float.
-   */
-  public double floatValue() {
-    throw new SoyDataException("Expecting float value but instead encountered type "
-        + getClass().getSimpleName());
-  }
-
-
-  /**
-   * Precondition: Only call this method if you know that this SoyData object is a number.
-   * This method gets the float value of this number object (converting integer to float if
-   * necessary).
-   * @return The float value of this number object.
-   * @throws SoyDataException If this object is not actually a number.
-   */
-  public double numberValue() {
-    throw new SoyDataException("Expecting number value but instead encountered type "
-        + getClass().getSimpleName());
-  }
-
-
-  /**
-   * Precondition: Only call this method if you know that this SoyData object is a string.
-   * This method gets the string value of this string object.
-   * @return The string value of this string object.
-   * @throws SoyDataException If this object is not actually a string.
-   */
-  public String stringValue() {
-    throw new SoyDataException("Expecting string value but instead encountered type "
-        + getClass().getSimpleName());
-  }
+  // TODO: Maybe deprecate this method (even though it's a standard method).
+  @Override public abstract String toString();
 
 }

@@ -16,10 +16,12 @@
 
 package com.google.javascript.jscomp;
 
+import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
+
 /**
  * Tests {@link CheckGlobalThis}.
  */
-public class CheckGlobalThisTest extends CompilerTestCase {
+public final class CheckGlobalThisTest extends CompilerTestCase {
   public CheckGlobalThisTest() {
     this.parseTypeInfo = true;
   }
@@ -117,23 +119,23 @@ public class CheckGlobalThisTest extends CompilerTestCase {
   }
 
   public void testThisJSDoc1() throws Exception {
-    testSame("/** @this whatever */function h() { this.foo = 56; }");
+    testSame("/** @this {whatever} */function h() { this.foo = 56; }");
   }
 
   public void testThisJSDoc2() throws Exception {
-    testSame("/** @this whatever */var h = function() { this.foo = 56; }");
+    testSame("/** @this {whatever} */var h = function() { this.foo = 56; }");
   }
 
   public void testThisJSDoc3() throws Exception {
-    testSame("/** @this whatever */foo.bar = function() { this.foo = 56; }");
+    testSame("/** @this {whatever} */foo.bar = function() { this.foo = 56; }");
   }
 
   public void testThisJSDoc4() throws Exception {
-    testSame("/** @this whatever */function f() { this.foo = 56; }");
+    testSame("/** @this {whatever} */function f() { this.foo = 56; }");
   }
 
   public void testThisJSDoc5() throws Exception {
-    testSame("function a() { /** @this x */function f() { this.foo = 56; } }");
+    testSame("function a() { /** @this {x} */function f() { this.foo = 56; } }");
   }
 
   public void testMethod1() {
@@ -238,7 +240,65 @@ public class CheckGlobalThisTest extends CompilerTestCase {
 
   public void testSuppressWarning() {
     testFailure("var x = function() { this.complex = 5; };");
-    testSame("/** @suppress {globalThis} */" +
-        "var x = function() { this.complex = 5; };");
+  }
+
+  public void testArrowFunction1() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT6);
+    testFailure("var a = () => this.foo;");
+  }
+
+  public void testArrowFunction2() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT6);
+    testFailure("(() => this.foo)();");
+  }
+
+  public void testArrowFunction3() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT6);
+    testFailure("function Foo() {} " +
+        "Foo.prototype.getFoo = () => this.foo;");
+  }
+
+  public void testArrowFunction4() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT6);
+    testFailure("function Foo() {} " +
+        "Foo.prototype.setFoo = (f) => { this.foo = f; };");
+  }
+
+  public void testInnerFunctionInClassMethod1() {
+    // TODO(user): It would be nice to warn for using 'this' here
+    testSame(LINE_JOINER.join(
+        "function Foo() {}",
+        "Foo.prototype.init = function() {",
+        "  button.addEventListener('click', function () {",
+        "    this.click();",
+        "  });",
+        "}",
+        "Foo.prototype.click = function() {}"));
+  }
+
+  public void testInnerFunctionInClassMethod2() {
+    // TODO(user): It would be nice to warn for using 'this' here
+    testSame(LINE_JOINER.join(
+        "function Foo() {",
+        "  var x = function() {",
+        "    button.addEventListener('click', function () {",
+        "      this.click();",
+        "    });",
+        "  }",
+        "}"));
+  }
+
+  public void testInnerFunctionInEs6ClassMethod() {
+    // TODO(user): It would be nice to warn for using 'this' here
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT6);
+    testSame(LINE_JOINER.join(
+        "class Foo {",
+        "  constructor() {",
+        "    button.addEventListener('click', function () {",
+        "      this.click();",
+        "    });",
+        "  }",
+        "  click() {}",
+        "}"));
   }
 }

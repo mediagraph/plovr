@@ -17,14 +17,16 @@
 package com.google.template.soy.basicdirectives;
 
 import com.google.common.collect.ImmutableSet;
-import com.google.template.soy.data.SoyData;
 import com.google.template.soy.data.SoyDataException;
-import com.google.template.soy.javasrc.restricted.JavaCodeUtils;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcPrintDirective;
+import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcPrintDirective;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuPrintDirective;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
+import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
+import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
+import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
 
 import java.util.List;
 import java.util.Set;
@@ -35,13 +37,13 @@ import javax.inject.Singleton;
 
 /**
  * A directive that truncates a string to a maximum length if it is too long, optionally adding
- * ellipsis. 
+ * ellipsis.
  *
- * @author Kai Huang
  */
 @Singleton
-public class TruncateDirective extends SoyAbstractTofuPrintDirective
-    implements SoyJsSrcPrintDirective, SoyJavaSrcPrintDirective {
+@SoyPurePrintDirective
+final class TruncateDirective implements SoyJavaPrintDirective, SoyJsSrcPrintDirective,
+    SoyPySrcPrintDirective {
 
 
   @Inject
@@ -52,19 +54,15 @@ public class TruncateDirective extends SoyAbstractTofuPrintDirective
     return "|truncate";
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(1, 2);
   }
-
 
   @Override public boolean shouldCancelAutoescape() {
     return false;
   }
 
-
-  @Override public SoyData apply(SoyData value, List<SoyData> args) {
-
+  @Override public SoyValue applyForJava(SoyValue value, List<SoyValue> args) {
     int maxLen;
     try {
       maxLen = args.get(0).integerValue();
@@ -74,9 +72,9 @@ public class TruncateDirective extends SoyAbstractTofuPrintDirective
               args.get(0).stringValue() + "\").");
     }
 
-    String str = value.toString();
+    String str = value.coerceToString();
     if (str.length() <= maxLen) {
-      return SoyData.createFromExistingData(str);  // no need to truncate
+      return StringData.forValue(str);  // no need to truncate
     }
 
     boolean doAddEllipsis;
@@ -115,12 +113,10 @@ public class TruncateDirective extends SoyAbstractTofuPrintDirective
       str += "...";
     }
 
-    return SoyData.createFromExistingData(str);
+    return StringData.forValue(str);
   }
 
-
   @Override public JsExpr applyForJsSrc(JsExpr value, List<JsExpr> args) {
-
     String maxLenExprText = args.get(0).getText();
     String doAddEllipsisExprText = (args.size() == 2) ? args.get(1).getText() : "true" /*default*/;
 
@@ -130,19 +126,15 @@ public class TruncateDirective extends SoyAbstractTofuPrintDirective
         Integer.MAX_VALUE);
   }
 
+  @Override public PyExpr applyForPySrc(PyExpr value, List<PyExpr> args) {
+    // Truncation always wants a string, so to potentially save an unnecessary conversion, we do
+    // optional coercing at compile time.
+    PyExpr input = value.toPyString();
+    PyExpr maxLen = args.get(0);
+    PyExpr doAddEllipsis = (args.size() == 2) ? args.get(1) : new PyExpr("True", Integer.MAX_VALUE);
 
-  @Override public JavaExpr applyForJavaSrc(JavaExpr value, List<JavaExpr> args) {
-
-    String valueExprText = JavaCodeUtils.genCoerceString(value);
-    String maxLenExprText = JavaCodeUtils.genIntegerValue(args.get(0));
-    String doAddEllipsisExprText =
-        (args.size() == 2) ? JavaCodeUtils.genBooleanValue(args.get(1)) : "true" /*default*/;
-
-    return new JavaExpr(
-        JavaCodeUtils.genFunctionCall(
-            JavaCodeUtils.UTILS_LIB + ".$$truncate",
-            valueExprText, maxLenExprText, doAddEllipsisExprText),
-        String.class, Integer.MAX_VALUE);
+    PyFunctionExprBuilder fnBuilder = new PyFunctionExprBuilder("directives.truncate");
+    fnBuilder.addArg(input).addArg(maxLen).addArg(doAddEllipsis);
+    return fnBuilder.asPyStringExpr();
   }
-
 }

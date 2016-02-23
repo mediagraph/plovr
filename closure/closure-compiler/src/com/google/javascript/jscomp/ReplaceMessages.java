@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp;
 
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.base.Preconditions;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
@@ -28,8 +30,10 @@ import javax.annotation.Nullable;
  * ReplaceMessages replaces user-visible messages with alternatives.
  * It uses Google specific JsMessageVisitor implementation.
  *
+ * @author anatol@google.com (Anatol Pomazau)
  */
-class ReplaceMessages extends JsMessageVisitor {
+@GwtIncompatible("JsMessage")
+final class ReplaceMessages extends JsMessageVisitor {
   private final MessageBundle bundle;
   private final boolean strictReplacement;
 
@@ -62,14 +66,14 @@ class ReplaceMessages extends JsMessageVisitor {
   }
 
   @Override
-  void processJsMessage(JsMessage message,
+  protected void processJsMessage(JsMessage message,
       JsMessageDefinition definition) {
 
     // Get the replacement.
     JsMessage replacement = bundle.getMessage(message.getId());
     if (replacement == null) {
       if (strictReplacement) {
-        compiler.report(JSError.make(message.getSourceName(),
+        compiler.report(JSError.make(
             definition.getMessageNode(), BUNDLE_DOES_NOT_HAVE_THE_MESSAGE,
             message.getId()));
         // Fallback to the default message
@@ -87,14 +91,14 @@ class ReplaceMessages extends JsMessageVisitor {
     try {
       newValue = getNewValueNode(replacement, msgNode);
     } catch (MalformedException e) {
-      compiler.report(JSError.make(message.getSourceName(),
+      compiler.report(JSError.make(
           e.getNode(), MESSAGE_TREE_MALFORMED, e.getMessage()));
       newValue = msgNode;
     }
 
     if (newValue != msgNode) {
-      newValue.copyInformationFromForTree(msgNode);
-      definition.getMessageParentNode().replaceChild(msgNode, newValue);
+      newValue.useSourceInfoIfMissingFromForTree(msgNode);
+      msgNode.getParent().replaceChild(msgNode, newValue);
       compiler.reportCodeChange();
     }
   }
@@ -183,7 +187,7 @@ class ReplaceMessages extends JsMessageVisitor {
     // TODO(user): checkTreeEqual is overkill. I am in process of rewriting
     // these functions.
     if (newBlockNode.checkTreeEquals(oldBlockNode) != null) {
-      newBlockNode.copyInformationFromForTree(oldBlockNode);
+      newBlockNode.useSourceInfoIfMissingFromForTree(oldBlockNode);
       functionNode.replaceChild(oldBlockNode, newBlockNode);
       compiler.reportCodeChange();
     }
@@ -203,8 +207,8 @@ class ReplaceMessages extends JsMessageVisitor {
    *   placeholder reference that does not correspond to a valid argument in
    *   the arg list
    */
-  private Node constructAddOrStringNode(Iterator<CharSequence> partsIterator,
-                                        Node argListNode)
+  private static Node constructAddOrStringNode(Iterator<CharSequence> partsIterator,
+                                               Node argListNode)
       throws MalformedException {
     CharSequence part = partsIterator.next();
     Node partNode = null;
@@ -293,7 +297,8 @@ class ReplaceMessages extends JsMessageVisitor {
     Node objLitNode = stringExprNode.getNext();
 
     // Build the replacement tree.
-    return constructStringExprNode(message.parts().iterator(), objLitNode);
+    return constructStringExprNode(
+        message.parts().iterator(), objLitNode, callNode);
   }
 
   /**
@@ -309,8 +314,9 @@ class ReplaceMessages extends JsMessageVisitor {
    * @throws MalformedException if {@code parts} contains a placeholder
    *   reference that does not correspond to a valid placeholder name
    */
-  private Node constructStringExprNode(Iterator<CharSequence> parts,
-      Node objLitNode) throws MalformedException {
+  private static Node constructStringExprNode(
+      Iterator<CharSequence> parts, Node objLitNode, Node refNode) throws MalformedException {
+    Preconditions.checkNotNull(refNode);
 
     CharSequence part = parts.next();
     Node partNode = null;
@@ -321,7 +327,7 @@ class ReplaceMessages extends JsMessageVisitor {
       // The translated message is null
       if (objLitNode == null) {
         throw new MalformedException("Empty placeholder value map " +
-            "for a translated message with placeholders.", objLitNode);
+            "for a translated message with placeholders.", refNode);
       }
 
       for (Node key = objLitNode.getFirstChild(); key != null;
@@ -344,7 +350,7 @@ class ReplaceMessages extends JsMessageVisitor {
 
     if (parts.hasNext()) {
       return IR.add(partNode,
-          constructStringExprNode(parts, objLitNode));
+          constructStringExprNode(parts, objLitNode, refNode));
     } else {
       return partNode;
     }
@@ -356,7 +362,7 @@ class ReplaceMessages extends JsMessageVisitor {
    *
    * @throws IllegalArgumentException if the node is null or the wrong type
    */
-  private void checkStringExprNode(@Nullable Node node) {
+  private static void checkStringExprNode(@Nullable Node node) {
     if (node == null) {
       throw new IllegalArgumentException("Expected a string; found: null");
     }

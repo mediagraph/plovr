@@ -20,7 +20,6 @@ import com.google.common.collect.Lists;
 
 import java.util.List;
 
-
 /**
  * Base class for {@code AbstractXxxNodeVisitor} classes.
  *
@@ -33,11 +32,9 @@ import java.util.List;
  * @param <R> The return type of this visitor.
  *
  * @see AbstractNodeVisitor
- * @author Kai Huang
  */
 public abstract class AbstractReturningNodeVisitor<N extends Node, R>
     implements NodeVisitor<N, R> {
-
 
   @Override public R exec(N node) {
     return visit(node);
@@ -83,5 +80,4 @@ public abstract class AbstractReturningNodeVisitor<N extends Node, R>
     }
     return results;
   }
-
 }

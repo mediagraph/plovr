@@ -18,7 +18,6 @@ package com.google.javascript.jscomp;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Multiset;
-import com.google.common.collect.Sets;
 import com.google.common.collect.TreeMultiset;
 import com.google.javascript.jscomp.DefinitionsRemover.Definition;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
@@ -27,13 +26,14 @@ import com.google.javascript.rhino.Token;
 
 import java.util.Collection;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Tests for {@link SimpleDefinitionFinder}
  *
  */
-public class SimpleDefinitionFinderTest extends CompilerTestCase {
-  Set<String> found = Sets.newTreeSet();
+public final class SimpleDefinitionFinderTest extends CompilerTestCase {
+  Set<String> found = new TreeSet<>();
 
   @Override
   protected int getNumRepetitions() {
@@ -47,7 +47,7 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
     found.clear();
   }
 
-  public void testDefineNumber() throws Exception {
+  public void testDefineNumber() {
     checkDefinitionsInJs(
         "var a = 1",
         ImmutableSet.of("DEF NAME a -> NUMBER"));
@@ -77,11 +77,11 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
     // TODO(johnlenz): Fix this.
     checkDefinitionsInJs(
       "({'a' : 1}); o['a']",
-      ImmutableSet.<String>of("DEF STRING_KEY null -> NUMBER"));
+      ImmutableSet.of("DEF STRING_KEY null -> NUMBER"));
 
     checkDefinitionsInJs(
       "({1 : 1}); o[1]",
-      ImmutableSet.<String>of("DEF STRING_KEY null -> NUMBER"));
+      ImmutableSet.of("DEF STRING_KEY null -> NUMBER"));
 
     checkDefinitionsInJs(
         "var a = {b : 1}; a.b",
@@ -91,7 +91,7 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
                         "USE GETPROP a.b -> [NUMBER]"));
   }
 
-  public void testDefineGet() throws Exception {
+  public void testDefineGet() {
     // TODO(johnlenz): Add support for quoted properties
     checkDefinitionsInJs(
       "({get a() {}}); o.a",
@@ -99,7 +99,7 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
                       "USE GETPROP o.a -> [FUNCTION]"));
   }
 
-  public void testDefineSet() throws Exception {
+  public void testDefineSet() {
     // TODO(johnlenz): Add support for quoted properties
     checkDefinitionsInJs(
       "({set a(b) {}}); o.a",
@@ -108,7 +108,7 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
                       "USE GETPROP o.a -> [FUNCTION]"));
   }
 
-  public void testDefineFunction() throws Exception {
+  public void testDefineFunction() {
     checkDefinitionsInJs(
         "var a = function(){}",
         ImmutableSet.of("DEF NAME a -> FUNCTION"));
@@ -139,7 +139,7 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
         ImmutableSet.of("DEF GETPROP null -> FUNCTION"));
   }
 
-  public void testFunctionArgumentsBasic() throws Exception {
+  public void testFunctionArgumentsBasic() {
     checkDefinitionsInJs(
         "function f(a){return a}",
         ImmutableSet.of("DEF NAME a -> <null>",
@@ -154,9 +154,10 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
                         "DEF NAME f -> FUNCTION"));
   }
 
-  public void testFunctionArgumentsInExterns() throws Exception {
-    final String DEF = "var f = function(arg1, arg2){}";
-    final String USE = "f(1, 2)";
+  private static final String DEF = "var f = function(arg1, arg2){}";
+  private static final String USE = "f(1, 2)";
+
+  public void testFunctionArgumentsInExterns() {
 
     // function arguments are definitions when they appear in source.
     checkDefinitionsInJs(
@@ -173,7 +174,7 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
                         "USE NAME f -> [EXTERN FUNCTION]"));
   }
 
-  public void testMultipleDefinition() throws Exception {
+  public void testMultipleDefinition() {
     checkDefinitionsInJs(
         "a = 1; a = 2; a",
         ImmutableSet.of("DEF NAME a -> NUMBER",
@@ -232,7 +233,7 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
 
   }
 
-  public void testDefinitionInExterns() throws Exception {
+  public void testDefinitionInExterns() {
     String externs = "var a = 1";
 
     checkDefinitionsInExterns(
@@ -279,6 +280,42 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
     checkDefinitionsInExterns(
         externs,
         ImmutableSet.of("DEF NAME a -> EXTERN NUMBER"));
+  }
+
+  public void testRecordDefinitionInExterns() {
+    checkDefinitionsInExterns(
+        "var ns = {};" +
+        "/** @type {number} */ ns.NUM;",
+        ImmutableSet.of("DEF NAME ns -> EXTERN <null>",
+                        "DEF GETPROP ns.NUM -> EXTERN <null>",
+                        "USE NAME ns -> [EXTERN <null>]"));
+
+    checkDefinitionsInExterns(
+        "var ns = {};" +
+        "/** @type {function(T,T):number} @template T */ ns.COMPARATOR;",
+        ImmutableSet.of("DEF NAME ns -> EXTERN <null>",
+                        "DEF GETPROP ns.COMPARATOR -> EXTERN <null>",
+                        "USE NAME ns -> [EXTERN <null>]"));
+
+    checkDefinitionsInExterns(
+        "/** @type {{ prop1 : number, prop2 : string}} */" +
+        "var ns;",
+        ImmutableSet.of("DEF NAME ns -> EXTERN <null>",
+                        "DEF STRING_KEY null -> EXTERN <null>",
+                        "DEF STRING_KEY null -> EXTERN <null>"));
+
+    checkDefinitionsInExterns(
+        "/** @typedef {{ prop1 : number, prop2 : string}} */" +
+        "var ns;",
+        ImmutableSet.of("DEF NAME ns -> EXTERN <null>",
+                        "DEF STRING_KEY null -> EXTERN <null>",
+                        "DEF STRING_KEY null -> EXTERN <null>"));
+  }
+
+  public void testUnitializedDefinitionInExterns() {
+    checkDefinitionsInExterns(
+        "/** @type {number} */ var HYBRID;",
+        ImmutableSet.of("DEF NAME HYBRID -> EXTERN <null>"));
   }
 
   public void testObjectLitInExterns() {
@@ -349,8 +386,8 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
     @Override
     public void process(Node externs, Node root) {
       passUnderTest.process(externs, root);
-      NodeTraversal.traverse(compiler, externs, this);
-      NodeTraversal.traverse(compiler, root, this);
+      NodeTraversal.traverseEs6(compiler, externs, this);
+      NodeTraversal.traverseEs6(compiler, root, this);
 
       for (DefinitionSite defSite : passUnderTest.getDefinitionSites()) {
         Node node = defSite.node;
@@ -407,7 +444,7 @@ public class SimpleDefinitionFinderTest extends CompilerTestCase {
           defstrs.add(defstr);
         }
 
-        sb.append(defstrs.toString());
+        sb.append(defstrs);
         found.add(sb.toString());
       }
     }

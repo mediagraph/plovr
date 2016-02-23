@@ -16,32 +16,49 @@
 
 package com.google.template.soy.soytree.jssrc;
 
+import com.google.common.collect.ImmutableList;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.AbstractSoyNode;
+import com.google.template.soy.soytree.SoyNode.BlockNode;
+import com.google.template.soy.soytree.SoyNode.Kind;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
-
 
 /**
  * Node representing a reference of a message variable (defined by {@code goog.getMsg}).
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class GoogMsgRefNode extends AbstractSoyNode implements StandaloneNode {
+public final class GoogMsgRefNode extends AbstractSoyNode implements StandaloneNode {
 
 
-  /** The name of the Closure message variable (defined by goog.getMsg). */
+  /** The JS var name of the rendered goog msg.. */
   private final String renderedGoogMsgVarName;
+
+  // TODO(gboyer): Consider switching out all references to escaping directive names to
+  // the EscapingMode enum, wherever custom print directives are not needed.
+  /**
+   * Escaping directives names (including the vertical bar) to apply to the return value. With
+   * strict autoescape, the result of each call site is escaped, which is potentially a no-op if
+   * the template's return value is the correct SanitizedContent object.
+   */
+  private final ImmutableList<String> escapingDirectiveNames;
 
 
   /**
    * @param id The id for this node.
-   * @param renderedGoogMsgVarName The name of the Closure message variable
-   * (defined by goog.getMsg).
+   * @param sourceLocation The node's source location.
+   * @param renderedGoogMsgVarName The JS var name of the rendered goog msg.
    */
-  public GoogMsgRefNode(int id, String renderedGoogMsgVarName) {
-    super(id);
+  public GoogMsgRefNode(
+      int id,
+      SourceLocation sourceLocation,
+      String renderedGoogMsgVarName,
+      ImmutableList<String> escapingDirectiveNames) {
+    super(id, sourceLocation);
     this.renderedGoogMsgVarName = renderedGoogMsgVarName;
+    this.escapingDirectiveNames = escapingDirectiveNames;
   }
 
 
@@ -49,9 +66,10 @@ public class GoogMsgRefNode extends AbstractSoyNode implements StandaloneNode {
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected GoogMsgRefNode(GoogMsgRefNode orig) {
-    super(orig);
+  private GoogMsgRefNode(GoogMsgRefNode orig, CopyState copyState) {
+    super(orig, copyState);
     this.renderedGoogMsgVarName = orig.renderedGoogMsgVarName;
+    this.escapingDirectiveNames = orig.escapingDirectiveNames;
   }
 
 
@@ -60,7 +78,7 @@ public class GoogMsgRefNode extends AbstractSoyNode implements StandaloneNode {
   }
 
 
-  /** Returns the name of the Closure message variable (defined by goog.getMsg). */
+  /** Returns the JS var name of the rendered goog msg. */
   public String getRenderedGoogMsgVarName() {
     return renderedGoogMsgVarName;
   }
@@ -76,8 +94,15 @@ public class GoogMsgRefNode extends AbstractSoyNode implements StandaloneNode {
   }
 
 
-  @Override public GoogMsgRefNode clone() {
-    return new GoogMsgRefNode(this);
+  @Override public GoogMsgRefNode copy(CopyState copyState) {
+    return new GoogMsgRefNode(this, copyState);
   }
 
+
+  /**
+   * Returns the escaping directives, applied from left to right.
+   */
+  public ImmutableList<String> getEscapingDirectiveNames() {
+    return escapingDirectiveNames;
+  }
 }

@@ -16,24 +16,23 @@
 
 package com.google.javascript.jscomp;
 
-import static com.google.javascript.jscomp.TypeCheck.WRONG_ARGUMENT_COUNT;
 import static com.google.javascript.jscomp.FunctionTypeBuilder.OPTIONAL_ARG_AT_END;
 import static com.google.javascript.jscomp.FunctionTypeBuilder.VAR_ARGS_MUST_BE_LAST;
+import static com.google.javascript.jscomp.TypeCheck.WRONG_ARGUMENT_COUNT;
 
-import com.google.javascript.jscomp.CheckLevel;
 import com.google.javascript.rhino.Node;
 
 /**
  * Tests for function and method arity checking in TypeCheck.
  * @author nicksantos@google.com (Nick Santos)
  */
-public class TypeCheckFunctionCheckTest extends CompilerTestCase {
+public final class TypeCheckFunctionCheckTest extends CompilerTestCase {
 
   private CodingConvention convention = null;
 
   public TypeCheckFunctionCheckTest() {
     parseTypeInfo = true;
-    enableTypeCheck(CheckLevel.ERROR);
+    enableTypeCheck();
   }
 
   @Override protected CompilerPass getProcessor(Compiler compiler) {

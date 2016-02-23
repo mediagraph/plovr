@@ -24,7 +24,7 @@ import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
-import com.google.javascript.rhino.jstype.JSType;
+import com.google.javascript.rhino.TypeI;
 
 import java.util.Map;
 import java.util.Set;
@@ -113,7 +113,7 @@ class ReplaceCssNames implements CompilerPass {
 
   private final Set<String> whitelist;
 
-  private final JSType nativeStringType;
+  private final TypeI nativeStringType;
 
   ReplaceCssNames(AbstractCompiler compiler,
       @Nullable Map<String, Integer> cssNames,
@@ -121,8 +121,8 @@ class ReplaceCssNames implements CompilerPass {
     this.compiler = compiler;
     this.cssNames = cssNames;
     this.whitelist = whitelist;
-    this.nativeStringType =  compiler.getTypeRegistry()
-        .getNativeType(STRING_TYPE);
+    this.nativeStringType =
+        compiler.getTypeIRegistry().getNativeType(STRING_TYPE);
   }
 
   @Override
@@ -132,7 +132,7 @@ class ReplaceCssNames implements CompilerPass {
     // only be called before this pass is actually run.
     symbolMap = getCssRenamingMap();
 
-    NodeTraversal.traverse(compiler, root, new Traversal());
+    NodeTraversal.traverseEs6(compiler, root, new Traversal());
   }
 
   @VisibleForTesting
@@ -144,8 +144,7 @@ class ReplaceCssNames implements CompilerPass {
 
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
-      if (n.isCall() &&
-          GET_CSS_NAME_FUNCTION.equals(n.getFirstChild().getQualifiedName())) {
+      if (n.isCall() && n.getFirstChild().matchesQualifiedName(GET_CSS_NAME_FUNCTION)) {
         int count = n.getChildCount();
         Node first = n.getFirstChild().getNext();
         switch (count) {
@@ -180,9 +179,9 @@ class ReplaceCssNames implements CompilerPass {
               n.removeChild(first);
               Node replacement = IR.add(first,
                   IR.string("-" + second.getString())
-                      .copyInformationFrom(second))
-                  .copyInformationFrom(n);
-              replacement.setJSType(nativeStringType);
+                      .useSourceInfoIfMissingFrom(second))
+                  .useSourceInfoIfMissingFrom(n);
+              replacement.setTypeI(nativeStringType);
               parent.replaceChild(n, replacement);
               compiler.reportCodeChange();
             }
@@ -249,12 +248,12 @@ class ReplaceCssNames implements CompilerPass {
         // We still want to collect statistics even if we've already
         // done the full replace. The statistics are collected on a
         // per-part basis.
-        for (int i = 0; i < parts.length; i++) {
-          Integer count = cssNames.get(parts[i]);
+        for (String element : parts) {
+          Integer count = cssNames.get(element);
           if (count == null) {
-            count = Integer.valueOf(0);
+            count = 0;
           }
-          cssNames.put(parts[i], count.intValue() + 1);
+          cssNames.put(element, count.intValue() + 1);
         }
       }
     }

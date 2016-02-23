@@ -17,7 +17,7 @@
 package com.google.javascript.jscomp;
 
 
-public class RemoveUnusedVarsTest extends CompilerTestCase {
+public final class RemoveUnusedVarsTest extends CompilerTestCase {
 
   private boolean removeGlobal;
   private boolean preserveFunctionExpressionNames;
@@ -33,10 +33,15 @@ public class RemoveUnusedVarsTest extends CompilerTestCase {
     removeGlobal = true;
     preserveFunctionExpressionNames = false;
     modifyCallSites = false;
+    compareJsDoc = false;
   }
 
   @Override
   protected CompilerPass getProcessor(final Compiler compiler) {
+    if (this.modifyCallSites) {
+      SimpleDefinitionFinder defFinder = new SimpleDefinitionFinder(compiler);
+      compiler.setSimpleDefinitionFinder(defFinder);
+    }
     return new RemoveUnusedVars(
         compiler, removeGlobal, preserveFunctionExpressionNames,
         modifyCallSites);
@@ -184,7 +189,6 @@ public class RemoveUnusedVarsTest extends CompilerTestCase {
 
   public void testFunctionsDeadButEscaped() {
     testSame("function b(a) { a = 1; print(arguments[0]) }; b(6)");
-    testSame("function b(a) { a = 1; arguments=1; }; b(6)");
     testSame("function b(a) { var c = 2; a = c; print(arguments[0]) }; b(6)");
   }
 
@@ -341,6 +345,11 @@ public class RemoveUnusedVarsTest extends CompilerTestCase {
     test("var a = 3; for (var i in {}) { i = a; } alert(a);",
          // TODO(johnlenz): "i = a" should be removed here.
          "var a = 3; var i; for (i in {}) {i = a} alert(a);");
+  }
+
+  public void testUnusedAssign9() {
+    test("function b(a) { a = 1; arguments=1; }; b(6)",
+         "function b() { arguments=1; }; b(6)");
   }
 
   public void testUnusedPropAssign1() {
@@ -556,7 +565,7 @@ public class RemoveUnusedVarsTest extends CompilerTestCase {
          "var b=function(){};var b=function(){};b(1,2)");
   }
 
-  public void testCallSiteInteraction_contructors() {
+  public void testCallSiteInteraction_constructors() {
     this.modifyCallSites = true;
     // The third level tests that the functions which have already been looked
     // at get re-visited if they are changed by a call site removal.

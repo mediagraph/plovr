@@ -16,12 +16,13 @@
 
 package com.google.javascript.jscomp.deps;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.collect.ImmutableList;
-import com.google.javascript.jscomp.deps.DependencyInfo;
-import com.google.javascript.jscomp.deps.DepsFileParser;
 import com.google.javascript.jscomp.ErrorManager;
 import com.google.javascript.jscomp.PrintStreamErrorManager;
-
+import com.google.javascript.jscomp.deps.DependencyInfo;
+import com.google.javascript.jscomp.deps.DepsFileParser;
 import junit.framework.TestCase;
 
 import java.util.Collections;
@@ -32,7 +33,7 @@ import java.util.List;
  *
  * @author agrieve@google.com (Andrew Grieve)
  */
-public class DepsFileParserTest extends TestCase {
+public final class DepsFileParserTest extends TestCase {
 
   private DepsFileParser parser;
   private ErrorManager errorManager;
@@ -66,29 +67,47 @@ public class DepsFileParserTest extends TestCase {
 
     List<DependencyInfo> result = parser.parseFile(SRC_PATH, CONTENTS);
     ImmutableList<DependencyInfo> EXPECTED = ImmutableList.<DependencyInfo>of(
-        new SimpleDependencyInfo("yes1", SRC_PATH, EMPTY, EMPTY),
-        new SimpleDependencyInfo("yes2", SRC_PATH, EMPTY, EMPTY),
+        new SimpleDependencyInfo("yes1", SRC_PATH, EMPTY, EMPTY, false),
+        new SimpleDependencyInfo("yes2", SRC_PATH, EMPTY, EMPTY, false),
         new SimpleDependencyInfo(
-            "yes3", SRC_PATH, ImmutableList.of("a", "b"), ImmutableList.of("c")),
+            "yes3", SRC_PATH, ImmutableList.of("a", "b"), ImmutableList.of("c"),
+            false),
         new SimpleDependencyInfo(
-            "yes4", SRC_PATH, EMPTY, ImmutableList.of("a", "b", "c"))
+            "yes4", SRC_PATH, EMPTY, ImmutableList.of("a", "b", "c"), false)
     );
 
-    assertEquals(EXPECTED, result);
-    assertEquals(0, errorManager.getErrorCount());
-    assertEquals(0, errorManager.getWarningCount());
+    assertThat(result).isEqualTo(EXPECTED);
+    assertThat(errorManager.getErrorCount()).isEqualTo(0);
+    assertThat(errorManager.getWarningCount()).isEqualTo(0);
   }
 
   public void testTooFewArgs() {
     parser.parseFile(SRC_PATH, "goog.addDependency('a', []);");
-    assertEquals(1, errorManager.getErrorCount());
-    assertEquals(0, errorManager.getWarningCount());
+    assertThat(errorManager.getErrorCount()).isEqualTo(1);
+    assertThat(errorManager.getWarningCount()).isEqualTo(0);
   }
 
-  public void testTooManyArgs() {
+  public void testTooManyArgs1() {
     parser.parseFile(SRC_PATH, "goog.addDependency('a', [], [], []);");
-    assertEquals(1, errorManager.getErrorCount());
-    assertEquals(0, errorManager.getWarningCount());
+    assertThat(errorManager.getErrorCount()).isEqualTo(1);
+    assertThat(errorManager.getWarningCount()).isEqualTo(0);
+  }
+
+  public void testTooManyArgs2() {
+    parser.parseFile(SRC_PATH, "goog.addDependency('a', [], [], false, []);");
+    assertThat(errorManager.getErrorCount()).isEqualTo(1);
+    assertThat(errorManager.getWarningCount()).isEqualTo(0);
+  }
+
+  public void testModule() {
+    List<DependencyInfo> result = parser.parseFile(SRC_PATH,
+        "goog.addDependency('yes1', [], [], true);\n" +
+        "goog.addDependency('yes2', [], [], false);\n");
+    ImmutableList<DependencyInfo> EXPECTED = ImmutableList.<DependencyInfo>of(
+        new SimpleDependencyInfo("yes1", SRC_PATH, EMPTY, EMPTY, true),
+        new SimpleDependencyInfo("yes2", SRC_PATH, EMPTY, EMPTY, false)
+        );
+    assertThat(result).isEqualTo(EXPECTED);
   }
 
   public void testShortcutMode() {
@@ -97,8 +116,8 @@ public class DepsFileParserTest extends TestCase {
         "foo();\n" +
         "goog.addDependency('no1', [], []);");
     ImmutableList<DependencyInfo> EXPECTED = ImmutableList.<DependencyInfo>of(
-        new SimpleDependencyInfo("yes1", SRC_PATH, EMPTY, EMPTY));
-    assertEquals(EXPECTED, result);
+        new SimpleDependencyInfo("yes1", SRC_PATH, EMPTY, EMPTY, false));
+    assertThat(result).isEqualTo(EXPECTED);
   }
 
   public void testNoShortcutMode() {
@@ -108,8 +127,8 @@ public class DepsFileParserTest extends TestCase {
         "foo();\n" +
         "goog.addDependency('yes2', [], []);");
     ImmutableList<DependencyInfo> EXPECTED = ImmutableList.<DependencyInfo>of(
-        new SimpleDependencyInfo("yes1", SRC_PATH, EMPTY, EMPTY),
-        new SimpleDependencyInfo("yes2", SRC_PATH, EMPTY, EMPTY));
-    assertEquals(EXPECTED, result);
+        new SimpleDependencyInfo("yes1", SRC_PATH, EMPTY, EMPTY, false),
+        new SimpleDependencyInfo("yes2", SRC_PATH, EMPTY, EMPTY, false));
+    assertThat(result).isEqualTo(EXPECTED);
   }
 }

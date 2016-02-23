@@ -17,12 +17,14 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
-import java.util.*;
-import java.util.logging.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Logger;
 
 /**
  * Gives anonymous function names that are optimized to be small and provides a
@@ -63,16 +65,17 @@ class NameAnonymousFunctionsMapped implements CompilerPass {
         previousMap != null ?
             previousMap.getNewNameToOriginalNameMap().keySet() :
             Collections.<String>emptySet();
-    this.nameGenerator = new NameGenerator(reserved, PREFIX_STRING, null);
+    this.nameGenerator = new DefaultNameGenerator(
+        reserved, PREFIX_STRING, null);
     this.previousMap = previousMap;
-    this.renameMap = Maps.newHashMap();
+    this.renameMap = new HashMap<>();
   }
 
   @Override
   public void process(Node externs, Node root) {
     AnonymousFunctionNamingCallback namingCallback =
         new AnonymousFunctionNamingCallback(new MappedFunctionNamer());
-    NodeTraversal.traverse(compiler, root, namingCallback);
+    NodeTraversal.traverseEs6(compiler, root, namingCallback);
     logger.fine("Named " + namedCount + " anon functions using " +
         bytesUsed + " bytes");
     if (namedCount > 0) {

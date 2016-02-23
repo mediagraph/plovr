@@ -18,13 +18,14 @@ package com.google.template.soy.basicdirectives;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.template.soy.data.SoyData;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcPrintDirective;
+import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.JsExprUtils;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcPrintDirective;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuPrintDirective;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
+import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
+import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
 
 import java.util.List;
 import java.util.Set;
@@ -40,11 +41,11 @@ import javax.inject.Singleton;
  * performs no escaping, though in the future, it may force autoescaping to
  * re-escape the value.
  *
- * @author Garrett Boyer
  */
 @Singleton
-public class TextDirective extends SoyAbstractTofuPrintDirective
-    implements SoyJsSrcPrintDirective, SoyJavaSrcPrintDirective {
+@SoyPurePrintDirective
+final class TextDirective
+    implements SoyJavaPrintDirective, SoyJsSrcPrintDirective, SoyPySrcPrintDirective {
 
 
   @Inject
@@ -55,11 +56,9 @@ public class TextDirective extends SoyAbstractTofuPrintDirective
     return "|text";
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(0);
   }
-
 
   @Override public boolean shouldCancelAutoescape() {
     // TODO: This simply indicates simply that the "blanket html-escape everything and its cousin"
@@ -68,12 +67,10 @@ public class TextDirective extends SoyAbstractTofuPrintDirective
     return true;
   }
 
-
-  @Override public SoyData apply(SoyData value, List<SoyData> args) {
+  @Override public SoyValue applyForJava(SoyValue value, List<SoyValue> args) {
     // TODO: If this directive is opened up to users, this needs to coerce the value to a string.
     return value;
   }
-
 
   @Override public JsExpr applyForJsSrc(JsExpr value, List<JsExpr> args) {
     // Coerce to string, since sometimes this will be the root of an expression and will be used as
@@ -81,10 +78,7 @@ public class TextDirective extends SoyAbstractTofuPrintDirective
     return JsExprUtils.concatJsExprs(ImmutableList.of(new JsExpr("''", Integer.MAX_VALUE), value));
   }
 
-
-  @Override public JavaExpr applyForJavaSrc(JavaExpr value, List<JavaExpr> args) {
-    // TODO: If this directive is opened up to users, this needs to coerce the value to a string.
-    return value;
+  @Override public PyExpr applyForPySrc(PyExpr value, List<PyExpr> args) {
+    return value.toPyString();
   }
-
 }

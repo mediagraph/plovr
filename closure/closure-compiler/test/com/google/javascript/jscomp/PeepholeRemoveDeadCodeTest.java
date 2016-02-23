@@ -22,7 +22,8 @@ import com.google.javascript.rhino.Node;
  * Tests for PeepholeRemoveDeadCodeTest in isolation. Tests for the interaction
  * of multiple peephole passes are in PeepholeIntegrationTest.
  */
-public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
+
+public final class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
 
   private static final String MATH =
       "/** @const */ var Math = {};" +
@@ -31,12 +32,6 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
 
   public PeepholeRemoveDeadCodeTest() {
     super(MATH);
-  }
-
-  @Override
-  public void setUp() throws Exception {
-    super.setUp();
-    enableLineNumberCheck(true);
   }
 
   @Override
@@ -146,6 +141,7 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
 
     fold("y = (x ? void 0 : void 0)", "y = void 0");
     fold("y = (x ? f() : f())", "y = f()");
+    fold("(function(){}) ? function(){} : function(){}", "");
   }
 
   public void testConstantConditionWithSideEffect1() {
@@ -219,6 +215,10 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
     // Can't fold with break or continues.
     foldSame("do { foo(); continue; } while(0)");
     foldSame("do { foo(); break; } while(0)");
+  }
+
+  public void testFoldEmptyDo() {
+    fold("do { } while(true);", "for (;;);");
   }
 
   public void testMinimizeWhileConstantCondition() {
@@ -311,6 +311,8 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
     fold("switch(a){default: break; case 1:break;}", "");
     fold("switch(a){default: var b; break; case 1: var c; break;}",
         "var c; var b;");
+    fold("var x=1; switch(x) { case 1: var y; }",
+        "var y; var x=1;");
 
     // Can't remove cases if a default exists.
     foldSame("function f() {switch(a){default: return; case 1: break;}}");
@@ -336,7 +338,7 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
         "  var x=0;\n" +
         "  break;\n" +
         "}",
-        "var x; {foo();}");
+        "var x; foo();");
 
     // Can't remove cases if something useful is done.
     foldSame("switch(a){case 1: var c =2; break;}");
@@ -351,7 +353,7 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
         "  bar();\n" +
         "  break;\n" +
         "}",
-        "{foo();}");
+        "foo();");
     fold("switch ('noMatch') {\n" +
         "case 'foo':\n" +
         "  foo();\n" +
@@ -393,7 +395,7 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
         "  bar();\n" +
         "  break;\n" +
         "}",
-        "{foo();}");
+        "foo();");
     fold("switch ('foo') {\n" +
         "case 'bar':\n" +
         "  bar();\n" +
@@ -421,7 +423,7 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
         "  bar();\n" +
         "  break;\n" +
         "}",
-        "{foo();}");
+        "foo();");
     fold("switch (1) {\n" +
         "case 1.1:\n" +
         "  foo();\n" +
@@ -451,6 +453,28 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
         "case 'foo':\n" +
         "  foo();\n" +
         "}");
+  }
+
+  public void testOptimizeSwitchBug11536863() {
+    fold(
+        "outer: {" +
+        "  switch (2) {\n" +
+        "    case 2:\n" +
+        "      f();\n" +
+        "      break outer;\n" +
+        "  }" +
+        "}",
+        "outer: {f(); break outer;}");
+  }
+
+  public void testOptimizeSwitch2() {
+    fold(
+        "outer: switch (2) {\n" +
+        "  case 2:\n" +
+        "    f();\n" +
+        "    break outer;\n" +
+        "}",
+        "outer: {f(); break outer;}");
   }
 
   public void testRemoveNumber() {
@@ -622,7 +646,7 @@ public class PeepholeRemoveDeadCodeTest extends CompilerTestCase {
   }
 
   public void testComplex2() {
-    test("1 && (a() ? b() : 1)", "1 && a() && b()");
+    test("1 && (a() ? b() : 1)", "1 && (a() && b())");
   }
 
   public void testComplex3() {

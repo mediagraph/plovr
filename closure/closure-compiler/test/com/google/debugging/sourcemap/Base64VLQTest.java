@@ -16,12 +16,14 @@
 
 package com.google.debugging.sourcemap;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import junit.framework.TestCase;
 
 /**
  * @author johnlenz@google.com (John Lenz)
  */
-public class Base64VLQTest extends TestCase {
+public final class Base64VLQTest extends TestCase {
   public void testBase64VLQSelectedValues1() {
     for (int i = 0; i < 63; i++) {
       testValue(i);
@@ -80,26 +82,6 @@ public class Base64VLQTest extends TestCase {
     }
   }
 
-  // Disable this test if it is flaky.
-  public void testSpeed() {
-    long start = System.currentTimeMillis();
-    CharIteratorImpl ci = new CharIteratorImpl();
-    try {
-      StringBuilder sb = new StringBuilder();
-      for (int i = 0; i < 1000000; i++) {
-        Base64VLQ.encode(sb, i);
-        ci.set(sb);
-        int result = Base64VLQ.decode(ci);
-        assertEquals(i, result);
-        sb.setLength(0);
-      }
-    } catch (Exception e) {
-      throw new RuntimeException("failed.", e);
-    }
-    long end = System.currentTimeMillis();
-    // Was 200ms or less, use a larger number to prevent flakiness
-    assertTrue("too slow", end-start < 1000);
-  }
 
   private void testValue(int value) {
     try {
@@ -108,7 +90,7 @@ public class Base64VLQTest extends TestCase {
       CharIteratorImpl ci = new CharIteratorImpl();
       ci.set(sb);
       int result = Base64VLQ.decode(ci);
-      assertEquals(value, result);
+      assertThat(result).isEqualTo(value);
     } catch (Exception e) {
       throw new RuntimeException("failed for value " + value, e);
     }

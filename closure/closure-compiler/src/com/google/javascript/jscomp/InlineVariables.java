@@ -19,16 +19,15 @@ package com.google.javascript.jscomp;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.CodingConvention.SubclassRelationship;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.Behavior;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.Reference;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.ReferenceCollection;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.ReferenceMap;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.rhino.Node;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -89,7 +88,7 @@ class InlineVariables implements CompilerPass {
   private Predicate<Var> getFilterForMode() {
     switch (mode) {
       case ALL:
-        return Predicates.<Var>alwaysTrue();
+        return Predicates.alwaysTrue();
       case LOCALS_ONLY:
         return new IdentifyLocals();
       case CONSTANTS_ONLY:
@@ -107,17 +106,17 @@ class InlineVariables implements CompilerPass {
    * or named in all caps, and initialized to an immutable value.
    * CheckConsts has already verified that these are truly constants.
    */
-  private class IdentifyConstants implements Predicate<Var> {
+  private static class IdentifyConstants implements Predicate<Var> {
     @Override
     public boolean apply(Var var) {
-      return var.isConst();
+      return var.isInferredConst();
     }
   }
 
   /**
    * Filters non-global variables.
    */
-  private class IdentifyLocals implements Predicate<Var> {
+  private static class IdentifyLocals implements Predicate<Var> {
     @Override
     public boolean apply(Var var) {
       return var.scope.isLocal();
@@ -145,14 +144,14 @@ class InlineVariables implements CompilerPass {
      * A list of variables that should not be inlined, because their
      * reference information is out of sync with the state of the AST.
      */
-    private final Set<Var> staleVars = Sets.newHashSet();
+    private final Set<Var> staleVars = new HashSet<>();
 
     /**
      * Stored possible aliases of variables that never change, with
      * all the reference info about those variables. Hashed by the NAME
      * node of the variable being aliased.
      */
-    final Map<Node, AliasCandidate> aliasCandidates = Maps.newHashMap();
+    final Map<Node, AliasCandidate> aliasCandidates = new HashMap<>();
 
     @Override
     public void afterExitScope(NodeTraversal t, ReferenceMap referenceMap) {
@@ -179,7 +178,8 @@ class InlineVariables implements CompilerPass {
               referenceInfo.isAssignedOnceInLifetime()) {
             Reference init = referenceInfo.getInitializingReference();
             Node value = init.getAssignedValue();
-            if (value != null && value.isName()) {
+            if (value != null && value.isName()
+                && !value.getString().equals(v.getName())) {
               aliasCandidates.put(value, new AliasCandidate(v, referenceInfo));
             }
           }

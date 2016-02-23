@@ -22,15 +22,10 @@ import com.google.javascript.rhino.Node;
  * Tests for {@link DeadAssignmentsElimination}.
  *
  */
-public class DeadAssignmentsEliminationTest extends CompilerTestCase {
+public final class DeadAssignmentsEliminationTest extends CompilerTestCase {
 
   public DeadAssignmentsEliminationTest() {
     super("var extern;");
-  }
-
-  @Override
-  public void setUp() {
-    super.enableLineNumberCheck(true);
   }
 
   @Override
@@ -38,7 +33,7 @@ public class DeadAssignmentsEliminationTest extends CompilerTestCase {
     return new CompilerPass() {
       @Override
       public void process(Node externs, Node js) {
-        NodeTraversal.traverse(
+        NodeTraversal.traverseEs6(
             compiler, js, new DeadAssignmentsElimination(compiler));
       }
     };
@@ -99,7 +94,7 @@ public class DeadAssignmentsEliminationTest extends CompilerTestCase {
   }
 
   public void testUsedAsConditionsInSwitchStatements() {
-    inFunction("var x; switch(x=1){}","var x; switch(1){}");
+    inFunction("var x; switch(x=1){}", "var x; switch(1){}");
     inFunction("var x; switch(x){case(x=1):break;}",
         "var x; switch(x){case(1):break;}");
 
@@ -455,12 +450,6 @@ public class DeadAssignmentsEliminationTest extends CompilerTestCase {
   }
 
   public void testInExpression2() {
-    // This can be improved.  "a = 1" is dead but "a" is read in the following
-    // expression.
-    inFunction(
-        "var a; a = 1; if ((a = 2) || (a = 3) || (a)) {}",
-        "var a; a = 1; if ((    2) || (a = 3) || (a)) {}");
-
     inFunction(
         "var a; (a = 1) || (a = 2)",
         "var a; 1 || 2");

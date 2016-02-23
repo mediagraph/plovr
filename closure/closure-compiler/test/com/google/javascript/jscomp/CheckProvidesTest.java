@@ -17,16 +17,16 @@ package com.google.javascript.jscomp;
 
 import static com.google.javascript.jscomp.CheckProvides.MISSING_PROVIDE_WARNING;
 
-import com.google.javascript.jscomp.CheckLevel;
+import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 
 /**
  * Tests for {@link CheckProvides}.
  *
  */
-public class CheckProvidesTest extends CompilerTestCase {
+public final class CheckProvidesTest extends Es6CompilerTestCase {
   @Override
   protected CompilerPass getProcessor(Compiler compiler) {
-    return new CheckProvides(compiler, CheckLevel.WARNING);
+    return new CheckProvides(compiler);
   }
 
   public void testIrrelevant() {
@@ -40,6 +40,26 @@ public class CheckProvidesTest extends CompilerTestCase {
   public void testHarmless() {
     String js = "goog.provide('X'); /** @constructor */ X = function(){};";
     testSame(js);
+  }
+
+  public void testHarmlessEs6Class() {
+    testSameEs6("goog.provide('X'); var X = class {};");
+    testSameEs6("goog.provide('X'); class X {};");
+    testSameEs6("goog.provide('foo.bar.X'); foo.bar.X = class {};");
+  }
+
+  public void testMissingProvideEs6Class() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT6);
+    String js = "class X {};";
+    String warning = "missing goog.provide('X')";
+    test(js, js, null, MISSING_PROVIDE_WARNING, warning);
+
+    js = "var X = class {};";
+    test(js, js, null, MISSING_PROVIDE_WARNING, warning);
+
+    js = "foo.bar.X = class {};";
+    warning = "missing goog.provide('foo.bar.X')";
+    test(js, js, null, MISSING_PROVIDE_WARNING, warning);
   }
 
   public void testNoProvideInnerClass() {
@@ -60,6 +80,12 @@ public class CheckProvidesTest extends CompilerTestCase {
                                "/** @constructor */ goog.X = function(){};"};
     String warning = "missing goog.provide('goog.X')";
     test(js, js, null, MISSING_PROVIDE_WARNING, warning);
+  }
+
+  public void testMissingGoogProvideWithinGoogScope(){
+    String[] js = new String[]{
+        "/** @constructor */ $jscomp.scope.bar = function() {};"};
+    test(js, js);
   }
 
   public void testGoogProvideInWrongFileShouldCreateWarning(){
@@ -86,5 +112,30 @@ public class CheckProvidesTest extends CompilerTestCase {
   public void testIgnorePrivatelyAnnotatedConstructor() {
     testSame("/** @private\n@constructor */ X = function(){};");
     testSame("/** @constructor\n@private */ X = function(){};");
+
+    testSameEs6("/** @private */ var X = class {};");
+    testSameEs6("/** @private */ let X = class {};");
+    testSameEs6("/** @private */ X = class {};");
+
+    testSameEs6("/** @private */ var X = class Y {};");
+    testSameEs6("/** @private */ let X = class Y {};");
+    testSameEs6("/** @private */ X = class Y {};");
+
+    testSameEs6("/** @private */ class X {}");
+  }
+
+  public void testIgnorePrivateByConventionConstructor() {
+    testSame("/** @constructor */ privateFn_ = function(){};");
+    testSame("/** @constructor */ privateFn_ = function(){};");
+
+    testSameEs6("var privateCls_ = class {};");
+    testSameEs6("let privateCls_ = class {};");
+    testSameEs6("privateCls_ = class {};");
+
+    testSameEs6("class privateCls_ {}");
+  }
+
+  public void testArrowFunction() {
+    testSameEs6("/** @constructor*/ X = ()=>{};");
   }
 }

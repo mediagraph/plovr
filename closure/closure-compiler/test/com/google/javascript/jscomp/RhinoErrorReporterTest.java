@@ -18,24 +18,25 @@ package com.google.javascript.jscomp;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
+
 import junit.framework.TestCase;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
  * Tests for error message filtering.
  * @author nicksantos@google.com (Nick Santos)
  */
-public class RhinoErrorReporterTest extends TestCase {
+public final class RhinoErrorReporterTest extends TestCase {
 
-  private boolean reportMisplacedTypeAnnotations;
   private boolean reportEs3Props;
+  private boolean reportLintWarnings;
 
   @Override
   protected void setUp() throws Exception {
-    reportMisplacedTypeAnnotations = false;
     reportEs3Props = true;
+    reportLintWarnings = true;
     super.setUp();
   }
 
@@ -57,29 +58,7 @@ public class RhinoErrorReporterTest extends TestCase {
         message);
 
     assertEquals(2, error.getLineNumber());
-
-    // Rhino uses the "beginning" of the line where the comma appears,
-    // for some odd reason.
-    assertEquals(4, error.getCharno());
-  }
-
-  public void testMisplacedTypeAnnotation() throws Exception {
-    reportMisplacedTypeAnnotations = false;
-
-    assertNoWarningOrError("var x = /** @type {string} */ y;");
-
-    reportMisplacedTypeAnnotations = true;
-
-    String message =
-        "Type annotations are not allowed here. " +
-        "Are you missing parentheses?";
-    JSError error = assertWarning(
-        "var x = /** @type {string} */ y;",
-        RhinoErrorReporter.MISPLACED_TYPE_ANNOTATION,
-        message);
-
-    assertEquals(1, error.getLineNumber());
-    assertEquals(0, error.getCharno());
+    assertEquals(8, error.getCharno());
   }
 
   public void testInvalidEs3Prop() throws Exception {
@@ -103,6 +82,25 @@ public class RhinoErrorReporterTest extends TestCase {
     assertEquals(10, error.getCharno());
   }
 
+
+  public void testMissingTypeWarnings() throws Exception {
+    reportLintWarnings = false;
+
+    assertNoWarningOrError("/** @return */ function f() {}");
+
+    reportLintWarnings = true;
+
+    String message =
+        "Missing type declaration.";
+    JSError error = assertWarning(
+        "/** @return */ function f() {}",
+        RhinoErrorReporter.JSDOC_MISSING_TYPE_WARNING,
+        message);
+
+    assertEquals(1, error.getLineNumber());
+    assertEquals(4, error.getCharno());
+  }
+
   /**
    * Verifies that the compiler emits an error for the given code.
    */
@@ -121,7 +119,7 @@ public class RhinoErrorReporterTest extends TestCase {
     assertEquals("Expected error", 1, compiler.getErrorCount());
 
     JSError error =
-        Iterables.getOnlyElement(Lists.newArrayList(compiler.getErrors()));
+        Iterables.getOnlyElement(Arrays.asList(compiler.getErrors()));
     assertEquals(type, error.getType());
     assertEquals(description, error.description);
     return error;
@@ -136,7 +134,7 @@ public class RhinoErrorReporterTest extends TestCase {
     assertEquals("Expected warning", 1, compiler.getWarningCount());
 
     JSError error =
-        Iterables.getOnlyElement(Lists.newArrayList(compiler.getWarnings()));
+        Iterables.getOnlyElement(Arrays.asList(compiler.getWarnings()));
     assertEquals(type, error.getType());
     assertEquals(description, error.description);
     return error;
@@ -145,16 +143,21 @@ public class RhinoErrorReporterTest extends TestCase {
   private Compiler parseCode(String code) {
     Compiler compiler = new Compiler();
     CompilerOptions options = new CompilerOptions();
-    if (reportMisplacedTypeAnnotations) {
-      options.setWarningLevel(
-          DiagnosticGroups.MISPLACED_TYPE_ANNOTATION,
-          CheckLevel.WARNING);
-    }
 
     if (!reportEs3Props) {
       options.setWarningLevel(
           DiagnosticGroups.ES3,
           CheckLevel.OFF);
+    }
+
+    if (!reportLintWarnings) {
+      options.setWarningLevel(
+          DiagnosticGroups.LINT_CHECKS,
+          CheckLevel.OFF);
+    } else {
+      options.setWarningLevel(
+          DiagnosticGroups.LINT_CHECKS,
+          CheckLevel.WARNING);
     }
 
     List<SourceFile> externs = ImmutableList.of();

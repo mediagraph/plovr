@@ -16,28 +16,28 @@
 
 package com.google.template.soy.exprtree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
-
 
 /**
  * Abstract implementation of a PrimitiveNode.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public abstract class AbstractPrimitiveNode extends AbstractExprNode implements PrimitiveNode {
+abstract class AbstractPrimitiveNode extends AbstractExprNode implements PrimitiveNode {
 
-
-  public AbstractPrimitiveNode() {}
+  protected AbstractPrimitiveNode(SourceLocation sourceLocation) {
+    super(sourceLocation);
+  }
 
 
   /**
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected AbstractPrimitiveNode(AbstractPrimitiveNode orig) {
-    super(orig);
+  protected AbstractPrimitiveNode(AbstractPrimitiveNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
-
 }

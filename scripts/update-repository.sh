@@ -4,39 +4,33 @@
 #
 # ./update-repository.sh closure-library
 
-HG=${HG:-hg}
-HGROOT=${HGROOT:-$(${HG} root)}
+cd `dirname $0`/..
 
 # Make sure that exactly one argument is specified.
-EXPECTED_ARGS=1
+EXPECTED_ARGS=2
 if [ $# -ne $EXPECTED_ARGS ]; then
-  echo "Must specify one of: closure-library, closure-compiler, closure-templates"
+  echo "Must specify one of: closure-library, closure-compiler, closure-templates and a commit hash"
   exit 1
 fi
 
 # Make sure that the argument correctly identifies a repository.
 REPOSITORY=$1
-if [ ! -d "${HGROOT}/tools/imports/${REPOSITORY}" ]; then
+if [ ! -d "closure/${REPOSITORY}" ]; then
   echo "No repository for ${REPOSITORY}"
   exit 1
 fi
 
-REVISION=`svn info http://${REPOSITORY}.googlecode.com/svn/ | \
-    grep Revision | awk '{print $2}'`
+COMMIT=$2
 
-cd ${HGROOT}
-tools/imports/${REPOSITORY}/update.sh
-hg commit -m "Pull latest changes from ${REPOSITORY} SVN repository at r${REVISION}." \
-    tools/imports/${REPOSITORY}/shamap
+set -ex
+git subtree pull --prefix="closure/${REPOSITORY}" "git@github.com:google/${REPOSITORY}" "$2"
+echo "$2" > tools/imports/rev-$1.txt
 
-# REV is something like 1648:af131e4e3231
-REV=`hg branches | grep ${REPOSITORY} | awk '{print $2}'`
+if [ "$REPOSITORY" = "closure-library" ]; then
+  ./listfiles.sh closure/closure-library/closure/goog > library_manifest.txt
+  ./listfiles.sh closure/closure-library/third_party/closure/goog > third_party_manifest.txt
+fi
 
-# REV2 will be the part after the colon: af131e4e3231
-REV2=`echo $REV | awk -F ":" '{print $2}'`
-
-hg merge -r $REV2
-echo "${REVISION}" > ${HGROOT}/tools/imports/rev-${REPOSITORY}.txt
-hg commit -m "merge from ${REPOSITORY} branch at ${REPOSITORY} revision ${REVISION}"
-
-echo "merge from ${REPOSITORY} committed: run hg push to check in"
+if [ "$REPOSITORY" = "closure-compiler" ]; then
+  ./listfiles.sh closure/closure-compiler/externs > externs_manifest.txt
+fi

@@ -16,45 +16,33 @@
 
 package com.google.template.soy.tofu.internal;
 
-import com.google.inject.Inject;
-import com.google.template.soy.data.SoyData;
-import com.google.template.soy.data.SoyMapData;
+import com.google.template.soy.data.SoyRecord;
+import com.google.template.soy.data.SoyValueHelper;
+import com.google.template.soy.sharedpasses.render.Environment;
 import com.google.template.soy.sharedpasses.render.EvalVisitor;
 import com.google.template.soy.sharedpasses.render.EvalVisitor.EvalVisitorFactory;
-import com.google.template.soy.tofu.restricted.SoyTofuFunction;
-
-import java.util.Deque;
-import java.util.Map;
 
 import javax.annotation.Nullable;
+import javax.inject.Inject;
 import javax.inject.Singleton;
-
 
 /**
  * Implementation of EvalVisitorFactory for Tofu backend.
  *
- * @author Mark Knichel
- * @author Kai Huang
  */
 @Singleton
-class TofuEvalVisitorFactory implements EvalVisitorFactory {
+final class TofuEvalVisitorFactory implements EvalVisitorFactory {
 
-
-  /** Map of all SoyTofuFunctions (name to function). */
-  private final Map<String, SoyTofuFunction> soyTofuFunctionsMap;
-
+  /** Instance of SoyValueHelper to use. */
+  private final SoyValueHelper valueHelper;
 
   @Inject
-  public TofuEvalVisitorFactory(Map<String, SoyTofuFunction> soyTofuFunctionsMap) {
-    this.soyTofuFunctionsMap = soyTofuFunctionsMap;
+  public TofuEvalVisitorFactory(SoyValueHelper valueHelper) {
+    this.valueHelper = valueHelper;
   }
 
-
-  @Override
-  public EvalVisitor create(
-      SoyMapData data, @Nullable SoyMapData ijData, Deque<Map<String, SoyData>> env) {
-
-    return new TofuEvalVisitor(soyTofuFunctionsMap, data, ijData, env);
+  @Override public EvalVisitor create(
+      @Nullable SoyRecord ijData, Environment env) {
+    return new TofuEvalVisitor(valueHelper, ijData, env);
   }
-
 }

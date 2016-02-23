@@ -17,30 +17,34 @@
 package com.google.template.soy.coredirectives;
 
 import com.google.common.collect.ImmutableSet;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
+import com.google.template.soy.data.Dir;
 import com.google.template.soy.data.SanitizedContent;
-import com.google.template.soy.data.SoyData;
-import com.google.template.soy.javasrc.restricted.JavaCodeUtils;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcPrintDirective;
+import com.google.template.soy.data.SanitizedContent.ContentKind;
+import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.UnsafeSanitizedContentOrdainer;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcPrintDirective;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
 import com.google.template.soy.shared.restricted.EscapingConventions;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuPrintDirective;
+import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
+import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
 
 import java.util.List;
 import java.util.Set;
+
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 
 /**
  * A directive that HTML-escapes the output.
  *
- * @author Kai Huang
  */
 @Singleton
-public class EscapeHtmlDirective extends SoyAbstractTofuPrintDirective
-    implements SoyJsSrcPrintDirective, SoyJavaSrcPrintDirective {
+@SoyPurePrintDirective
+public class EscapeHtmlDirective implements SoyJavaPrintDirective, SoyJsSrcPrintDirective,
+    SoyPySrcPrintDirective {
 
 
   public static final String NAME = "|escapeHtml";
@@ -54,38 +58,34 @@ public class EscapeHtmlDirective extends SoyAbstractTofuPrintDirective
     return NAME;
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(0);
   }
-
 
   @Override public boolean shouldCancelAutoescape() {
     return true;
   }
 
-
-  @Override public SoyData apply(SoyData value, List<SoyData> args) {
+  @Override public SoyValue applyForJava(SoyValue value, List<SoyValue> args) {
+    // Pass through known content direction, if any, for use in BidiSpanWrapDirective.
+    Dir valueDir = null;
     if (value instanceof SanitizedContent) {
       SanitizedContent sanitizedContent = (SanitizedContent) value;
       if (sanitizedContent.getContentKind() == SanitizedContent.ContentKind.HTML) {
         return value;
       }
+      valueDir = sanitizedContent.getContentDirection();
     }
-    return SoyData.createFromExistingData(
-        EscapingConventions.EscapeHtml.INSTANCE.escape(value.toString()));
+    return UnsafeSanitizedContentOrdainer.ordainAsSafe(
+        EscapingConventions.EscapeHtml.INSTANCE.escape(value.coerceToString()),
+        ContentKind.HTML, valueDir);
   }
-
 
   @Override public JsExpr applyForJsSrc(JsExpr value, List<JsExpr> args) {
     return new JsExpr("soy.$$escapeHtml(" + value.getText() + ")", Integer.MAX_VALUE);
   }
 
-
-  @Override public JavaExpr applyForJavaSrc(JavaExpr value, List<JavaExpr> args) {
-    return new JavaExpr(
-        JavaCodeUtils.genFunctionCall(JavaCodeUtils.UTILS_LIB + ".$$escapeHtml", value.getText()),
-        String.class, Integer.MAX_VALUE);
+  @Override public PyExpr applyForPySrc(PyExpr value, List<PyExpr> args) {
+    return new PyExpr("sanitize.escape_html(" + value.getText() + ")", Integer.MAX_VALUE);
   }
-
 }

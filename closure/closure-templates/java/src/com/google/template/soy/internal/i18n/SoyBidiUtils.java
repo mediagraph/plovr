@@ -17,8 +17,9 @@
 package com.google.template.soy.internal.i18n;
 
 import com.google.common.base.Preconditions;
+import com.google.template.soy.base.SoyBackendKind;
+import com.google.template.soy.data.Dir;
 
-import java.util.EnumMap;
 import java.util.regex.Pattern;
 
 
@@ -27,23 +28,22 @@ import java.util.regex.Pattern;
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Aharon Lanin
  */
 public class SoyBidiUtils {
 
   private SoyBidiUtils() {}
+
+  /**
+   * The name used as an alias for importing a module containing the bidiIsRtlFn.
+   */
+  public static final String IS_RTL_MODULE_ALIAS = "external_bidi";
 
 
   /**
    * The code snippet that can be used to determine at template runtime whether the bidi global
    * direction is rtl.
    */
-  private static final String GOOG_IS_RTL_CODE_SNIPPET = "goog.i18n.bidi.IS_RTL";
-
-
-  /** BiDi formatter cache, so we don't have to keep creating new ones. */
-  private static EnumMap<BidiUtils.Dir, BidiFormatter> bidiFormatterCache =
-      new EnumMap<BidiUtils.Dir, BidiFormatter>(BidiUtils.Dir.class);
+  private static final String GOOG_IS_RTL_CODE_SNIPPET = "soy.$$IS_LOCALE_RTL";
 
 
   /**
@@ -52,7 +52,7 @@ public class SoyBidiUtils {
    *     directionality.
    * @return 1 if the language/locale is left-to-right or unknown, and -1 if it's right-to-left.
    */
-  public static int getBidiGlobalDir(String localeString) {
+  static BidiGlobalDir getBidiGlobalDir(String localeString) {
     boolean isRtl;
     try {
       isRtl = localeString != null
@@ -61,17 +61,7 @@ public class SoyBidiUtils {
     } catch (IllegalArgumentException localeException) {
       isRtl = false;
     }
-    return isRtl ? -1 : 1;
-  }
-
-
-  /**
-   * Decodes the bidi global directionality from an integer.
-   * @param bidiGlobalDir 1: ltr, -1: rtl, 0: unspecified. Checks that no other value is used.
-   * @return BidiGlobalDir object - or null if bidiGlobalDir is 0.
-   */
-  public static BidiGlobalDir decodeBidiGlobalDir(int bidiGlobalDir) {
-    return decodeBidiGlobalDirFromOptions(bidiGlobalDir, false);
+    return BidiGlobalDir.forStaticIsRtl(isRtl);
   }
 
 
@@ -83,13 +73,13 @@ public class SoyBidiUtils {
    *     runtime by evaluating goog.i18n.bidi.IS_RTL.
    * @return BidiGlobalDir object - or null if neither option was specified.
    */
-  public static BidiGlobalDir decodeBidiGlobalDirFromOptions(
+  public static BidiGlobalDir decodeBidiGlobalDirFromJsOptions(
       int bidiGlobalDir, boolean useGoogIsRtlForBidiGlobalDir) {
     if (bidiGlobalDir == 0) {
       if (!useGoogIsRtlForBidiGlobalDir) {
         return null;
       }
-      return BidiGlobalDir.forIsRtlCodeSnippet(GOOG_IS_RTL_CODE_SNIPPET);
+      return BidiGlobalDir.forIsRtlCodeSnippet(GOOG_IS_RTL_CODE_SNIPPET, SoyBackendKind.JS_SRC);
     }
     Preconditions.checkState(
         !useGoogIsRtlForBidiGlobalDir,
@@ -100,6 +90,24 @@ public class SoyBidiUtils {
     return BidiGlobalDir.forStaticIsRtl(bidiGlobalDir < 0);
   }
 
+  /**
+   * Decodes bidi global directionality from the Python bidiIsRtlFn command line option.
+   * @param bidiIsRtlFn The string containing the full module path and function name.
+   * @return BidiGlobalDir object - or null if the option was not specified.
+   */
+  public static BidiGlobalDir decodeBidiGlobalDirFromPyOptions(String bidiIsRtlFn) {
+    if (bidiIsRtlFn == null || bidiIsRtlFn.isEmpty()) {
+      return null;
+    }
+    int dotIndex = bidiIsRtlFn.lastIndexOf('.');
+    Preconditions.checkArgument(
+        dotIndex > 0 && dotIndex < bidiIsRtlFn.length() - 1,
+        "If specified a bidiIsRtlFn must include the module path to allow for proper importing.");
+    // When importing the module, we'll using the constant name to avoid potential conflicts.
+    String fnName = bidiIsRtlFn.substring(dotIndex + 1) + "()";
+    return BidiGlobalDir.forIsRtlCodeSnippet(
+        IS_RTL_MODULE_ALIAS + '.' + fnName, SoyBackendKind.PYTHON_SRC);
+  }
 
   /**
    * A regular expression for matching language codes indicating the FakeBidi pseudo-locale.
@@ -113,18 +121,13 @@ public class SoyBidiUtils {
 
 
   /**
-   * Get a bidi formatter - preferably a cached one.
+   * Get a bidi formatter.
    * @param dir The directionality as an integer (ltr=1, rtl=-1).
    * @return The BidiFormatter.
    */
   public static BidiFormatter getBidiFormatter(int dir) {
-    BidiUtils.Dir actualDir = BidiUtils.Dir.valueOf(dir);
-    BidiFormatter bidiFormatter = bidiFormatterCache.get(actualDir);
-    if (bidiFormatter == null) {
-      bidiFormatter = BidiFormatter.getInstance(actualDir);
-      bidiFormatterCache.put(actualDir, bidiFormatter);
-    }
-    return bidiFormatter;
+    Preconditions.checkArgument(dir != 0);
+    return BidiFormatter.getInstance(dir < 0 ? Dir.RTL : Dir.LTR);
   }
 
 }

@@ -28,7 +28,7 @@ import junit.framework.TestCase;
 /**
  * @author johnlenz@google.com (John Lenz)
  */
-public class FunctionToBlockMutatorTest extends TestCase {
+public final class FunctionToBlockMutatorTest extends TestCase {
 
   public void testMutateNoReturnWithoutResultAssignment() {
     helperMutate(
@@ -193,9 +193,9 @@ public class FunctionToBlockMutatorTest extends TestCase {
     if (compiler.getErrorCount() != 0) {
       String msg = "Error encountered: ";
       for (JSError err : compiler.getErrors()) {
-        msg += err.toString() + "\n";
+        msg += err + "\n";
       }
-      assertTrue(msg, compiler.getErrorCount() == 0);
+      assertEquals(msg, 0, compiler.getErrorCount());
     }
   }
 
@@ -242,7 +242,7 @@ public class FunctionToBlockMutatorTest extends TestCase {
 
     compiler.resetUniqueNameId();
     TestCallback test = new TestCallback(fnName, tester);
-    NodeTraversal.traverse(compiler, tree, test);
+    NodeTraversal.traverseEs6(compiler, tree, test);
   }
 
   interface Method {

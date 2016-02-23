@@ -16,25 +16,31 @@
 
 package com.google.template.soy.exprtree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.types.SoyType;
+import com.google.template.soy.types.primitive.UnknownType;
 
 /**
  * Node representing a global.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class GlobalNode extends AbstractExprNode {
+public final class GlobalNode extends AbstractExprNode {
 
+  public static final GlobalNode ERROR = new GlobalNode("error", SourceLocation.UNKNOWN);
 
   /** The name of the global. */
   private final String name;
 
-
   /**
    * @param name The name of the global.
+   * @param sourceLocation The node's source location.
+   *
    */
-  public GlobalNode(String name) {
+  public GlobalNode(String name, SourceLocation sourceLocation) {
+    super(sourceLocation);
     this.name = name;
   }
 
@@ -43,14 +49,19 @@ public class GlobalNode extends AbstractExprNode {
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected GlobalNode(GlobalNode orig) {
-    super(orig);
+  private GlobalNode(GlobalNode orig, CopyState copyState) {
+    super(orig, copyState);
     this.name = orig.name;
   }
 
 
   @Override public Kind getKind() {
     return Kind.GLOBAL_NODE;
+  }
+
+
+  @Override public SoyType getType() {
+    return UnknownType.getInstance();
   }
 
 
@@ -65,8 +76,8 @@ public class GlobalNode extends AbstractExprNode {
   }
 
 
-  @Override public GlobalNode clone() {
-    return new GlobalNode(this);
+  @Override public GlobalNode copy(CopyState copyState) {
+    return new GlobalNode(this, copyState);
   }
 
 }

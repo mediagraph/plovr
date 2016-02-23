@@ -16,6 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Strings.nullToEmpty;
+
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -158,6 +161,7 @@ import javax.annotation.Nullable;
  * which should help track down the problem.
  *
  */
+@GwtIncompatible("java.util.concurrent")
 final class Tracer {
   // package-private for access from unit tests
   static final Logger logger =
@@ -174,7 +178,7 @@ final class Tracer {
    * of.
    */
   private static List<TracingStatistic> extraTracingStatistics =
-      new CopyOnWriteArrayList<TracingStatistic>();
+      new CopyOnWriteArrayList<>();
 
   /** Values returned by extraTracingStatistics */
   private long[] extraTracingValues;
@@ -234,7 +238,7 @@ final class Tracer {
    */
   Tracer(@Nullable String type, @Nullable String comment) {
     this.type = type;
-    this.comment = comment == null ? "" : comment;
+    this.comment = nullToEmpty(comment);
     startTimeMs = clock.currentTimeMillis();
     startThread = Thread.currentThread();
     if (!extraTracingStatistics.isEmpty()) {
@@ -284,19 +288,6 @@ final class Tracer {
    */
   Tracer(String comment) {
     this(null, comment);
-  }
-
-  /**
-   * Construct a tracer whose type is based on the short name of the object
-   * @param object   Object to use as type name
-   * @param comment  A comment
-   * @return  new Tracer.
-   */
-  static Tracer shortName(Object object, String comment) {
-    if (object == null) {
-      return new Tracer(comment);
-    }
-    return new Tracer(object.getClass().getSimpleName(), comment);
   }
 
   /**
@@ -693,7 +684,7 @@ final class Tracer {
         }
       }
       sb.append(indent);
-      sb.append(tracer.toString());
+      sb.append(tracer);
       return sb.toString();
     }
   }
@@ -705,13 +696,13 @@ final class Tracer {
     int defaultSilenceThreshold; // non-final
 
     /** The Events corresponding to each startEvent/stopEvent */
-    final ArrayList<Event> events = new ArrayList<Event>();
+    final ArrayList<Event> events = new ArrayList<>();
 
     /** Tracers that have not had their .stop() called */
-    final HashSet<Tracer> outstandingEvents = new HashSet<Tracer>();
+    final HashSet<Tracer> outstandingEvents = new HashSet<>();
 
     /** Map from type to Stat object */
-    final Map<String, Stat> stats = new HashMap<String, Stat>();
+    final Map<String, Stat> stats = new HashMap<>();
 
     /**
      * True if {@code outstandingEvents} has been cleared because we exceeded
@@ -846,7 +837,7 @@ final class Tracer {
     }
 
     boolean isEmpty() {
-      return events.size() == 0 && outstandingEvents.size() == 0;
+      return events.isEmpty() && outstandingEvents.isEmpty();
     }
 
     void truncateOutstandingEvents() {
@@ -885,7 +876,7 @@ final class Tracer {
         }
       }
 
-      if (outstandingEvents.size() != 0) {
+      if (!outstandingEvents.isEmpty()) {
         long now = clock.currentTimeMillis();
 
         sb.append(" Unstopped timers:\n");
@@ -900,11 +891,11 @@ final class Tracer {
         }
       }
 
-      for (String key : stats.keySet()) {
-        Stat stat = stats.get(key);
+      for (Map.Entry<String, Stat> statEntry : stats.entrySet()) {
+        Stat stat = statEntry.getValue();
         if (stat.count > 1) {
           sb.append(" TOTAL ").
-             append(key).
+             append(statEntry.getKey()).
              append(" ").
              append(stat.count).
              append(" (").
@@ -950,7 +941,7 @@ final class Tracer {
 
   /** Holds the ThreadTrace for each thread.  */
   private static ThreadLocal<ThreadTrace> traces =
-      new ThreadLocal<ThreadTrace>();
+      new ThreadLocal<>();
 
   /**
    * Get the ThreadTrace for the current thread, creating one if necessary.
@@ -977,6 +968,7 @@ final class Tracer {
    * The class com.google.monitoring.tracing.TracingStatistics
    * contains several useful tracing statistics
    *
+   * @author fy@google.com (Frank Yellin)
    */
   static interface TracingStatistic {
     /**
@@ -1028,10 +1020,11 @@ final class Tracer {
    * This class encapsulates a map for keeping track of tracing statistics.
    * It allows the caller to atomically increment named fields.
    *
+   * @author fy@google.com (Frank Yellin)
    */
   static final class AtomicTracerStatMap {
     private final ConcurrentMap<String, Long> map =
-        new ConcurrentHashMap<String, Long>();
+        new ConcurrentHashMap<>();
 
     /**
      * Atomically increment the specified field by the specified amount.

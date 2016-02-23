@@ -16,14 +16,17 @@
 
 package com.google.debugging.sourcemap;
 
-import org.json.JSONException;
-import org.json.JSONObject;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 
 /**
  * Detect and parse the provided source map.
  * @author johnlenz@google.com (John Lenz)
  */
-public class SourceMapConsumerFactory {
+public final class SourceMapConsumerFactory {
+  private static final JsonParser PARSER = new JsonParser();
 
   /** not constructible */
   private SourceMapConsumerFactory() {}
@@ -48,21 +51,20 @@ public class SourceMapConsumerFactory {
       throws SourceMapParseException {
     // Version 1, starts with a magic string
     if (contents.startsWith("/** Begin line maps. **/")) {
-      SourceMapConsumerV1 consumer =  new SourceMapConsumerV1();
-      consumer.parse(contents);
-      return consumer;
+      throw new SourceMapParseException(
+          "This appears to be a V1 SourceMap, which is not supported.");
     } else if (contents.startsWith("{")){
       try {
         // Revision 2 and 3, are JSON Objects
-        JSONObject sourceMapRoot = new JSONObject(contents);
+        JsonElement jsonElement = PARSER.parse(contents);
+        if (!jsonElement.isJsonObject()) {
+          throw new SourceMapParseException("Expected a JSON Object.");
+        }
+        JsonObject sourceMapRoot = jsonElement.getAsJsonObject();
+
         // Check basic assertions about the format.
-        int version = sourceMapRoot.getInt("version");
+        int version = sourceMapRoot.get("version").getAsInt();
         switch (version) {
-          case 2: {
-            SourceMapConsumerV2 consumer =  new SourceMapConsumerV2();
-            consumer.parse(sourceMapRoot);
-            return consumer;
-          }
           case 3: {
             SourceMapConsumerV3 consumer =  new SourceMapConsumerV3();
             consumer.parse(sourceMapRoot, supplier);
@@ -72,7 +74,7 @@ public class SourceMapConsumerFactory {
             throw new SourceMapParseException(
                 "Unknown source map version:" + version);
         }
-      } catch (JSONException ex) {
+      } catch (JsonParseException ex) {
         throw new SourceMapParseException("JSON parse exception: " + ex);
       }
     }

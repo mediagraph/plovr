@@ -16,8 +16,9 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
+import com.google.javascript.rhino.Node;
 
+import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -25,12 +26,14 @@ import java.util.List;
  * CompilerTestCase to run multiple passes and do sanity checks. The other files
  * that use CompilerTestCase unit test a single pass.
  *
+ * @author dimvar@google.com (Dimitris Vardoulakis)
  */
-public class MultiPassTest extends CompilerTestCase {
+public final class MultiPassTest extends CompilerTestCase {
   private List<PassFactory> passes;
 
   public MultiPassTest() {
     enableNormalize();
+    enableGatherExternProperties();
   }
 
   @Override
@@ -49,7 +52,7 @@ public class MultiPassTest extends CompilerTestCase {
   }
 
   public void testInlineVarsAndPeephole() {
-    passes = Lists.newLinkedList();
+    passes = new LinkedList<>();
     addInlineVariables();
     addPeephole();
     test("function f() { var x = 1; return x + 5; }",
@@ -57,7 +60,7 @@ public class MultiPassTest extends CompilerTestCase {
   }
 
   public void testInlineFunctionsAndPeephole() {
-    passes = Lists.newLinkedList();
+    passes = new LinkedList<>();
     addInlineFunctions();
     addPeephole();
     test("function f() { return 1; }" +
@@ -67,7 +70,7 @@ public class MultiPassTest extends CompilerTestCase {
   }
 
   public void testInlineVarsAndDeadCodeElim() {
-    passes = Lists.newLinkedList();
+    passes = new LinkedList<>();
     addDeadCodeElimination();
     addInlineVariables();
     test("function f() { var x = 1; return x; x = 3; }",
@@ -75,7 +78,7 @@ public class MultiPassTest extends CompilerTestCase {
   }
 
   public void testCollapseObjectLiteralsScopeChange() {
-    passes = Lists.newLinkedList();
+    passes = new LinkedList<>();
     addCollapseObjectLiterals();
     test("function f() {" +
         "  var obj = { x: 1 };" +
@@ -90,7 +93,7 @@ public class MultiPassTest extends CompilerTestCase {
   }
 
   public void testRemoveUnusedClassPropertiesScopeChange() {
-    passes = Lists.newLinkedList();
+    passes = new LinkedList<>();
     addRemoveUnusedClassProperties();
     test("/** @constructor */" +
         "function Foo() { this.a = 1; }" +
@@ -101,7 +104,7 @@ public class MultiPassTest extends CompilerTestCase {
   }
 
   public void testRemoveUnusedVariablesScopeChange() {
-    passes = Lists.newLinkedList();
+    passes = new LinkedList<>();
     addRemoveUnusedVars();
     test("function f() { var x; }",
         "function f() {}");
@@ -112,10 +115,18 @@ public class MultiPassTest extends CompilerTestCase {
   }
 
   public void testTopScopeChange() {
-    passes = Lists.newLinkedList();
+    passes = new LinkedList<>();
     addInlineVariables();
     addPeephole();
     test("var x = 1, y = x, z = x + y;", "var z = 2;");
+  }
+
+  public void testTwoOptimLoopsNoCrash() {
+    passes = new LinkedList<>();
+    addInlineVariables();
+    addSmartNamePass();
+    addInlineVariables();
+    test("var x = '';", "");
   }
 
   private void addCollapseObjectLiterals() {
@@ -146,7 +157,8 @@ public class MultiPassTest extends CompilerTestCase {
           protected CompilerPass create(AbstractCompiler compiler) {
             return new InlineFunctions(
                 compiler, compiler.getUniqueNameIdSupplier(),
-                true, true, true, true, true);
+                true, true, true, true, true,
+                CompilerOptions.UNLIMITED_FUN_SIZE_AFTER_INLINING);
           }
         });
   }
@@ -184,7 +196,7 @@ public class MultiPassTest extends CompilerTestCase {
         new PassFactory("removeUnusedClassProperties", false) {
           @Override
           protected CompilerPass create(AbstractCompiler compiler) {
-            return new RemoveUnusedClassProperties(compiler);
+            return new RemoveUnusedClassProperties(compiler, false);
           }
         });
   }
@@ -195,6 +207,23 @@ public class MultiPassTest extends CompilerTestCase {
           @Override
           protected CompilerPass create(AbstractCompiler compiler) {
             return new RemoveUnusedVars(compiler, false, false, false);
+          }
+        });
+  }
+
+  private void addSmartNamePass() {
+    passes.add(
+        new PassFactory("smartNamePass", true) {
+          @Override
+          protected CompilerPass create(final AbstractCompiler compiler) {
+            return new CompilerPass() {
+              @Override
+              public void process(Node externs, Node root) {
+                NameAnalyzer na = new NameAnalyzer(compiler, false, null);
+                na.process(externs, root);
+                na.removeUnreferenced();
+              }
+            };
           }
         });
   }

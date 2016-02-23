@@ -16,9 +16,16 @@
 
 package com.google.template.soy.shared.restricted;
 
+import com.google.common.base.Function;
+import com.google.common.collect.FluentIterable;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -28,16 +35,71 @@ import java.util.regex.Pattern;
  */
 public final class TagWhitelist {
 
+  /**
+   * Additional tags which can be white-listed as safe.
+   */
+  public static enum OptionalSafeTag {
+    LI("li"),
+    OL("ol"),
+    SPAN("span"),
+    UL("ul");
+
+    private final String tagName;
+
+    OptionalSafeTag(String tagName) {
+      this.tagName = tagName;
+    }
+
+    public String getTagName() {
+      return tagName;
+    }
+
+    public static OptionalSafeTag fromTagName(String tagName) {
+      OptionalSafeTag tag = OPTIONAL_SAFE_TAGS_BY_TAG_NAME.get(tagName);
+      if (tag == null) {
+        throw new IllegalArgumentException(
+            String.format("%s is not a valid optional safe tag.", tagName));
+      }
+      return tag;
+    }
+
+    public static final Function<String, OptionalSafeTag> FROM_TAG_NAME =
+        new Function<String, OptionalSafeTag>() {
+          @Override public OptionalSafeTag apply(String tagName) {
+            return fromTagName(tagName);
+          }
+        };
+
+    public static final Function<OptionalSafeTag, String> TO_TAG_NAME =
+        new Function<OptionalSafeTag, String>() {
+          @Override public String apply(OptionalSafeTag tag) {
+            return tag.getTagName();
+          }
+        };
+
+    private static final ImmutableMap<String, OptionalSafeTag> OPTIONAL_SAFE_TAGS_BY_TAG_NAME =
+        Maps.uniqueIndex(EnumSet.allOf(OptionalSafeTag.class), TO_TAG_NAME);
+  }
+
   /** Contains lower-case names of innocuous HTML elements. */
   private final ImmutableSet<String> safeTagNames;
 
-  TagWhitelist(Collection<? extends String> tagNames) {
+  TagWhitelist(Collection<String> tagNames) {
     this.safeTagNames = ImmutableSet.copyOf(tagNames);
     assert requireLowerCaseTagNames(this.safeTagNames);
   }
 
   TagWhitelist(String... tagNames) {
     this(Arrays.asList(tagNames));
+  }
+
+  public TagWhitelist withOptionalSafeTags(Collection<? extends OptionalSafeTag> optionalSafeTags) {
+    if (optionalSafeTags.isEmpty()) {
+      return this;
+    }
+    ImmutableSet<String> optionalSafeTagNames =
+        FluentIterable.from(optionalSafeTags).transform(OptionalSafeTag.TO_TAG_NAME).toSet();
+    return new TagWhitelist(Sets.union(safeTagNames, optionalSafeTagNames));
   }
 
   public boolean isSafeTag(String tagName) {
@@ -63,7 +125,7 @@ public final class TagWhitelist {
 
   public Set<String> asSet() { return safeTagNames; }
 
-  private static boolean requireLowerCaseTagNames(Iterable<? extends String> strs) {
+  private static boolean requireLowerCaseTagNames(Iterable<String> strs) {
     for (String str : strs) {
       assert str.equals(str.toLowerCase(Locale.ENGLISH))
           && VALID_TAG_NAME.matcher(str).matches()
@@ -73,5 +135,4 @@ public final class TagWhitelist {
     // offending tag name.
     return true;
   }
-
 }

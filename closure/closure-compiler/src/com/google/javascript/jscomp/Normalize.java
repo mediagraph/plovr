@@ -16,19 +16,17 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.AbstractCompiler.LifeCycleStage;
 import com.google.javascript.jscomp.MakeDeclaredNamesUnique.BoilerplateRenamer;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.jscomp.NodeTraversal.Callback;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -84,29 +82,24 @@ class Normalize implements CompilerPass {
     // is normalized.
   }
 
-  static Node parseAndNormalizeSyntheticCode(
-      AbstractCompiler compiler, String code, String prefix) {
-    Node js = compiler.parseSyntheticCode(code);
-    NodeTraversal.traverse(compiler, js,
+  static void normalizeSyntheticCode(
+      AbstractCompiler compiler, Node js, String prefix) {
+    NodeTraversal.traverseEs6(compiler, js,
         new Normalize.NormalizeStatements(compiler, false));
-    NodeTraversal.traverse(
+    NodeTraversal.traverseEs6(
         compiler, js,
         new MakeDeclaredNamesUnique(
             new BoilerplateRenamer(
                 compiler.getCodingConvention(),
                 compiler.getUniqueNameIdSupplier(),
                 prefix)));
-    return js;
   }
 
   static Node parseAndNormalizeTestCode(
       AbstractCompiler compiler, String code) {
     Node js = compiler.parseTestCode(code);
-    NodeTraversal.traverse(compiler, js,
+    NodeTraversal.traverseEs6(compiler, js,
         new Normalize.NormalizeStatements(compiler, false));
-    NodeTraversal.traverse(
-        compiler, js,
-        new MakeDeclaredNamesUnique());
     return js;
   }
 
@@ -147,9 +140,9 @@ class Normalize implements CompilerPass {
         .process(externs, root);
 
     FindExposeAnnotations findExposeAnnotations = new FindExposeAnnotations();
-    NodeTraversal.traverse(compiler, root, findExposeAnnotations);
+    NodeTraversal.traverseEs6(compiler, root, findExposeAnnotations);
     if (!findExposeAnnotations.exposedProperties.isEmpty()) {
-      NodeTraversal.traverse(compiler, root,
+      NodeTraversal.traverseEs6(compiler, root,
           new RewriteExposedProperties(
               findExposeAnnotations.exposedProperties));
     }
@@ -163,7 +156,7 @@ class Normalize implements CompilerPass {
    * Find all the @expose annotations.
    */
   private static class FindExposeAnnotations extends AbstractPostOrderCallback {
-    private final Set<String> exposedProperties = Sets.newHashSet();
+    private final Set<String> exposedProperties = new HashSet<>();
 
     @Override public void visit(NodeTraversal t, Node n, Node parent) {
       if (NodeUtil.isExprAssign(n)) {
@@ -180,7 +173,7 @@ class Normalize implements CompilerPass {
       }
     }
 
-    private boolean isMarkedExpose(Node n) {
+    private static boolean isMarkedExpose(Node n) {
       JSDocInfo info = n.getJSDocInfo();
       return info != null && info.isExpose();
     }
@@ -253,8 +246,7 @@ class Normalize implements CompilerPass {
 
         boolean shouldBeConstant =
             (info != null && info.isConstant()) ||
-            NodeUtil.isConstantByConvention(
-                compiler.getCodingConvention(), n, parent);
+            NodeUtil.isConstantByConvention(compiler.getCodingConvention(), n);
         boolean isMarkedConstant = n.getBooleanProp(Node.IS_CONSTANT_NAME);
         if (shouldBeConstant && !isMarkedConstant) {
           if (assertOnChange) {
@@ -289,12 +281,10 @@ class Normalize implements CompilerPass {
       Node externsAndJs = root.getParent();
       Preconditions.checkState(externsAndJs != null);
       Preconditions.checkState(externsAndJs.hasChild(externs));
-
-      NodeTraversal.traverseRoots(
-          compiler, Lists.newArrayList(externs, root), this);
+      NodeTraversal.traverseRootsEs6(compiler, this, externs, root);
     }
 
-    private Map<String, Boolean> constantMap = Maps.newHashMap();
+    private Map<String, Boolean> constantMap = new HashMap<>();
 
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
@@ -309,7 +299,7 @@ class Normalize implements CompilerPass {
           boolean expectedConst = false;
           CodingConvention convention = compiler.getCodingConvention();
           if (NodeUtil.isConstantName(n)
-              || NodeUtil.isConstantByConvention(convention, n, parent)) {
+              || NodeUtil.isConstantByConvention(convention, n)) {
             expectedConst = true;
           } else {
             expectedConst = false;
@@ -389,7 +379,7 @@ class Normalize implements CompilerPass {
             Node expr = n.getFirstChild();
             n.setType(Token.FOR);
             Node empty = IR.empty();
-            empty.copyInformationFrom(n);
+            empty.useSourceInfoIfMissingFrom(n);
             n.addChildBefore(empty, expr);
             n.addChildAfter(empty.cloneNode(), expr);
             reportCodeChange("WHILE node");
@@ -397,7 +387,9 @@ class Normalize implements CompilerPass {
           break;
 
         case Token.FUNCTION:
-          normalizeFunctionDeclaration(n);
+          if (maybeNormalizeFunctionDeclaration(n)) {
+            reportCodeChange("Function declaration");
+          }
           break;
 
         case Token.NAME:
@@ -438,7 +430,7 @@ class Normalize implements CompilerPass {
         boolean isMarkedConstant = n.getBooleanProp(Node.IS_CONSTANT_NAME);
         if (!isMarkedConstant &&
             NodeUtil.isConstantByConvention(
-                compiler.getCodingConvention(), n, parent)) {
+                compiler.getCodingConvention(), n)) {
           if (assertOnChange) {
             String name = n.getString();
             throw new IllegalStateException(
@@ -454,17 +446,26 @@ class Normalize implements CompilerPass {
     /**
      * Rewrite named unhoisted functions declarations to a known
      * consistent behavior so we don't to different logic paths for the same
-     * code. From:
+     * code.
+     *
+     * From:
      *    function f() {}
      * to:
      *    var f = function () {};
+     * and move it to the top of the block. This actually breaks
+     * semantics, but the semantics are also not well-defined
+     * cross-browser.
+     *
+     * @see https://github.com/google/closure-compiler/pull/429
      */
-    private void normalizeFunctionDeclaration(Node n) {
+    static boolean maybeNormalizeFunctionDeclaration(Node n) {
       Preconditions.checkState(n.isFunction());
       if (!NodeUtil.isFunctionExpression(n)
           && !NodeUtil.isHoistedFunctionDeclaration(n)) {
         rewriteFunctionDeclaration(n);
+        return true;
       }
+      return false;
     }
 
     /**
@@ -483,7 +484,7 @@ class Normalize implements CompilerPass {
      *         LP
      *         BLOCK
      */
-    private void rewriteFunctionDeclaration(Node n) {
+    private static void rewriteFunctionDeclaration(Node n) {
       // Prepare a spot for the function.
       Node oldNameNode = n.getFirstChild();
       Node fnNameNode = oldNameNode.cloneNode();
@@ -492,12 +493,15 @@ class Normalize implements CompilerPass {
       // Prepare the function
       oldNameNode.setString("");
 
-      // Move the function
+      // Move the function if it's not the child of a label node
       Node parent = n.getParent();
-      parent.replaceChild(n, var);
+      if (parent.isLabel()) {
+        parent.replaceChild(n, var);
+      } else {
+        parent.removeChild(n);
+        parent.addChildToFront(var);
+      }
       fnNameNode.addChildToFront(n);
-
-      reportCodeChange("Function declaration");
     }
 
     /**
@@ -536,6 +540,7 @@ class Normalize implements CompilerPass {
       Preconditions.checkArgument(n.isLabel());
 
       Node last = n.getLastChild();
+      // TODO(moz): Avoid adding blocks for cases like "label: let x;"
       switch (last.getType()) {
         case Token.LABEL:
         case Token.BLOCK:
@@ -545,7 +550,7 @@ class Normalize implements CompilerPass {
           return;
         default:
           Node block = IR.block();
-          block.copyInformationFrom(last);
+          block.useSourceInfoIfMissingFrom(last);
           n.replaceChild(last, block);
           block.addChildToFront(last);
           reportCodeChange("LABEL normalization");
@@ -593,7 +598,7 @@ class Normalize implements CompilerPass {
             } else if (!c.getFirstChild().isEmpty()) {
               Node init = c.getFirstChild();
               Node empty = IR.empty();
-              empty.copyInformationFrom(c);
+              empty.useSourceInfoIfMissingFrom(c);
               c.replaceChild(init, empty);
 
               Node newStatement;
@@ -683,7 +688,7 @@ class Normalize implements CompilerPass {
      *     newChild should be added to the front of parent's child list.
      * @return The inserted child node.
      */
-    private Node addToFront(Node parent, Node newChild, Node after) {
+    private static Node addToFront(Node parent, Node newChild, Node after) {
       if (after == null) {
         parent.addChildToFront(newChild);
       } else {
@@ -698,7 +703,7 @@ class Normalize implements CompilerPass {
    */
   private void removeDuplicateDeclarations(Node externs, Node root) {
     Callback tickler = new ScopeTicklingCallback();
-    ScopeCreator scopeCreator =  new SyntacticScopeCreator(
+    ScopeCreator scopeCreator =  SyntacticScopeCreator.makeUntypedWithRedeclHandler(
         compiler, new DuplicateDeclarationHandler());
     NodeTraversal t = new NodeTraversal(compiler, tickler, scopeCreator);
     t.traverseRoots(externs, root);
@@ -710,7 +715,7 @@ class Normalize implements CompilerPass {
   private final class DuplicateDeclarationHandler implements
       SyntacticScopeCreator.RedeclarationHandler {
 
-    private Set<Var> hasOkDuplicateDeclaration = Sets.newHashSet();
+    private Set<Var> hasOkDuplicateDeclaration = new HashSet<>();
 
     /**
      * Remove duplicate VAR declarations encountered discovered during
@@ -723,7 +728,7 @@ class Normalize implements CompilerPass {
       Node parent = n.getParent();
       Var v = s.getVar(name);
 
-      if (v != null && s.isGlobal()) {
+      if (s.isGlobal()) {
         // We allow variables to be duplicate declared if one
         // declaration appears in source and the other in externs.
         // This deals with issues where a browser built-in is declared
@@ -735,8 +740,7 @@ class Normalize implements CompilerPass {
         }
       }
 
-      // If name is "arguments", Var maybe null.
-      if (v != null && v.getParentNode().isCatch()) {
+      if (v.isCatch()) {
         // Redeclaration of a catch expression variable is hard to model
         // without support for "with" expressions.
         // The ECMAScript spec (section 12.14), declares that a catch
@@ -752,16 +756,13 @@ class Normalize implements CompilerPass {
         // expression.
 
         // Use the name of the var before it was made unique.
-        name = MakeDeclaredNamesUnique.ContextualRenameInverter.getOrginalName(
+        name = MakeDeclaredNamesUnique.ContextualRenameInverter.getOriginalName(
             name);
-        compiler.report(
-            JSError.make(
-                input.getName(), n,
-                CATCH_BLOCK_VAR_ERROR, name));
-      } else if (v != null && parent.isFunction()) {
+        compiler.report(JSError.make(n, CATCH_BLOCK_VAR_ERROR, name));
+      } else if (parent.isFunction()) {
         if (v.getParentNode().isVar()) {
           s.undeclare(v);
-          s.declare(name, n, n.getJSType(), v.input);
+          s.declare(name, n, v.input);
           replaceVarWithAssignment(v.getNameNode(), v.getParentNode(),
               v.getParentNode().getParent());
         }
@@ -788,7 +789,7 @@ class Normalize implements CompilerPass {
      *      the scope creator, as the next node of interest is the parent's
      *      next sibling.
      */
-    private void replaceVarWithAssignment(Node n, Node parent, Node gramps) {
+    private void replaceVarWithAssignment(Node n, Node parent, Node grandparent) {
       if (n.hasChildren()) {
         // The  *  is being initialize, preserve the new value.
         parent.removeChild(n);
@@ -796,20 +797,21 @@ class Normalize implements CompilerPass {
         Node value = n.getFirstChild();
         n.removeChild(value);
         Node replacement = IR.assign(n, value);
-        replacement.copyInformationFrom(parent);
-        gramps.replaceChild(parent, NodeUtil.newExpr(replacement));
+        replacement.setJSDocInfo(parent.getJSDocInfo());
+        replacement.useSourceInfoIfMissingFrom(parent);
+        grandparent.replaceChild(parent, NodeUtil.newExpr(replacement));
       } else {
         // It is an empty reference remove it.
-        if (NodeUtil.isStatementBlock(gramps)) {
-          gramps.removeChild(parent);
-        } else if (gramps.isFor()) {
+        if (NodeUtil.isStatementBlock(grandparent)) {
+          grandparent.removeChild(parent);
+        } else if (grandparent.isFor()) {
           // This is the "for (var a in b)..." case.  We don't need to worry
           // about initializers in "for (var a;;)..." as those are moved out
           // as part of the other normalizations.
           parent.removeChild(n);
-          gramps.replaceChild(parent, n);
+          grandparent.replaceChild(parent, n);
         } else {
-          Preconditions.checkState(gramps.isLabel());
+          Preconditions.checkState(grandparent.isLabel());
           // We should never get here. LABELs with a single VAR statement should
           // already have been normalized to have a BLOCK.
           throw new IllegalStateException("Unexpected LABEL");
@@ -822,7 +824,7 @@ class Normalize implements CompilerPass {
   /**
    * A simple class that causes scope to be created.
    */
-  private final class ScopeTicklingCallback
+  private static final class ScopeTicklingCallback
       implements NodeTraversal.ScopedCallback {
     @Override
     public void enterScope(NodeTraversal t) {

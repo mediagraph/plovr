@@ -20,9 +20,7 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
+import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.jscomp.TypeValidator.TypeMismatch;
 import com.google.javascript.jscomp.graph.AdjacencyGraph;
@@ -39,14 +37,14 @@ import com.google.javascript.rhino.jstype.JSTypeNative;
 import com.google.javascript.rhino.jstype.JSTypeRegistry;
 import com.google.javascript.rhino.jstype.ObjectType;
 
+import java.util.ArrayList;
 import java.util.BitSet;
-import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.logging.Logger;
 
 /**
@@ -79,20 +77,21 @@ class AmbiguateProperties implements CompilerPass {
 
   private final AbstractCompiler compiler;
 
-  private final List<Node> stringNodesToRename = Lists.newArrayList();
+  private final List<Node> stringNodesToRename = new ArrayList<>();
+  // Can't use these as property names.
   private final char[] reservedCharacters;
 
   /** Map from property name to Property object */
-  private final Map<String, Property> propertyMap = Maps.newHashMap();
+  private final Map<String, Property> propertyMap = new HashMap<>();
 
   /** Property names that don't get renamed */
-  private final Set<String> externedNames = Sets.newHashSet();
+  private final Set<String> externedNames;
 
   /** Names to which properties shouldn't be renamed, to avoid name conflicts */
-  private final Set<String> quotedNames = Sets.newHashSet();
+  private final Set<String> quotedNames = new HashSet<>();
 
-  /** Map from original property name to new name. */
-  private final Map<String, String> renamingMap = Maps.newHashMap();
+  /** Map from original property name to new name. Only used by tests. */
+  private Map<String, String> renamingMap = null;
 
   /**
    * Sorts Property objects by their count, breaking ties alphabetically to
@@ -116,7 +115,7 @@ class AmbiguateProperties implements CompilerPass {
    * A map from JSType to JSTypeBitSet representing the types related
    * to the type.
    */
-  private Map<JSType, JSTypeBitSet> relatedBitsets = Maps.newHashMap();
+  private Map<JSType, JSTypeBitSet> relatedBitsets = new HashMap<>();
 
   /** A set of types that invalidate properties from ambiguation. */
   private final Set<JSType> invalidatingTypes;
@@ -134,12 +133,8 @@ class AmbiguateProperties implements CompilerPass {
     this.reservedCharacters = reservedCharacters;
 
     JSTypeRegistry r = compiler.getTypeRegistry();
-    invalidatingTypes = Sets.newHashSet(
+    invalidatingTypes = new HashSet<>(ImmutableSet.of(
         r.getNativeType(JSTypeNative.ALL_TYPE),
-        r.getNativeType(JSTypeNative.NO_OBJECT_TYPE),
-        r.getNativeType(JSTypeNative.NO_TYPE),
-        r.getNativeType(JSTypeNative.NULL_TYPE),
-        r.getNativeType(JSTypeNative.VOID_TYPE),
         r.getNativeType(JSTypeNative.FUNCTION_FUNCTION_TYPE),
         r.getNativeType(JSTypeNative.FUNCTION_INSTANCE_TYPE),
         r.getNativeType(JSTypeNative.FUNCTION_PROTOTYPE),
@@ -147,13 +142,22 @@ class AmbiguateProperties implements CompilerPass {
         r.getNativeType(JSTypeNative.OBJECT_TYPE),
         r.getNativeType(JSTypeNative.OBJECT_PROTOTYPE),
         r.getNativeType(JSTypeNative.OBJECT_FUNCTION_TYPE),
-        r.getNativeType(JSTypeNative.TOP_LEVEL_PROTOTYPE),
-        r.getNativeType(JSTypeNative.UNKNOWN_TYPE));
+        r.getNativeType(JSTypeNative.TOP_LEVEL_PROTOTYPE)));
 
-    for (TypeMismatch mis : compiler.getTypeValidator().getMismatches()) {
+    for (TypeMismatch mis : compiler.getTypeMismatches()) {
       addInvalidatingType(mis.typeA);
       addInvalidatingType(mis.typeB);
     }
+
+    externedNames = compiler.getExternProperties();
+  }
+
+  static AmbiguateProperties makePassForTesting(
+      AbstractCompiler compiler, char[] reservedCharacters) {
+    AmbiguateProperties ap =
+        new AmbiguateProperties(compiler, reservedCharacters);
+    ap.renamingMap = new HashMap<>();
+    return ap;
   }
 
   /**
@@ -162,7 +166,7 @@ class AmbiguateProperties implements CompilerPass {
   private void addInvalidatingType(JSType type) {
     type = type.restrictByNotNullOrUndefined();
     if (type.isUnionType()) {
-      for (JSType alt : type.toMaybeUnionType().getAlternates()) {
+      for (JSType alt : type.toMaybeUnionType().getAlternatesWithoutStructuralTyping()) {
         addInvalidatingType(alt);
       }
     }
@@ -175,11 +179,16 @@ class AmbiguateProperties implements CompilerPass {
   }
 
   Map<String, String> getRenamingMap() {
+    Preconditions.checkNotNull(renamingMap);
     return renamingMap;
   }
 
   /** Returns an integer that uniquely identifies a JSType. */
   private int getIntForType(JSType type) {
+    // Templatized types don't exist at runtime, so collapse to raw type
+    if (type != null && type.isTemplatizedType()) {
+      type = type.toMaybeTemplatizedType().getReferencedType();
+    }
     if (intForType.containsKey(type)) {
       return intForType.get(type).intValue();
     }
@@ -190,44 +199,49 @@ class AmbiguateProperties implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, externs, new ProcessExterns());
-    NodeTraversal.traverse(compiler, root, new ProcessProperties());
+    // Find all property references and record the types on which they occur.
+    // Populate stringNodesToRename, propertyMap, quotedNames.
+    NodeTraversal.traverseEs6(compiler, root, new ProcessProperties());
 
-    Set<String> reservedNames =
-        new HashSet<String>(externedNames.size() + quotedNames.size());
-    reservedNames.addAll(externedNames);
-    reservedNames.addAll(quotedNames);
+    ImmutableSet.Builder<String> reservedNames = ImmutableSet.<String>builder()
+        .addAll(externedNames)
+        .addAll(quotedNames);
 
     int numRenamedPropertyNames = 0;
     int numSkippedPropertyNames = 0;
-    Set<Property> propsByFreq = new TreeSet<Property>(FREQUENCY_COMPARATOR);
-    for (Property p : propertyMap.values()) {
-      if (!p.skipAmbiguating) {
-        ++numRenamedPropertyNames;
-        propsByFreq.add(p);
-      } else {
+    ArrayList<PropertyGraphNode> nodes = new ArrayList<>(propertyMap.size());
+    for (Property prop : propertyMap.values()) {
+      if (prop.skipAmbiguating) {
         ++numSkippedPropertyNames;
-        reservedNames.add(p.oldName);
+        reservedNames.add(prop.oldName);
+      } else {
+        ++numRenamedPropertyNames;
+        nodes.add(new PropertyGraphNode(prop));
       }
     }
 
-    PropertyGraph graph = new PropertyGraph(Lists.newLinkedList(propsByFreq));
+    PropertyGraph graph = new PropertyGraph(nodes);
     GraphColoring<Property, Void> coloring =
-        new GreedyGraphColoring<Property, Void>(graph, FREQUENCY_COMPARATOR);
+        new GreedyGraphColoring<>(graph, FREQUENCY_COMPARATOR);
     int numNewPropertyNames = coloring.color();
 
-    NameGenerator nameGen = new NameGenerator(
-        reservedNames, "", reservedCharacters);
-    Map<Integer, String> colorMap = Maps.newHashMap();
+    // Generate new names for the properties that will be renamed.
+    NameGenerator nameGen = new DefaultNameGenerator(
+        reservedNames.build(), "", reservedCharacters);
+    String[] colorMap = new String[numNewPropertyNames];
     for (int i = 0; i < numNewPropertyNames; ++i) {
-      colorMap.put(i, nameGen.generateNextName());
-    }
-    for (GraphNode<Property, Void> node : graph.getNodes()) {
-      node.getValue().newName = colorMap.get(node.getAnnotation().hashCode());
-      renamingMap.put(node.getValue().oldName, node.getValue().newName);
+      colorMap[i] = nameGen.generateNextName();
     }
 
-    // Update the string nodes.
+    // Translate the color of each Property instance to a name.
+    for (PropertyGraphNode node : graph.getNodes()) {
+      node.getValue().newName = colorMap[node.getAnnotation().hashCode()];
+      if (renamingMap != null) {
+        renamingMap.put(node.getValue().oldName, node.getValue().newName);
+      }
+    }
+
+    // Actually assign the new names to the relevant STRING nodes in the AST.
     for (Node n : stringNodesToRename) {
       String oldName = n.getString();
       Property p = propertyMap.get(oldName);
@@ -339,22 +353,20 @@ class AmbiguateProperties implements CompilerPass {
   }
 
   class PropertyGraph implements AdjacencyGraph<Property, Void> {
-    protected final Map<Property, PropertyGraphNode> nodes = Maps.newHashMap();
+    private final ArrayList<PropertyGraphNode> nodes;
 
-    PropertyGraph(Collection<Property> props) {
-      for (Property prop : props) {
-        nodes.put(prop, new PropertyGraphNode(prop));
-      }
+    PropertyGraph(ArrayList<PropertyGraphNode> nodes) {
+      this.nodes = nodes;
     }
 
     @Override
-    public List<GraphNode<Property, Void>> getNodes() {
-      return Lists.<GraphNode<Property, Void>>newArrayList(nodes.values());
+    public List<PropertyGraphNode> getNodes() {
+      return nodes;
     }
 
     @Override
     public GraphNode<Property, Void> getNode(Property property) {
-      return nodes.get(property);
+      throw new RuntimeException("PropertyGraph#getNode is never called.");
     }
 
     @Override
@@ -364,7 +376,7 @@ class AmbiguateProperties implements CompilerPass {
 
     @Override
     public void clearNodeAnnotations() {
-      for (PropertyGraphNode node : nodes.values()) {
+      for (PropertyGraphNode node : nodes) {
         node.setAnnotation(null);
       }
     }
@@ -417,35 +429,13 @@ class AmbiguateProperties implements CompilerPass {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public <A extends Annotation> A getAnnotation() {
-      return (A) annotation;
+    public Annotation getAnnotation() {
+      return annotation;
     }
 
     @Override
     public void setAnnotation(Annotation data) {
       annotation = data;
-    }
-  }
-
-  /** A traversal callback that collects externed property names. */
-  private class ProcessExterns extends AbstractPostOrderCallback {
-    @Override
-    public void visit(NodeTraversal t, Node n, Node parent) {
-      switch (n.getType()) {
-        case Token.GETPROP:
-          Node dest = n.getFirstChild().getNext();
-          externedNames.add(dest.getString());
-          break;
-        case Token.OBJECTLIT:
-          for (Node child = n.getFirstChild();
-               child != null;
-               child = child.getNext()) {
-            // names: STRING, GET, SET
-            externedNames.add(child.getString());
-          }
-          break;
-      }
     }
   }
 
@@ -457,7 +447,7 @@ class AmbiguateProperties implements CompilerPass {
         case Token.GETPROP: {
           Node propNode = n.getFirstChild().getNext();
           JSType jstype = getJSType(n.getFirstChild());
-          maybeMarkCandidate(propNode, jstype, t);
+          maybeMarkCandidate(propNode, jstype);
           break;
         }
         case Token.OBJECTLIT:
@@ -469,7 +459,7 @@ class AmbiguateProperties implements CompilerPass {
             // Keys are STRING, GET, SET
             if (!key.isQuotedString()) {
               JSType jstype = getJSType(n.getFirstChild());
-              maybeMarkCandidate(key, jstype, t);
+              maybeMarkCandidate(key, jstype);
             } else {
               // Ensure that we never rename some other property in a way
               // that could conflict with this quoted key.
@@ -494,9 +484,8 @@ class AmbiguateProperties implements CompilerPass {
      * and increments the property name's access count.
      *
      * @param n The STRING node for a property
-     * @param t The traversal
      */
-    private void maybeMarkCandidate(Node n, JSType type, NodeTraversal t) {
+    private void maybeMarkCandidate(Node n, JSType type) {
       String name = n.getString();
       if (!externedNames.contains(name)) {
         stringNodesToRename.add(n);
@@ -589,7 +578,7 @@ class AmbiguateProperties implements CompilerPass {
       if (newType.isUnionType()) {
         newType = newType.restrictByNotNullOrUndefined();
         if (newType.isUnionType()) {
-          for (JSType alt : newType.toMaybeUnionType().getAlternates()) {
+          for (JSType alt : newType.toMaybeUnionType().getAlternatesWithoutStructuralTyping()) {
             addNonUnionType(alt);
           }
           return;
@@ -630,7 +619,7 @@ class AmbiguateProperties implements CompilerPass {
     public String toString() {
       int from = 0;
       int current = 0;
-      List<String> types = Lists.newArrayList();
+      List<String> types = new ArrayList<>();
       while (-1 != (current = nextSetBit(from))) {
         types.add(intForType.inverse().get(current).toString());
         from = current + 1;

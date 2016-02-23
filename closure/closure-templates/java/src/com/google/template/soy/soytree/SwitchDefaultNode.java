@@ -16,24 +16,25 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.ConditionalBlockNode;
-
 
 /**
  * Node representing the 'default' block in a 'switch' statement.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class SwitchDefaultNode extends CaseOrDefaultNode implements ConditionalBlockNode {
+public final class SwitchDefaultNode extends CaseOrDefaultNode implements ConditionalBlockNode {
 
 
   /**
    * @param id The id for this node.
+   * @param sourceLocation The node's source location.
    */
-  public SwitchDefaultNode(int id) {
-    super(id, "default", "");
+  public SwitchDefaultNode(int id, SourceLocation sourceLocation) {
+    super(id, sourceLocation, "default", "");
   }
 
 
@@ -41,8 +42,8 @@ public class SwitchDefaultNode extends CaseOrDefaultNode implements ConditionalB
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected SwitchDefaultNode(SwitchDefaultNode orig) {
-    super(orig);
+  private SwitchDefaultNode(SwitchDefaultNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
 
 
@@ -51,8 +52,8 @@ public class SwitchDefaultNode extends CaseOrDefaultNode implements ConditionalB
   }
 
 
-  @Override public SwitchDefaultNode clone() {
-    return new SwitchDefaultNode(this);
+  @Override public SwitchDefaultNode copy(CopyState copyState) {
+    return new SwitchDefaultNode(this, copyState);
   }
 
 }

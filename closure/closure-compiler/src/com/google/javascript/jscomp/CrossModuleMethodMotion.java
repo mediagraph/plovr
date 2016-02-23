@@ -42,6 +42,7 @@ class CrossModuleMethodMotion implements CompilerPass {
   private final IdGenerator idGenerator;
   private final AnalyzePrototypeProperties analyzer;
   private final JSModuleGraph moduleGraph;
+  private final boolean noStubFunctions;
 
   static final String STUB_METHOD_NAME = "JSCompiler_stubMethod";
   static final String UNSTUB_METHOD_NAME = "JSCompiler_unstubMethod";
@@ -67,14 +68,17 @@ class CrossModuleMethodMotion implements CompilerPass {
    * @param idGenerator An id generator for method stubs.
    * @param canModifyExterns If true, then we can move prototype
    *     properties that are declared in the externs file.
+   * @param noStubFunctions if true, we can move methods without
+   *     stub functions in the parent module.
    */
   CrossModuleMethodMotion(AbstractCompiler compiler, IdGenerator idGenerator,
-      boolean canModifyExterns) {
+      boolean canModifyExterns, boolean noStubFunctions) {
     this.compiler = compiler;
     this.idGenerator = idGenerator;
     this.moduleGraph = compiler.getModuleGraph();
     this.analyzer = new AnalyzePrototypeProperties(compiler, moduleGraph,
         canModifyExterns, false);
+    this.noStubFunctions = noStubFunctions;
   }
 
   @Override
@@ -140,59 +144,105 @@ class CrossModuleMethodMotion implements CompilerPass {
         }
 
         Node value = prop.getValue();
-        if (moduleGraph.dependsOn(deepestCommonModuleRef, prop.getModule()) &&
-            value.isFunction()) {
-          Node valueParent = value.getParent();
-          if (valueParent.isGetterDef()
-              || valueParent.isSetterDef()) {
-            // TODO(johnlenz): a GET or SET can't be deferred like a normal
+        // Only attempt to move normal functions.
+        if (!value.isFunction()
+            // A GET or SET can't be deferred like a normal
             // FUNCTION property definition as a mix-in would get the result
             // of a GET instead of the function itself.
+            || value.getParent().isGetterDef()
+            || value.getParent().isSetterDef()) {
+          continue;
+        }
+
+        if (moduleGraph.dependsOn(deepestCommonModuleRef, prop.getModule())) {
+          if (hasUnmovableRedeclaration(nameInfo, prop)) {
+            // If it has been redeclared on the same object, skip it.
             continue;
           }
+
+          Node valueParent = value.getParent();
           Node proto = prop.getPrototype();
           int stubId = idGenerator.newId();
 
-          // example: JSCompiler_stubMethod(id);
-          Node stubCall = IR.call(
-              IR.name(STUB_METHOD_NAME),
-              IR.number(stubId))
-              .copyInformationFromForTree(value);
-          stubCall.putBooleanProp(Node.FREE_CALL, true);
+          if (!noStubFunctions) {
+            // example: JSCompiler_stubMethod(id);
+            Node stubCall = IR.call(
+                IR.name(STUB_METHOD_NAME),
+                IR.number(stubId))
+                .useSourceInfoIfMissingFromForTree(value);
+            stubCall.putBooleanProp(Node.FREE_CALL, true);
 
-          // stub out the method in the original module
-          // A.prototype.b = JSCompiler_stubMethod(id);
-          valueParent.replaceChild(value, stubCall);
+            // stub out the method in the original module
+            // A.prototype.b = JSCompiler_stubMethod(id);
+            valueParent.replaceChild(value, stubCall);
 
-          // unstub the function body in the deeper module
-          Node unstubParent = compiler.getNodeForCodeInsertion(
-              deepestCommonModuleRef);
-          Node unstubCall = IR.call(
-              IR.name(UNSTUB_METHOD_NAME),
-              IR.number(stubId),
-              value);
-          unstubCall.putBooleanProp(Node.FREE_CALL, true);
-          unstubParent.addChildToFront(
-              // A.prototype.b = JSCompiler_unstubMethod(id, body);
-              IR.exprResult(
-                  IR.assign(
-                      IR.getprop(
-                          proto.cloneTree(),
-                          IR.string(nameInfo.name)),
-                      unstubCall))
-                  .copyInformationFromForTree(value));
+            // unstub the function body in the deeper module
+            Node unstubParent = compiler.getNodeForCodeInsertion(
+                deepestCommonModuleRef);
+            Node unstubCall = IR.call(
+                IR.name(UNSTUB_METHOD_NAME),
+                IR.number(stubId),
+                value);
+            unstubCall.putBooleanProp(Node.FREE_CALL, true);
+            unstubParent.addChildToFront(
+                // A.prototype.b = JSCompiler_unstubMethod(id, body);
+                IR.exprResult(
+                    IR.assign(
+                        IR.getprop(
+                            proto.cloneTree(),
+                            IR.string(nameInfo.name)),
+                        unstubCall))
+                    .useSourceInfoIfMissingFromForTree(value));
 
-          compiler.reportCodeChange();
+            compiler.reportCodeChange();
+          } else {
+            Node assignmentParent = valueParent.getParent();
+            valueParent.removeChild(value);
+            // remove Foo.prototype.bar = value
+            assignmentParent.getParent().removeChild(assignmentParent);
+
+            Node destParent = compiler.getNodeForCodeInsertion(
+                deepestCommonModuleRef);
+            destParent.addChildToFront(
+                // A.prototype.b = value;
+                IR.exprResult(
+                    IR.assign(
+                        IR.getprop(
+                            proto.cloneTree(),
+                            IR.string(nameInfo.name)),
+                        value))
+                    .useSourceInfoIfMissingFromForTree(value));
+            compiler.reportCodeChange();
+          }
         }
       }
     }
 
-    if (!hasStubDeclaration && idGenerator.hasGeneratedAnyIds()) {
+    if (!noStubFunctions && !hasStubDeclaration && idGenerator
+        .hasGeneratedAnyIds()) {
       // Declare stub functions in the top-most module.
       Node declarations = compiler.parseSyntheticCode(STUB_DECLARATIONS);
       compiler.getNodeForCodeInsertion(null).addChildrenToFront(
           declarations.removeChildren());
     }
+  }
+
+  static boolean hasUnmovableRedeclaration(NameInfo nameInfo, Property prop) {
+    for (Symbol symbol : nameInfo.getDeclarations()) {
+      if (!(symbol instanceof Property)) {
+        continue;
+      }
+      Property otherProp = (Property) symbol;
+      // It is possible to do better here if the dependencies are well defined
+      // but redefinitions are usually in optional modules so it isn't likely
+      // worth the effort to check.
+      if (prop != otherProp
+          && prop.getRootVar() == otherProp.getRootVar()
+          && prop.getModule() != otherProp.getModule()) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static class IdGenerator implements Serializable {

@@ -18,7 +18,6 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
 import com.google.javascript.rhino.InputId;
-import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
@@ -39,37 +38,43 @@ class SyntacticScopeCreator implements ScopeCreator {
   // scope, but not explicitly declared.
   private static final String ARGUMENTS = "arguments";
 
-  public static final DiagnosticType VAR_MULTIPLY_DECLARED_ERROR =
-      DiagnosticType.error(
-          "JSC_VAR_MULTIPLY_DECLARED_ERROR",
-          "Variable {0} first declared in {1}");
+  private final boolean isTyped;
 
-  public static final DiagnosticType VAR_ARGUMENTS_SHADOWED_ERROR =
-    DiagnosticType.error(
-        "JSC_VAR_ARGUMENTS_SHADOWED_ERROR",
-        "Shadowing \"arguments\" is not allowed");
-
-  /**
-   * Creates a ScopeCreator.
-   */
-  SyntacticScopeCreator(AbstractCompiler compiler) {
-    this.compiler = compiler;
-    this.redeclarationHandler = new DefaultRedeclarationHandler();
-  }
-
-  SyntacticScopeCreator(
+  private SyntacticScopeCreator(
       AbstractCompiler compiler, RedeclarationHandler redeclarationHandler) {
     this.compiler = compiler;
+    this.isTyped = false;
     this.redeclarationHandler = redeclarationHandler;
   }
 
+  private SyntacticScopeCreator(AbstractCompiler compiler, boolean isTyped) {
+    this.compiler = compiler;
+    this.isTyped = isTyped;
+    this.redeclarationHandler = new DefaultRedeclarationHandler();
+  }
+
+  static SyntacticScopeCreator makeUntyped(AbstractCompiler compiler) {
+    return new SyntacticScopeCreator(compiler, false);
+  }
+
+  static SyntacticScopeCreator makeTyped(AbstractCompiler compiler) {
+    return new SyntacticScopeCreator(compiler, true);
+  }
+
+  static SyntacticScopeCreator makeUntypedWithRedeclHandler(
+      AbstractCompiler compiler, RedeclarationHandler redeclarationHandler) {
+    return new SyntacticScopeCreator(compiler, redeclarationHandler);
+  }
+
   @Override
-  public Scope createScope(Node n, Scope parent) {
+  @SuppressWarnings("unchecked")
+  // The cast to T is OK because we cannot mix typed and untyped scopes in the same chain.
+  public <T extends Scope> T createScope(Node n, T parent) {
     inputId = null;
     if (parent == null) {
-      scope = Scope.createGlobalScope(n);
+      scope = isTyped ? TypedScope.createGlobalScope(n) : Scope.createGlobalScope(n);
     } else {
-      scope = new Scope(parent, n);
+      scope = isTyped ? new TypedScope((TypedScope) parent, n) : new Scope(parent, n);
     }
 
     scanRoot(n);
@@ -77,7 +82,7 @@ class SyntacticScopeCreator implements ScopeCreator {
     inputId = null;
     Scope returnedScope = scope;
     scope = null;
-    return returnedScope;
+    return (T) returnedScope;
   }
 
   private void scanRoot(Node n) {
@@ -148,7 +153,7 @@ class SyntacticScopeCreator implements ScopeCreator {
       case Token.CATCH:
         Preconditions.checkState(n.getChildCount() == 2);
         Preconditions.checkState(n.getFirstChild().isName());
-        // the first child is the catch var and the third child
+        // the first child is the catch var and the second child
         // is the code block
 
         final Node var = n.getFirstChild();
@@ -187,41 +192,9 @@ class SyntacticScopeCreator implements ScopeCreator {
   /**
    * The default handler for duplicate declarations.
    */
-  private class DefaultRedeclarationHandler implements RedeclarationHandler {
+  static class DefaultRedeclarationHandler implements RedeclarationHandler {
     @Override
-    public void onRedeclaration(
-        Scope s, String name, Node n, CompilerInput input) {
-      Node parent = n.getParent();
-
-      // Don't allow multiple variables to be declared at the top-level scope
-      if (scope.isGlobal()) {
-        Scope.Var origVar = scope.getVar(name);
-        Node origParent = origVar.getParentNode();
-        if (origParent.isCatch() &&
-            parent.isCatch()) {
-          // Okay, both are 'catch(x)' variables.
-          return;
-        }
-
-        boolean allowDupe = hasDuplicateDeclarationSuppression(n, origVar);
-
-        if (!allowDupe) {
-          compiler.report(
-              JSError.make(NodeUtil.getSourceName(n), n,
-                           VAR_MULTIPLY_DECLARED_ERROR,
-                           name,
-                           (origVar.input != null
-                            ? origVar.input.getName()
-                            : "??")));
-        }
-      } else if (name.equals(ARGUMENTS) && !NodeUtil.isVarDeclaration(n)) {
-        // Disallow shadowing "arguments" as we can't handle with our current
-        // scope modeling.
-        compiler.report(
-            JSError.make(NodeUtil.getSourceName(n), n,
-                VAR_ARGUMENTS_SHADOWED_ERROR));
-      }
-    }
+    public void onRedeclaration(Scope s, String name, Node n, CompilerInput input) {}
   }
 
   /**
@@ -239,48 +212,16 @@ class SyntacticScopeCreator implements ScopeCreator {
       redeclarationHandler.onRedeclaration(
           scope, name, n, input);
     } else {
-      scope.declare(name, n, null, input);
+      if (isTyped) {
+        ((TypedScope) scope).declare(name, n, null, input);
+      } else {
+        scope.declare(name, n, input);
+      }
     }
   }
 
-
-  /**
-   * @param n The name node to check.
-   * @param origVar The associated Var.
-   * @return Whether duplicated declarations warnings should be suppressed
-   *     for the given node.
-   */
-  static boolean hasDuplicateDeclarationSuppression(Node n, Scope.Var origVar) {
-    Preconditions.checkState(n.isName());
-    Node parent = n.getParent();
-    Node origParent = origVar.getParentNode();
-
-    JSDocInfo info = n.getJSDocInfo();
-    if (info == null) {
-      info = parent.getJSDocInfo();
-    }
-    if (info != null && info.getSuppressions().contains("duplicate")) {
-      return true;
-    }
-
-    info = origVar.nameNode.getJSDocInfo();
-    if (info == null) {
-      info = origParent.getJSDocInfo();
-    }
-    return (info != null && info.getSuppressions().contains("duplicate"));
+  @Override
+  public boolean hasBlockScope() {
+    return false;
   }
-
-  /**
-   * Generates an untyped global scope from the root of AST of compiler (which
-   * includes externs).
-   *
-   * @param compiler The compiler for which the scope is generated.
-   * @return The new untyped global scope generated as a result of this call.
-   */
-  static Scope generateUntypedTopScope(AbstractCompiler compiler) {
-    return new SyntacticScopeCreator(compiler).createScope(compiler.getRoot(),
-        null);
-  }
-
-
 }

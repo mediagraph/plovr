@@ -16,12 +16,13 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Maps;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.Node;
 
 import java.io.Serializable;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 
 /**
  * Extract a list of all function nodes defined in a JavaScript
@@ -49,7 +50,7 @@ class FunctionNames implements CompilerPass, Serializable {
   private static final long serialVersionUID = 1L;
 
   private final transient AbstractCompiler compiler;
-  private final Map<Node, FunctionRecord> functionMap = Maps.newLinkedHashMap();
+  private final Map<Node, FunctionRecord> functionMap = new LinkedHashMap<>();
   private final transient FunctionListExtractor functionListExtractor;
 
   FunctionNames(AbstractCompiler compiler) {
@@ -59,11 +60,11 @@ class FunctionNames implements CompilerPass, Serializable {
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, root, functionListExtractor);
+    NodeTraversal.traverseEs6(compiler, root, functionListExtractor);
     FunctionExpressionNamer namer = new FunctionExpressionNamer(functionMap);
     AnonymousFunctionNamingCallback namingCallback =
         new AnonymousFunctionNamingCallback(namer);
-    NodeTraversal.traverse(compiler, root, namingCallback);
+    NodeTraversal.traverseEs6(compiler, root, namingCallback);
   }
 
   public Iterable<Node> getFunctionNodeList() {
@@ -97,11 +98,11 @@ class FunctionNames implements CompilerPass, Serializable {
     }
 
     // this.foo -> foo
-    str = str.replaceAll("::this\\.", ".");
+    str = str.replace("::this.", ".");
     // foo.prototype.bar -> foo.bar
     // AnonymousFunctionNamingCallback already replaces ".prototype."
     // with "..", just remove the extra dot.
-    str = str.replaceAll("\\.\\.", ".");
+    str = str.replace("..", ".");
     // remove toplevel anonymous blocks, if they exists.
     str = str.replaceFirst("^(<anonymous>::)*", "");
     return str;

@@ -39,18 +39,22 @@
 
 package com.google.javascript.rhino;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -76,12 +80,28 @@ public class JSDocInfo implements Serializable {
    */
   public enum Visibility {
     PRIVATE,
+    PACKAGE,
     PROTECTED,
     PUBLIC,
 
     // If visibility is not specified, we just assume that visibility
     // is inherited from the super class.
     INHERITED
+  }
+
+  // Bitfield property indicies.
+  class Property {
+    static final int
+      NG_INJECT = 0,
+      WIZ_ACTION = 1,
+
+       // Flags for Jagger dependency injection prototype
+      JAGGER_INJECT = 2,
+      JAGGER_MODULE = 3,
+      JAGGER_PROVIDE_PROMISE = 4,
+      JAGGER_PROVIDE = 5,
+
+      POLYMER_BEHAVIOR = 6;
   }
 
   private static final class LazilyInitializedInfo implements Serializable {
@@ -93,26 +113,101 @@ public class JSDocInfo implements Serializable {
     List<JSTypeExpression> implementedInterfaces = null;
     Map<String, JSTypeExpression> parameters = null;
     List<JSTypeExpression> thrownTypes = null;
-    ImmutableList<String> templateTypeNames = null;
+    List<String> templateTypeNames = null;
     Set<String> disposedParameters = null;
+    Map<String, Node> typeTransformations = null;
 
     // Other information
     String description = null;
     String meaning = null;
     String deprecated = null;
     String license = null;
-    Set<String> suppressions = null;
-    Set<String> modifies = null;
+    ImmutableSet<String> suppressions = null;
+    ImmutableSet<String> modifies = null;
     String lendsName = null;
-    boolean ngInject = false;
-    boolean wizaction = false;
+
+    // Bit flags for properties.
+    private int propertyBitField = 0;
+
+    @Override
+    public String toString() {
+      return MoreObjects.toStringHelper(this)
+          .add("bitfield", (propertyBitField == 0)
+                           ? null : Integer.toHexString(propertyBitField))
+          .add("baseType", baseType)
+          .add("extendedInterfaces", extendedInterfaces)
+          .add("implementedInterfaces", implementedInterfaces)
+          .add("parameters", parameters)
+          .add("thrownTypes", thrownTypes)
+          .add("templateTypeNames", templateTypeNames)
+          .add("disposedParameters", disposedParameters)
+          .add("typeTransformations", typeTransformations)
+          .add("description", description)
+          .add("meaning", meaning)
+          .add("deprecated", deprecated)
+          .add("license", license)
+          .add("suppressions", suppressions)
+          .add("lendsName", lendsName)
+          .omitNullValues()
+          .toString();
+    }
+
+    protected LazilyInitializedInfo clone() {
+      LazilyInitializedInfo other = new LazilyInitializedInfo();
+      other.baseType = baseType;
+      other.extendedInterfaces = extendedInterfaces == null ? null
+          : new ArrayList<>(extendedInterfaces);
+      other.implementedInterfaces = implementedInterfaces == null ? null
+          : new ArrayList<>(implementedInterfaces);
+      other.parameters = parameters == null ? null : new LinkedHashMap<>(parameters);
+      other.thrownTypes = thrownTypes == null ? null : new ArrayList<>(thrownTypes);
+      other.templateTypeNames = templateTypeNames == null ? null
+          : new ArrayList<>(templateTypeNames);
+      other.disposedParameters = disposedParameters == null ? null
+          : new HashSet<>(disposedParameters);
+      other.typeTransformations = typeTransformations == null ? null
+          : new LinkedHashMap<>(typeTransformations);
+
+      other.description = description;
+      other.meaning = meaning;
+      other.deprecated = deprecated;
+      other.license = license;
+      other.suppressions = suppressions == null ? null : ImmutableSet.copyOf(suppressions);
+      other.modifies = modifies == null ? null :  ImmutableSet.copyOf(modifies);
+      other.lendsName = lendsName;
+
+      other.propertyBitField = propertyBitField;
+      return other;
+    }
+
+    // TODO(nnaze): Consider putting bit-fiddling logic in a reusable
+    // location.
+    void setBit(int bitIndex, boolean value) {
+      int mask = getMaskForBitIndex(bitIndex);
+      if (value) {
+        propertyBitField |= mask;
+      } else {
+        propertyBitField ^= mask;
+      }
+    }
+
+    boolean isBitSet(int bitIndex) {
+      int mask = getMaskForBitIndex(bitIndex);
+      return (mask & propertyBitField) != 0;
+    }
+
+    private int getMaskForBitIndex(int bitIndex) {
+        Preconditions.checkArgument(bitIndex >= 0,
+            "Bit index should be non-negative integer");
+      return 1 << bitIndex;
+    }
   }
 
   private static final class LazilyInitializedDocumentation {
     String sourceComment = null;
     List<Marker> markers = null;
 
-    Map<String, String> parameters = null;
+    LinkedHashMap<String, String> parameters = null;
     Map<JSTypeExpression, String> throwsDescriptions = null;
     String blockDescription = null;
     String fileOverview = null;
@@ -137,8 +232,7 @@ public class JSDocInfo implements Serializable {
   static class TrimmedStringPosition extends StringPosition {
     @Override public void setItem(String item) {
       Preconditions.checkArgument(
-          item.charAt(0) != ' ' &&
-          item.charAt(item.length() - 1) != ' ',
+          item.charAt(0) != ' ' && item.charAt(item.length() - 1) != ' ',
           "String has leading or trailing whitespace");
       super.setItem(item);
     }
@@ -250,9 +344,6 @@ public class JSDocInfo implements Serializable {
 
   private LazilyInitializedDocumentation documentation = null;
 
-  // The Node this JSDoc is associated with.
-  private Node associatedNode = null;
-
   private Visibility visibility = null;
 
   /**
@@ -284,6 +375,11 @@ public class JSDocInfo implements Serializable {
   private JSTypeExpression thisType = null;
 
   /**
+   * Whether the type annotation was inlined.
+   */
+  private boolean inlineType = false;
+
+  /**
    * Whether to include documentation.
    *
    * @see JSDocInfo.LazilyInitializedDocumentation
@@ -300,33 +396,37 @@ public class JSDocInfo implements Serializable {
   // for which the presence of the annotation alone is significant).
 
   // Mask all the boolean annotation types
-  private static final int MASK_FLAGS       = 0x3FFFFFFF;
+  private static final int MASK_FLAGS         = 0x3FFFFFFF;
 
   private static final int MASK_CONSTANT      = 0x00000001; // @const
   private static final int MASK_CONSTRUCTOR   = 0x00000002; // @constructor
   private static final int MASK_DEFINE        = 0x00000004; // @define
   private static final int MASK_HIDDEN        = 0x00000008; // @hidden
   private static final int MASK_PRESERVETRY   = 0x00000010; // @preserveTry
-  private static final int MASK_NOCHECK       = 0x00000020; // @notypecheck
+  @SuppressWarnings("unused")
+  private static final int MASK_UNUSED_1      = 0x00000020; //
   private static final int MASK_OVERRIDE      = 0x00000040; // @override
   private static final int MASK_NOALIAS       = 0x00000080; // @noalias
   private static final int MASK_DEPRECATED    = 0x00000100; // @deprecated
   private static final int MASK_INTERFACE     = 0x00000200; // @interface
   private static final int MASK_EXPORT        = 0x00000400; // @export
-  private static final int MASK_NOSHADOW      = 0x00000800; // @noshadow
   private static final int MASK_FILEOVERVIEW  = 0x00001000; // @fileoverview
   private static final int MASK_IMPLICITCAST  = 0x00002000; // @implicitCast
   private static final int MASK_NOSIDEEFFECTS = 0x00004000; // @nosideeffects
   private static final int MASK_EXTERNS       = 0x00008000; // @externs
-  private static final int MASK_JAVADISPATCH  = 0x00010000; // @javadispatch
+  @SuppressWarnings("unused")
+  private static final int MASK_UNUSED_2      = 0x00010000; //
   private static final int MASK_NOCOMPILE     = 0x00020000; // @nocompile
   private static final int MASK_CONSISTIDGEN  = 0x00040000; // @consistentIdGenerator
   private static final int MASK_IDGEN         = 0x00080000; // @idGenerator
   private static final int MASK_EXPOSE        = 0x00100000; // @expose
-  private static final int MASK_STRUCT        = 0x00200000; // @struct
-  private static final int MASK_DICT          = 0x00400000; // @dict
-  private static final int MASK_STALBEIDGEN   = 0x00800000; // @stableIdGenerator
-  private static final int MASK_MAPPEDIDGEN   = 0x01000000; // @idGenerator {mapped}
+  private static final int MASK_UNRESTRICTED  = 0x00200000; // @unrestricted
+  private static final int MASK_STRUCT        = 0x00400000; // @struct
+  private static final int MASK_DICT          = 0x00800000; // @dict
+  private static final int MASK_STALBEIDGEN   = 0x01000000; // @stableIdGenerator
+  private static final int MASK_MAPPEDIDGEN   = 0x02000000; // @idGenerator {mapped}
+  private static final int MASK_NOCOLLAPSE    = 0x04000000; // @nocollapse
+  private static final int MASK_RECORD        = 0x08000000; // @record
 
   // 3 bit type field stored in the top 3 bits of the most significant
   // nibble.
@@ -345,7 +445,70 @@ public class JSDocInfo implements Serializable {
   }
 
   // Visible for testing.
-  public JSDocInfo() {}
+  JSDocInfo() {}
+
+  public JSDocInfo clone() {
+    JSDocInfo other = new JSDocInfo();
+    other.info = this.info == null ? null : this.info.clone();
+    other.documentation = this.documentation;
+    other.visibility = this.visibility;
+    other.bitset = this.bitset;
+    other.type = this.type;
+    other.thisType = this.thisType;
+    other.includeDocumentation = this.includeDocumentation;
+    other.originalCommentPosition = this.originalCommentPosition;
+    return other;
+  }
+
+  @VisibleForTesting
+  public static boolean areEquivalent(JSDocInfo jsDoc1, JSDocInfo jsDoc2) {
+    if (jsDoc1 == null && jsDoc2 == null) {
+      return true;
+    }
+    if (jsDoc1 == null || jsDoc2 == null) {
+      return false;
+    }
+
+    if (!Objects.equals(jsDoc1.getParameterNames(), jsDoc2.getParameterNames())) {
+      return false;
+    }
+    for (String param : jsDoc1.getParameterNames()) {
+      if (!Objects.equals(jsDoc1.getParameterType(param), jsDoc2.getParameterType(param))) {
+        return false;
+      }
+    }
+
+    return Objects.equals(jsDoc1.getAuthors(), jsDoc2.getAuthors())
+        && Objects.equals(jsDoc1.getBaseType(), jsDoc2.getBaseType())
+        && Objects.equals(jsDoc1.getBlockDescription(), jsDoc2.getBlockDescription())
+        && Objects.equals(jsDoc1.getFileOverview(), jsDoc2.getFileOverview())
+        && Objects.equals(jsDoc1.getImplementedInterfaces(), jsDoc2.getImplementedInterfaces())
+        && Objects.equals(jsDoc1.getEnumParameterType(), jsDoc2.getEnumParameterType())
+        && Objects.equals(jsDoc1.getExtendedInterfaces(), jsDoc2.getExtendedInterfaces())
+        && Objects.equals(jsDoc1.getLendsName(), jsDoc2.getLendsName())
+        && Objects.equals(jsDoc1.getLicense(), jsDoc2.getLicense())
+        && Objects.equals(jsDoc1.getMarkers(), jsDoc2.getMarkers())
+        && Objects.equals(jsDoc1.getMeaning(), jsDoc2.getMeaning())
+        && Objects.equals(jsDoc1.getModifies(), jsDoc2.getModifies())
+        && Objects.equals(jsDoc1.getOriginalCommentString(), jsDoc2.getOriginalCommentString())
+        && Objects.equals(jsDoc1.getPropertyBitField(), jsDoc2.getPropertyBitField())
+        && Objects.equals(jsDoc1.getReferences(), jsDoc2.getReferences())
+        && Objects.equals(jsDoc1.getReturnDescription(), jsDoc2.getReturnDescription())
+        && Objects.equals(jsDoc1.getReturnType(), jsDoc2.getReturnType())
+        && Objects.equals(jsDoc1.getSuppressions(), jsDoc2.getSuppressions())
+        && Objects.equals(jsDoc1.getTemplateTypeNames(), jsDoc2.getTemplateTypeNames())
+        && Objects.equals(jsDoc1.getThisType(), jsDoc2.getThisType())
+        && Objects.equals(jsDoc1.getThrownTypes(), jsDoc2.getThrownTypes())
+        && Objects.equals(jsDoc1.getTypedefType(), jsDoc2.getTypedefType())
+        && Objects.equals(jsDoc1.getType(), jsDoc2.getType())
+        && Objects.equals(jsDoc1.getVersion(), jsDoc2.getVersion())
+        && Objects.equals(jsDoc1.getVisibility(), jsDoc2.getVisibility())
+        && jsDoc1.bitset == jsDoc2.bitset;
+  }
+
+  boolean isDocumentationIncluded() {
+    return includeDocumentation;
+  }
 
   void setConsistentIdGenerator(boolean value) {
     setFlag(value, MASK_CONSISTIDGEN);
@@ -367,6 +530,10 @@ public class JSDocInfo implements Serializable {
     setFlag(value, MASK_CONSTRUCTOR);
   }
 
+  void setUnrestricted() {
+    setFlag(true, MASK_UNRESTRICTED);
+  }
+
   void setStruct() {
     setFlag(true, MASK_STRUCT);
   }
@@ -383,10 +550,6 @@ public class JSDocInfo implements Serializable {
     setFlag(value, MASK_HIDDEN);
   }
 
-  void setNoCheck(boolean value) {
-    setFlag(value, MASK_NOCHECK);
-  }
-
   void setShouldPreserveTry(boolean value) {
     setFlag(value, MASK_PRESERVETRY);
   }
@@ -399,8 +562,7 @@ public class JSDocInfo implements Serializable {
     setFlag(value, MASK_NOALIAS);
   }
 
-  // Visible for testing.
-  public void setDeprecated(boolean value) {
+  void setDeprecated(boolean value) {
     setFlag(value, MASK_DEPRECATED);
   }
 
@@ -414,10 +576,6 @@ public class JSDocInfo implements Serializable {
 
   void setExpose(boolean value) {
     setFlag(value, MASK_EXPOSE);
-  }
-
-  void setNoShadow(boolean value) {
-    setFlag(value, MASK_NOSHADOW);
   }
 
   void setIdGenerator(boolean value) {
@@ -436,12 +594,12 @@ public class JSDocInfo implements Serializable {
     setFlag(value, MASK_EXTERNS);
   }
 
-  void setJavaDispatch(boolean value) {
-    setFlag(value, MASK_JAVADISPATCH);
-  }
-
   void setNoCompile(boolean value) {
     setFlag(value, MASK_NOCOMPILE);
+  }
+
+  void setNoCollapse(boolean value) {
+    setFlag(value, MASK_NOCOLLAPSE);
   }
 
   private void setFlag(boolean value, int mask) {
@@ -450,6 +608,10 @@ public class JSDocInfo implements Serializable {
     } else {
       bitset &= ~mask;
     }
+  }
+
+  void setImplicitMatch(boolean value) {
+    setFlag(value, MASK_RECORD);
   }
 
   /**
@@ -482,12 +644,32 @@ public class JSDocInfo implements Serializable {
     return getFlag(MASK_CONSTANT) || isDefine();
   }
 
+  public boolean hasConstAnnotation() {
+    return getFlag(MASK_CONSTANT);
+  }
+
   /**
    * Returns whether the {@code @constructor} annotation is present on this
    * {@link JSDocInfo}.
    */
   public boolean isConstructor() {
     return getFlag(MASK_CONSTRUCTOR);
+  }
+
+  /**
+   * Returns whether the {@code @record} annotation is present on this
+   * {@link JSDocInfo}.
+   */
+  public boolean usesImplicitMatch() {
+    return getFlag(MASK_RECORD);
+  }
+
+  /**
+   * Returns whether the {@code @unrestricted} annotation is present on this
+   * {@link JSDocInfo}.
+   */
+  public boolean makesUnrestricted() {
+    return getFlag(MASK_UNRESTRICTED);
   }
 
   /**
@@ -521,14 +703,6 @@ public class JSDocInfo implements Serializable {
    */
   public boolean isHidden() {
     return getFlag(MASK_HIDDEN);
-  }
-
-  /**
-   * Returns whether the {@code @nocheck} annotation is present on this
-   * {@link JSDocInfo}.
-   */
-  public boolean isNoTypeCheck() {
-    return getFlag(MASK_NOCHECK);
   }
 
   /**
@@ -568,7 +742,11 @@ public class JSDocInfo implements Serializable {
    * {@link JSDocInfo}.
    */
   public boolean isInterface() {
-    return getFlag(MASK_INTERFACE);
+    return getFlag(MASK_INTERFACE) || getFlag(MASK_RECORD);
+  }
+
+  public boolean isConstructorOrInterface() {
+    return isConstructor() || isInterface();
   }
 
   /**
@@ -585,14 +763,6 @@ public class JSDocInfo implements Serializable {
    */
   public boolean isExpose() {
     return getFlag(MASK_EXPOSE);
-  }
-
-  /**
-   * Returns whether the {@code @noshadow} annotation is present on this
-   * {@link JSDocInfo}.
-   */
-  public boolean isNoShadow() {
-    return getFlag(MASK_NOSHADOW);
   }
 
   /**
@@ -628,14 +798,6 @@ public class JSDocInfo implements Serializable {
   }
 
   /**
-   * Returns whether the {@code @javadispatch} annotation is present on this
-   * {@link JSDocInfo}.
-   */
-  public boolean isJavaDispatch() {
-    return getFlag(MASK_JAVADISPATCH);
-  }
-
-  /**
    * Returns whether the {@code @nocompile} annotation is present on this
    * {@link JSDocInfo}.
    */
@@ -644,7 +806,15 @@ public class JSDocInfo implements Serializable {
   }
 
   /**
-   * @return Whether there is declaration present on this {@link JSDocInfo}.
+   * Returns whether the {@code @nocompile} annotation is present on this
+   * {@link JSDocInfo}.
+   */
+  public boolean isNoCollapse() {
+    return getFlag(MASK_NOCOLLAPSE);
+  }
+
+  /**
+   * @return Whether there is a declaration present on this {@link JSDocInfo}.
    */
   public boolean containsDeclaration() {
     return (hasType()
@@ -653,24 +823,39 @@ public class JSDocInfo implements Serializable {
         || hasTypedefType()
         || hasThisType()
         || getParameterCount() > 0
+        || visibility != Visibility.INHERITED
         || getFlag(MASK_CONSTANT
             | MASK_CONSTRUCTOR
             | MASK_DEFINE
             | MASK_OVERRIDE
             | MASK_NOALIAS
+            | MASK_EXPORT
+            | MASK_EXPOSE
             | MASK_DEPRECATED
             | MASK_INTERFACE
-            | MASK_NOSHADOW
             | MASK_IMPLICITCAST
-            | MASK_NOSIDEEFFECTS));
+            | MASK_NOSIDEEFFECTS
+            | MASK_RECORD));
+  }
+
+  /**
+   * @return Whether there is a declaration of a callable type.
+   */
+  public boolean containsFunctionDeclaration() {
+    boolean hasFunctionType = hasType() && getType().getRoot().isFunction();
+    return hasFunctionType
+        || hasReturnType()
+        || hasThisType()
+        || getParameterCount() > 0
+        || getFlag(MASK_CONSTRUCTOR)
+        || (getFlag(MASK_NOSIDEEFFECTS) && (!hasType() || hasFunctionType));
   }
 
   private boolean getFlag(int mask) {
     return (bitset & mask) != 0x00;
   }
 
-  // Visible for testing.
-  public void setVisibility(Visibility visibility) {
+  void setVisibility(Visibility visibility) {
     this.visibility = visibility;
   }
 
@@ -706,7 +891,7 @@ public class JSDocInfo implements Serializable {
     }
 
     if (documentation.markers == null) {
-      documentation.markers = Lists.newArrayList();
+      documentation.markers = new ArrayList<>();
     }
 
     Marker marker = new Marker();
@@ -733,13 +918,17 @@ public class JSDocInfo implements Serializable {
   /**
    * Add a suppressed warning.
    */
-  public void addSuppression(String suppression) {
+  void addSuppression(String suppression) {
     lazyInitInfo();
 
     if (info.suppressions == null) {
-      info.suppressions = Sets.newHashSet();
+      info.suppressions = ImmutableSet.of(suppression);
+    } else {
+      info.suppressions = new ImmutableSet.Builder<String>()
+          .addAll(info.suppressions)
+          .add(suppression)
+          .build();
     }
-    info.suppressions.add(suppression);
   }
 
   /**
@@ -753,20 +942,8 @@ public class JSDocInfo implements Serializable {
       return false;
     }
 
-    info.suppressions = suppressions;
+    info.suppressions = ImmutableSet.copyOf(suppressions);
     return true;
-  }
-
-  /**
-   * Add modifies values.
-   */
-  void addModifies(String modifies) {
-    lazyInitInfo();
-
-    if (info.modifies == null) {
-      info.modifies = Sets.newHashSet();
-    }
-    info.modifies.add(modifies);
   }
 
   /**
@@ -780,7 +957,7 @@ public class JSDocInfo implements Serializable {
       return false;
     }
 
-    info.modifies = modifies;
+    info.modifies = ImmutableSet.copyOf(modifies);
     return true;
   }
 
@@ -809,7 +986,7 @@ public class JSDocInfo implements Serializable {
     }
 
     if (documentation.sees == null) {
-      documentation.sees = Lists.newArrayList();
+      documentation.sees = new ArrayList<>();
     }
 
     documentation.sees.add(reference);
@@ -825,7 +1002,7 @@ public class JSDocInfo implements Serializable {
     }
 
     if (documentation.authors == null) {
-      documentation.authors = Lists.newArrayList();
+      documentation.authors = new ArrayList<>();
     }
 
     documentation.authors.add(author);
@@ -841,8 +1018,7 @@ public class JSDocInfo implements Serializable {
     }
 
     if (documentation.throwsDescriptions == null) {
-      documentation.throwsDescriptions =
-          new LinkedHashMap<JSTypeExpression, String>();
+      documentation.throwsDescriptions = new LinkedHashMap<>();
     }
 
     if (!documentation.throwsDescriptions.containsKey(type)) {
@@ -867,7 +1043,7 @@ public class JSDocInfo implements Serializable {
     }
 
     if (documentation.parameters == null) {
-      documentation.parameters = new LinkedHashMap<String, String>();
+      documentation.parameters = new LinkedHashMap<>();
     }
 
     if (!documentation.parameters.containsKey(parameter)) {
@@ -945,7 +1121,7 @@ public class JSDocInfo implements Serializable {
   boolean declareParam(JSTypeExpression jsType, String parameter) {
     lazyInitInfo();
     if (info.parameters == null) {
-      info.parameters = new LinkedHashMap<String, JSTypeExpression>();
+      info.parameters = new LinkedHashMap<>();
     }
     if (!info.parameters.containsKey(parameter)) {
       info.parameters.put(parameter, jsType);
@@ -959,16 +1135,60 @@ public class JSDocInfo implements Serializable {
    * Declares a template type name. Template type names are described using the
    * {@code @template} annotation.
    *
-   * @param templateTypeNames the template type name.
+   * @param newTemplateTypeName the template type name.
    */
-  boolean declareTemplateTypeNames(List<String> templateTypeNames) {
+  boolean declareTemplateTypeName(String newTemplateTypeName) {
     lazyInitInfo();
 
-    if (info.templateTypeNames != null) {
+    if (isTypeTransformationName(newTemplateTypeName) || hasTypedefType()) {
+      return false;
+    }
+    if (info.templateTypeNames == null){
+      info.templateTypeNames = new ArrayList<>();
+    } else if (info.templateTypeNames.contains(newTemplateTypeName)) {
       return false;
     }
 
-    info.templateTypeNames = ImmutableList.copyOf(templateTypeNames);
+    info.templateTypeNames.add(newTemplateTypeName);
+    return true;
+  }
+
+  private boolean isTemplateTypeName(String name) {
+    if (info.templateTypeNames == null) {
+      return false;
+    }
+    return info.templateTypeNames.contains(name);
+  }
+
+  private boolean isTypeTransformationName(String name) {
+    if (info.typeTransformations == null) {
+      return false;
+    }
+    return info.typeTransformations.containsKey(name);
+  }
+
+  /**
+   * Declares a type transformation expression. These expressions are described
+   * using a {@code @template} annotation of the form
+   * {@code @template T := TTL-Expr =:}
+   *
+   * @param newName The name associated to the type transformation.
+   * @param expr The type transformation expression.
+   */
+  boolean declareTypeTransformation(String newName, Node expr) {
+    lazyInitInfo();
+
+    if (isTemplateTypeName(newName)) {
+      return false;
+    }
+    if (info.typeTransformations == null){
+      // A LinkedHashMap is used to keep the insertion order. The type
+      // transformation expressions will be evaluated in this order.
+      info.typeTransformations = new LinkedHashMap<>();
+    } else if (info.typeTransformations.containsKey(newName)) {
+      return false;
+    }
+    info.typeTransformations.put(newName, expr);
     return true;
   }
 
@@ -981,7 +1201,7 @@ public class JSDocInfo implements Serializable {
     lazyInitInfo();
 
     if (info.thrownTypes == null) {
-      info.thrownTypes = Lists.newArrayList();
+      info.thrownTypes = new ArrayList<>();
     }
 
     info.thrownTypes.add(jsType);
@@ -998,7 +1218,7 @@ public class JSDocInfo implements Serializable {
   }
 
   /**
-   * Gets the parameter type.
+   * Gets the type of a given named parameter.
    * @param parameter the parameter's name
    * @return the parameter's type or {@code null} if this parameter is not
    *     defined or has a {@code null} type
@@ -1032,7 +1252,8 @@ public class JSDocInfo implements Serializable {
 
   /**
    * Returns the set of names of the defined parameters. The iteration order
-   * of the returned set is not the order in which parameters are defined.
+   * of the returned set is the order in which parameters are defined in the
+   * JSDoc, rather than the order in which the function declares them.
    *
    * @return the set of names of the defined parameters. The returned set is
    *     immutable.
@@ -1042,6 +1263,18 @@ public class JSDocInfo implements Serializable {
       return ImmutableSet.of();
     }
     return ImmutableSet.copyOf(info.parameters.keySet());
+  }
+
+  /**
+   * Returns the nth name in the defined parameters. The iteration order
+   * is the order in which parameters are defined in the JSDoc, rather
+   * than the order in which the function declares them.
+   */
+  public String getParameterNameAt(int index) {
+    if (info == null || info.parameters == null) {
+      return null;
+    }
+    return ImmutableList.copyOf(info.parameters.keySet()).get(index);
   }
 
   /**
@@ -1058,6 +1291,10 @@ public class JSDocInfo implements Serializable {
     setType(type, TYPEFIELD_TYPE);
   }
 
+  void setInlineType() {
+    this.inlineType = true;
+  }
+
   void setReturnType(JSTypeExpression type) {
     setType(type, TYPEFIELD_RETURN);
   }
@@ -1066,15 +1303,19 @@ public class JSDocInfo implements Serializable {
     setType(type, TYPEFIELD_ENUM);
   }
 
-  void setTypedefType(JSTypeExpression type) {
-    setType(type, TYPEFIELD_TYPEDEF);
+  boolean declareTypedefType(JSTypeExpression type) {
+    if (getTemplateTypeNames().isEmpty()) {
+      setType(type, TYPEFIELD_TYPEDEF);
+      return true;
+    }
+    return false;
   }
 
   private void setType(JSTypeExpression type, int mask) {
     if ((bitset & MASK_TYPEFIELD) != 0) {
       throw new IllegalStateException(
-          "API tried to add two incompatible type tags. " +
-          "This should have been blocked and emitted a warning.");
+          "API tried to add two incompatible type tags. "
+          + "This should have been blocked and emitted a warning.");
     }
     this.bitset = (bitset & MASK_FLAGS) | mask;
     this.type = type;
@@ -1088,6 +1329,17 @@ public class JSDocInfo implements Serializable {
       return ImmutableList.of();
     }
     return Collections.unmodifiableList(info.thrownTypes);
+  }
+
+  /**
+   * Get the message for a given thrown type.
+   */
+  public String getThrowsDescriptionForType(JSTypeExpression type) {
+    if (documentation == null || documentation.throwsDescriptions == null) {
+      return null;
+    }
+
+    return documentation.throwsDescriptions.get(type);
   }
 
   /**
@@ -1126,11 +1378,22 @@ public class JSDocInfo implements Serializable {
     return (bitset & MASK_TYPEFIELD) == mask;
   }
 
+  public boolean hasTypeInformation() {
+    return (bitset & MASK_TYPEFIELD) != 0;
+  }
+
   /**
    * Gets the type specified by the {@code @type} annotation.
    */
   public JSTypeExpression getType() {
     return getType(TYPEFIELD_TYPE);
+  }
+
+  /**
+   * Returns whether the type annotation was inlined.
+   */
+  public boolean isInlineType() {
+    return inlineType;
   }
 
   /**
@@ -1211,12 +1474,12 @@ public class JSDocInfo implements Serializable {
   /**
    * Gets the meaning specified by the {@code @meaning} annotation.
    *
-   * In localization systems, two messages with the same content but
+   * <p>In localization systems, two messages with the same content but
    * different "meanings" may be translated differently. By default, we
    * use the name of the variable that the message is initialized to as
    * the "meaning" of the message.
    *
-   * But some code generators (like Closure Templates) inject their own
+   * <p>But some code generators (like Closure Templates) inject their own
    * meaning with the jsdoc {@code @meaning} annotation.
    */
   public String getMeaning() {
@@ -1231,7 +1494,7 @@ public class JSDocInfo implements Serializable {
   /**
    * Gets the name we're lending to in a {@code @lends} annotation.
    *
-   * In many reflection APIs, you pass an anonymous object to a function,
+   * <p>In many reflection APIs, you pass an anonymous object to a function,
    * and that function mixes the anonymous object into another object.
    * The {@code @lends} annotation allows the type system to track
    * those property assignments.
@@ -1249,24 +1512,84 @@ public class JSDocInfo implements Serializable {
    * Returns whether JSDoc is annotated with {@code @ngInject} annotation.
    */
   public boolean isNgInject() {
-    return (info == null) ? false : info.ngInject;
+    return (info != null) && info.isBitSet(Property.NG_INJECT);
   }
 
   void setNgInject(boolean ngInject) {
     lazyInitInfo();
-    info.ngInject = ngInject;
+    info.setBit(Property.NG_INJECT, ngInject);
+  }
+
+  /**
+   * Returns whether JSDoc is annotated with {@code @jaggerInject} annotation.
+   */
+  public boolean isJaggerInject() {
+    return (info != null) && info.isBitSet(Property.JAGGER_INJECT);
+  }
+
+  void setJaggerInject(boolean jaggerInject) {
+    lazyInitInfo();
+    info.setBit(Property.JAGGER_INJECT, jaggerInject);
+  }
+
+  /**
+   * Returns whether JSDoc is annotated with {@code @jaggerProvidePromise} annotation.
+   */
+  public boolean isJaggerProvide() {
+    return (info != null) && info.isBitSet(Property.JAGGER_PROVIDE);
+  }
+
+  void setJaggerProvide(boolean jaggerProvide) {
+    lazyInitInfo();
+    info.setBit(Property.JAGGER_PROVIDE, jaggerProvide);
+  }
+
+  /**
+   * Returns whether JSDoc is annotated with {@code @jaggerProvidePromise} annotation.
+   */
+  public boolean isJaggerProvidePromise() {
+    return (info != null) && info.isBitSet(Property.JAGGER_PROVIDE_PROMISE);
+  }
+
+  void setJaggerProvidePromise(boolean jaggerProvidePromise) {
+    lazyInitInfo();
+    info.setBit(Property.JAGGER_PROVIDE_PROMISE, jaggerProvidePromise);
+  }
+
+  /**
+   * Returns whether JSDoc is annotated with {@code @jaggerModule} annotation.
+   */
+  public boolean isJaggerModule() {
+    return (info != null) && info.isBitSet(Property.JAGGER_MODULE);
+  }
+
+  void setJaggerModule(boolean jaggerModule) {
+    lazyInitInfo();
+    info.setBit(Property.JAGGER_MODULE, jaggerModule);
   }
 
   /**
    * Returns whether JSDoc is annotated with {@code @wizaction} annotation.
    */
   public boolean isWizaction() {
-    return (info == null) ? false : info.wizaction;
+    return (info != null) && info.isBitSet(Property.WIZ_ACTION);
   }
 
   void setWizaction(boolean wizaction) {
     lazyInitInfo();
-    info.wizaction = wizaction;
+    info.setBit(Property.WIZ_ACTION, wizaction);
+  }
+
+  /**
+   * Returns whether JSDoc is annotated with {@code @polymerBehavior} annotation.
+   */
+  public boolean isPolymerBehavior() {
+    return (info != null) && info.isBitSet(Property.POLYMER_BEHAVIOR);
+  }
+
+  void setPolymerBehavior(boolean polymerBehavior) {
+    lazyInitInfo();
+    info.setBit(Property.POLYMER_BEHAVIOR, polymerBehavior);
   }
 
   /**
@@ -1280,7 +1603,7 @@ public class JSDocInfo implements Serializable {
     lazyInitInfo();
     // Lazily initialize disposedParameters
     if (info.disposedParameters == null) {
-      info.disposedParameters = Sets.newHashSet();
+      info.disposedParameters = new HashSet<>();
     }
 
     if (info.disposedParameters.contains(parameterName)) {
@@ -1305,14 +1628,10 @@ public class JSDocInfo implements Serializable {
     return (info == null) ? null : info.license;
   }
 
-  /** License directives can appear in multiple comments, and always
-   * apply to the entire file.  Break protection and allow outsiders to
-   * update the license string so that we can attach the license text even
-   * when the JSDocInfo has been created and tagged with other information.
+  /**
    * @param license String containing new license text.
    */
-
-  public void setLicense(String license) {
+  void setLicense(String license) {
     lazyInitInfo();
     info.license = license;
   }
@@ -1320,6 +1639,20 @@ public class JSDocInfo implements Serializable {
   @Override
   public String toString() {
     return "JSDocInfo";
+  }
+
+  @VisibleForTesting
+  public String toStringVerbose() {
+    return MoreObjects.toStringHelper(this)
+        .add("bitset", (bitset == 0) ? null : Integer.toHexString(bitset))
+        .add("documentation", documentation)
+        .add("info", info)
+        .add("originalComment", getOriginalCommentString())
+        .add("thisType", thisType)
+        .add("type", type)
+        .add("visibility", visibility)
+        .omitNullValues()
+        .toString();
   }
 
   /**
@@ -1337,7 +1670,7 @@ public class JSDocInfo implements Serializable {
   boolean addImplementedInterface(JSTypeExpression interfaceName) {
     lazyInitInfo();
     if (info.implementedInterfaces == null) {
-      info.implementedInterfaces = Lists.newArrayListWithCapacity(2);
+      info.implementedInterfaces = new ArrayList<>(2);
     }
     if (info.implementedInterfaces.contains(interfaceName)) {
       return false;
@@ -1378,7 +1711,7 @@ public class JSDocInfo implements Serializable {
   boolean addExtendedInterface(JSTypeExpression type) {
     lazyInitInfo();
     if (info.extendedInterfaces == null) {
-      info.extendedInterfaces = Lists.newArrayListWithCapacity(2);
+      info.extendedInterfaces = new ArrayList<>(2);
     }
     if (info.extendedInterfaces.contains(type)) {
       return false;
@@ -1431,6 +1764,17 @@ public class JSDocInfo implements Serializable {
   public Set<String> getModifies() {
     Set<String> modifies = info == null ? null : info.modifies;
     return modifies == null ? Collections.<String>emptySet() : modifies;
+  }
+
+  private Integer getPropertyBitField() {
+    return info == null ? null : info.propertyBitField;
+  }
+
+  void mergePropertyBitfieldFrom(JSDocInfo other) {
+    if (other.info != null) {
+      lazyInitInfo();
+      info.propertyBitField |= other.getPropertyBitField();
+    }
   }
 
   /**
@@ -1506,27 +1850,6 @@ public class JSDocInfo implements Serializable {
     return documentation == null ? null : documentation.fileOverview;
   }
 
-  public Node getAssociatedNode() {
-    return this.associatedNode;
-  }
-
-  /**
-   * Sets the node associated with this JSDoc.
-   * Notice that many nodes may have pointer to the same JSDocInfo
-   * object (because we propagate it across the type graph). But there
-   * is only one canonical "owner" node of the JSDocInfo, which corresponds
-   * to its original place in the syntax tree.
-   */
-  public void setAssociatedNode(Node node) {
-    this.associatedNode = node;
-  }
-
-  /** Gets the name of the source file that contains this JSDoc. */
-  public String getSourceName() {
-    return this.associatedNode != null
-        ? this.associatedNode.getSourceFileName() : null;
-  }
-
   /** Gets the list of all markers for the documentation in this JSDoc. */
   public Collection<Marker> getMarkers() {
     return (documentation == null || documentation.markers == null)
@@ -1538,7 +1861,15 @@ public class JSDocInfo implements Serializable {
     if (info == null || info.templateTypeNames == null) {
       return ImmutableList.of();
     }
-    return info.templateTypeNames;
+    return ImmutableList.copyOf(info.templateTypeNames);
+  }
+
+  /** Gets the type transformations. */
+  public ImmutableMap<String, Node> getTypeTransformations() {
+    if (info == null || info.typeTransformations == null) {
+      return ImmutableMap.<String, Node>of();
+    }
+    return ImmutableMap.copyOf(info.typeTransformations);
   }
 
   /**
@@ -1549,7 +1880,7 @@ public class JSDocInfo implements Serializable {
    * @return collection of all type nodes
    */
   public Collection<Node> getTypeNodes() {
-    List<Node> nodes = Lists.newArrayList();
+    List<Node> nodes = new ArrayList<>();
 
     if (type != null) {
       nodes.add(type.getRoot());

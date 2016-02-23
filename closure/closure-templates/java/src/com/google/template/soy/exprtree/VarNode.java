@@ -16,6 +16,9 @@
 
 package com.google.template.soy.exprtree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.types.SoyType;
 
 /**
  * Node representing a variable.
@@ -26,10 +29,10 @@ package com.google.template.soy.exprtree;
  * Important: This type of node never appears in expression parse trees. It is only created if you
  * explicitly parse an input as a variable using ExpressionParser.parseVariable().
  *
- * @see DataRefNode
- * @author Kai Huang
  */
-public class VarNode extends AbstractExprNode {
+public final class VarNode extends AbstractExprNode {
+
+  public static final VarNode ERROR = new VarNode("error", SourceLocation.UNKNOWN);
 
 
   /** The variable name (without the dollar sign). */
@@ -38,8 +41,10 @@ public class VarNode extends AbstractExprNode {
 
   /**
    * @param name The variable name (without the dollar sign).
+   * @param sourceLocation The node's source location.
    */
-  public VarNode(String name) {
+  public VarNode(String name, SourceLocation sourceLocation) {
+    super(sourceLocation);
     this.name = name;
   }
 
@@ -48,14 +53,19 @@ public class VarNode extends AbstractExprNode {
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected VarNode(VarNode orig) {
-    super(orig);
+  private VarNode(VarNode orig, CopyState copyState) {
+    super(orig, copyState);
     this.name = orig.name;
   }
 
 
   @Override public Kind getKind() {
     return Kind.VAR_NODE;
+  }
+
+
+  @Override public SoyType getType() {
+    throw new UnsupportedOperationException();
   }
 
 
@@ -70,8 +80,8 @@ public class VarNode extends AbstractExprNode {
   }
 
 
-  @Override public VarNode clone() {
-    return new VarNode(this);
+  @Override public VarNode copy(CopyState copyState) {
+    return new VarNode(this, copyState);
   }
 
 }

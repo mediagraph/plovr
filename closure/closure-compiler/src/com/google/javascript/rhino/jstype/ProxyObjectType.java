@@ -39,6 +39,7 @@
 
 package com.google.javascript.rhino.jstype;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.rhino.ErrorReporter;
 import com.google.javascript.rhino.JSDocInfo;
@@ -53,7 +54,7 @@ import java.util.Collections;
  * @see TemplatizedType
  *
  */
-class ProxyObjectType extends ObjectType {
+public class ProxyObjectType extends ObjectType {
   private static final long serialVersionUID = 1L;
 
   private JSType referencedType;
@@ -66,7 +67,7 @@ class ProxyObjectType extends ObjectType {
   ProxyObjectType(JSTypeRegistry registry, JSType referencedType,
                   TemplateTypeMap templateTypeMap) {
     super(registry, templateTypeMap);
-    setReferencedType(referencedType);
+    setReferencedType(Preconditions.checkNotNull(referencedType));
   }
 
   @Override
@@ -122,6 +123,11 @@ class ProxyObjectType extends ObjectType {
   @Override
   public boolean canBeCalled() {
     return referencedType.canBeCalled();
+  }
+
+  @Override
+  public boolean isStructuralType() {
+    return referencedType.isStructuralType();
   }
 
   @Override
@@ -206,7 +212,7 @@ class ProxyObjectType extends ObjectType {
   }
 
   @Override
-  RecordType toMaybeRecordType() {
+  public RecordType toMaybeRecordType() {
     return referencedType.toMaybeRecordType();
   }
 
@@ -232,7 +238,13 @@ class ProxyObjectType extends ObjectType {
 
   @Override
   public boolean isSubtype(JSType that) {
-    return referencedType.isSubtype(that);
+    return referencedType.isSubtype(that, ImplCache.create());
+  }
+
+  @Override
+  protected boolean isSubtype(JSType that,
+      ImplCache implicitImplCache) {
+    return referencedType.isSubtype(that, implicitImplCache);
   }
 
   @Override
@@ -264,11 +276,9 @@ class ProxyObjectType extends ObjectType {
   }
 
   @Override
-  boolean defineProperty(String propertyName, JSType type,
-      boolean inferred, Node propertyNode) {
-    return referencedObjType == null ? true :
-        referencedObjType.defineProperty(
-            propertyName, type, inferred, propertyNode);
+  boolean defineProperty(String propertyName, JSType type, boolean inferred, Node propertyNode) {
+    return referencedObjType == null
+        || referencedObjType.defineProperty(propertyName, type, inferred, propertyNode);
   }
 
   @Override
@@ -313,9 +323,13 @@ class ProxyObjectType extends ObjectType {
         referencedObjType.getTemplateTypes();
   }
 
+  public <T> T visitReferenceType(Visitor<T> visitor) {
+    return referencedType.visit(visitor);
+  }
+
   @Override
   public <T> T visit(Visitor<T> visitor) {
-    return referencedType.visit(visitor);
+    return visitor.caseProxyObjectType(this);
   }
 
   @Override <T> T visit(RelationshipVisitor<T> visitor, JSType that) {
@@ -323,7 +337,7 @@ class ProxyObjectType extends ObjectType {
   }
 
   @Override
-  JSType resolveInternal(ErrorReporter t, StaticScope<JSType> scope) {
+  JSType resolveInternal(ErrorReporter t, StaticTypedScope<JSType> scope) {
     setReferencedType(referencedType.resolve(t, scope));
     return this;
   }

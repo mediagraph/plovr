@@ -22,60 +22,90 @@ import junit.framework.TestCase;
 /**
  * Unit tests for SoyBidiUtils.
  *
- * @author Aharon Lanin
  */
 public class SoyBidiUtilsTest extends TestCase {
 
 
   public void testGetBidiGlobalDir() {
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir(null));
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir("en"));
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir("fr"));
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir("ru"));
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir("ja"));
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir("zh-CN"));
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir("fil"));
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir("az"));
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir("iw-Latn"));
-    assertEquals(1, SoyBidiUtils.getBidiGlobalDir("zz-ZZ"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("qbi"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("en-US-psrtl"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("en-x-psrtl"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("iw"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("iw-IL"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("he"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("ar"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("ar-EG"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("fa"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("ur"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("az-Arab"));
-    assertEquals(-1, SoyBidiUtils.getBidiGlobalDir("az-Arab-IR"));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir(null));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir("en"));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir("fr"));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir("ru"));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir("ja"));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir("zh-CN"));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir("fil"));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir("az"));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir("iw-Latn"));
+    assertEquals(BidiGlobalDir.LTR, SoyBidiUtils.getBidiGlobalDir("zz-ZZ"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("qbi"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("en-US-psrtl"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("en-x-psrtl"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("iw"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("iw-IL"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("he"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("ar"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("ar-EG"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("fa"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("ur"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("az-Arab"));
+    assertEquals(BidiGlobalDir.RTL, SoyBidiUtils.getBidiGlobalDir("az-Arab-IR"));
   }
 
 
   public void testGetBidiFormatter() {
     assertEquals(1, SoyBidiUtils.getBidiFormatter(1).getContextDir().ord);
     assertEquals(-1, SoyBidiUtils.getBidiFormatter(-1).getContextDir().ord);
-    assertEquals(0, SoyBidiUtils.getBidiFormatter(0).getContextDir().ord);
     assertTrue(SoyBidiUtils.getBidiFormatter(1) == SoyBidiUtils.getBidiFormatter(100));
+    assertTrue(SoyBidiUtils.getBidiFormatter(-1) == SoyBidiUtils.getBidiFormatter(-5));
+    assertTrue(SoyBidiUtils.getBidiFormatter(-1) != SoyBidiUtils.getBidiFormatter(1));
   }
 
 
-  public void testDecodeBidiGlobalDirFromOptions() {
-    assertNull(SoyBidiUtils.decodeBidiGlobalDirFromOptions(0, false));
+  public void testDecodeBidiGlobalDirFromJsOptions() {
+    assertNull(SoyBidiUtils.decodeBidiGlobalDirFromJsOptions(0, false));
 
     BidiGlobalDir bidiGlobalDir;
 
-    bidiGlobalDir = SoyBidiUtils.decodeBidiGlobalDirFromOptions(1, false);
+    bidiGlobalDir = SoyBidiUtils.decodeBidiGlobalDirFromJsOptions(1, false);
     assertTrue(bidiGlobalDir.isStaticValue());
     assertEquals(bidiGlobalDir.getStaticValue(), 1);
 
-    bidiGlobalDir = SoyBidiUtils.decodeBidiGlobalDirFromOptions(-1, false);
+    bidiGlobalDir = SoyBidiUtils.decodeBidiGlobalDirFromJsOptions(-1, false);
     assertTrue(bidiGlobalDir.isStaticValue());
     assertEquals(bidiGlobalDir.getStaticValue(), -1);
 
-    bidiGlobalDir = SoyBidiUtils.decodeBidiGlobalDirFromOptions(0, true);
+    bidiGlobalDir = SoyBidiUtils.decodeBidiGlobalDirFromJsOptions(0, true);
     assertFalse(bidiGlobalDir.isStaticValue());
-    assertEquals(bidiGlobalDir.getCodeSnippet(), "goog.i18n.bidi.IS_RTL?-1:1");
+    assertEquals(bidiGlobalDir.getCodeSnippet(), "soy.$$IS_LOCALE_RTL?-1:1");
+  }
+
+  public void testDecodeBidiGlobalDirFromPyOptions() {
+    assertNull(SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(null));
+    assertNull(SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(""));
+
+    BidiGlobalDir bidiGlobalDir;
+
+    bidiGlobalDir = SoyBidiUtils.decodeBidiGlobalDirFromPyOptions("mod.is_rtl");
+    assertFalse(bidiGlobalDir.isStaticValue());
+    assertEquals(bidiGlobalDir.getCodeSnippet(), "-1 if external_bidi.is_rtl() else 1");
+
+    bidiGlobalDir = SoyBidiUtils.decodeBidiGlobalDirFromPyOptions("package.mod.is_rtl");
+    assertFalse(bidiGlobalDir.isStaticValue());
+    assertEquals(bidiGlobalDir.getCodeSnippet(), "-1 if external_bidi.is_rtl() else 1");
+  }
+
+  public void testInvalidDecodeBidiGlobalDirFromPyOptions() {
+    try {
+      SoyBidiUtils.decodeBidiGlobalDirFromPyOptions("is_rtl");
+      fail("bidiIsRtlFn without a module path did not except");
+    } catch (IllegalArgumentException expected) {
+    }
+
+    try {
+      SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(".is_rtl");
+      SoyBidiUtils.decodeBidiGlobalDirFromPyOptions("is_rtl.");
+      fail("bidiIsRtlFn with invalid path did not except");
+    } catch (IllegalArgumentException expected) {
+    }
   }
 }

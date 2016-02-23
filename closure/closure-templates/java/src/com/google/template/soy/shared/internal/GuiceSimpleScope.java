@@ -17,6 +17,7 @@
 package com.google.template.soy.shared.internal;
 
 import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.collect.Maps;
 import com.google.inject.Key;
 import com.google.inject.OutOfScopeException;
@@ -24,7 +25,9 @@ import com.google.inject.Provider;
 import com.google.inject.Scope;
 
 import java.util.Map;
+import java.util.Stack;
 
+import javax.annotation.CheckReturnValue;
 
 /**
  * Scopes a single execution of a block of code.
@@ -54,12 +57,11 @@ import java.util.Map;
  *       .in(ScopeAnnotation.class);
  * </pre>
  *
- * @author Jesse Wilson
- * @author Fedor Karpelevitch
- * @author Kai Huang
  */
 public class GuiceSimpleScope implements Scope {
-
+  public interface WithScope extends AutoCloseable {
+    @Override public void close();
+  }
 
   /** Provider to use as the unscoped provider for scoped parameters. Always throws exception. */
   private static final Provider<Object> UNSCOPED_PROVIDER =
@@ -86,16 +88,25 @@ public class GuiceSimpleScope implements Scope {
 
 
   /** The ThreadLocal holding all the values in scope. */
-  private final ThreadLocal<Map<Key<?>, Object>> scopedValuesTl =
-      new ThreadLocal<Map<Key<?>, Object>>();
+  private final ThreadLocal<Stack<Map<Key<?>, Object>>> scopedValuesTl = new ThreadLocal<>();
 
+  private final WithScope exiter = new WithScope() {
+    @Override public void close() {
+      exit();
+    }
+  };
 
   /**
    * Enters an occurrence of this scope.
    */
-  public void enter() {
-    checkState(!isActive(), "A scoping block is already in progress");
-    scopedValuesTl.set(Maps.<Key<?>, Object>newHashMap());
+  @CheckReturnValue public WithScope enter() {
+    Stack<Map<Key<?>, Object>> stack = scopedValuesTl.get();
+    if (stack == null) {
+      stack = new Stack<>();
+      scopedValuesTl.set(stack);
+    }
+    stack.push(Maps.<Key<?>, Object>newHashMap());
+    return exiter;
   }
 
 
@@ -104,7 +115,11 @@ public class GuiceSimpleScope implements Scope {
    */
   public void exit() {
     checkState(isActive(), "No scoping block in progress");
-    scopedValuesTl.remove();
+    Stack<Map<Key<?>, Object>> stack = scopedValuesTl.get();
+    stack.pop();
+    if (stack.isEmpty()) {
+      scopedValuesTl.remove();
+    }
   }
 
 
@@ -112,7 +127,8 @@ public class GuiceSimpleScope implements Scope {
    * Whether we're currently in an occurrence of this scope.
    */
   public boolean isActive() {
-    return scopedValuesTl.get() != null;
+    Stack<Map<Key<?>, Object>> stack = scopedValuesTl.get();
+    return stack != null && !stack.isEmpty();
   }
 
 
@@ -159,16 +175,6 @@ public class GuiceSimpleScope implements Scope {
   }
 
 
-  /**
-   * Gets a value in the current occurrence of this scope.
-   * @param class0 The class to get.
-   * @return The scoped value for the given class.
-   */
-  public <T> T getForTesting(Class<T> class0) {
-    return getForTesting(Key.get(class0));
-  }
-
-
   @Override public <T> Provider<T> scope(final Key<T> key, final Provider<T> unscopedProvider) {
 
     return new Provider<T>() {
@@ -191,12 +197,10 @@ public class GuiceSimpleScope implements Scope {
    * @param key The key that is intended to be retrieved from the returned map.
    */
   private <T> Map<Key<?>, Object> getScopedValues(Key<T> key) {
-
-    Map<Key<?>, Object> scopedValues = scopedValuesTl.get();
-    if (scopedValues == null) {
+    if (!isActive()) {
       throw new OutOfScopeException("Cannot access " + key + " outside of a scoping block");
     }
-    return scopedValues;
+    return scopedValuesTl.get().peek();
   }
 
 }

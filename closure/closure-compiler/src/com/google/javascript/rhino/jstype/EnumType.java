@@ -56,16 +56,10 @@ import java.util.Set;
 public class EnumType extends PrototypeObjectType {
   private static final long serialVersionUID = 1L;
 
-  /**
-   * The object literal or alias which this type represents.
-   * It may be {@code null}.
-   */
-  private final Node source;
-
   // the type of the individual elements
   private EnumElementType elementsType;
   // the elements' names (they all have the same type)
-  private final Set<String> elements = new HashSet<String>();
+  private final Set<String> elements = new HashSet<>();
 
   /**
    * Creates an enum type.
@@ -76,15 +70,7 @@ public class EnumType extends PrototypeObjectType {
   EnumType(JSTypeRegistry registry, String name, Node source,
       JSType elementsType) {
     super(registry, "enum{" + name + "}", null);
-    this.source = source;
-    this.elementsType = new EnumElementType(registry, elementsType, name);
-  }
-
-  /**
-   * Gets the source node or null if this is an unknown enum.
-   */
-  public Node getSource() {
-    return source;
+    this.elementsType = new EnumElementType(registry, elementsType, name, this);
   }
 
   @Override
@@ -135,9 +121,15 @@ public class EnumType extends PrototypeObjectType {
 
   @Override
   public boolean isSubtype(JSType that) {
+    return isSubtype(that, ImplCache.create());
+  }
+
+  @Override
+  protected boolean isSubtype(JSType that,
+      ImplCache implicitImplCache) {
     return that.isEquivalentTo(getNativeType(JSTypeNative.OBJECT_TYPE)) ||
         that.isEquivalentTo(getNativeType(JSTypeNative.OBJECT_PROTOTYPE)) ||
-        JSType.isSubtypeHelper(this, that);
+        JSType.isSubtypeHelper(this, that, implicitImplCache);
   }
 
   @Override
@@ -180,7 +172,7 @@ public class EnumType extends PrototypeObjectType {
   }
 
   @Override
-  JSType resolveInternal(ErrorReporter t, StaticScope<JSType> scope) {
+  JSType resolveInternal(ErrorReporter t, StaticTypedScope<JSType> scope) {
     elementsType = (EnumElementType) elementsType.resolve(t, scope);
     return super.resolveInternal(t, scope);
   }

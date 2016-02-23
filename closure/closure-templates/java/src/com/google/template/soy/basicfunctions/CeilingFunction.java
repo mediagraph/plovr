@@ -16,35 +16,29 @@
 
 package com.google.template.soy.basicfunctions;
 
-import static com.google.template.soy.javasrc.restricted.SoyJavaSrcFunctionUtils.toIntegerJavaExpr;
-import static com.google.template.soy.shared.restricted.SoyJavaRuntimeFunctionUtils.toSoyData;
-
 import com.google.common.collect.ImmutableSet;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
-import com.google.template.soy.data.SoyData;
+import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.restricted.IntegerData;
-import com.google.template.soy.javasrc.restricted.JavaCodeUtils;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcFunction;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuFunction;
 
 import java.util.List;
 import java.util.Set;
 
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 /**
  * Soy function that takes the ceiling of a number.
  *
- * @author Kai Huang
  */
 @Singleton
 @SoyPureFunction
-class CeilingFunction extends SoyAbstractTofuFunction
-    implements SoyJsSrcFunction, SoyJavaSrcFunction {
+public final class CeilingFunction implements SoyJavaFunction, SoyJsSrcFunction, SoyPySrcFunction {
 
 
   @Inject
@@ -55,22 +49,25 @@ class CeilingFunction extends SoyAbstractTofuFunction
     return "ceiling";
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(1);
   }
 
-
-  @Override public SoyData compute(List<SoyData> args) {
-    SoyData arg = args.get(0);
-
-    if (arg instanceof IntegerData) {
-      return arg;
-    } else {
-      return toSoyData((int) Math.ceil(arg.floatValue()));
-    }
+  @Override public SoyValue computeForJava(List<SoyValue> args) {
+    return ceil(args.get(0));
   }
 
+  /**
+   * Returns the smallest (closest to negative infinity) integer value that is greater than or equal
+   * to the argument.
+   */
+  public static IntegerData ceil(SoyValue arg) {
+    if (arg instanceof IntegerData) {
+      return (IntegerData) arg;
+    } else {
+      return IntegerData.forValue((int) Math.ceil(arg.floatValue()));
+    }
+  }
 
   @Override public JsExpr computeForJsSrc(List<JsExpr> args) {
     JsExpr arg = args.get(0);
@@ -78,12 +75,9 @@ class CeilingFunction extends SoyAbstractTofuFunction
     return new JsExpr("Math.ceil(" + arg.getText() + ")", Integer.MAX_VALUE);
   }
 
+  @Override public PyExpr computeForPySrc(List<PyExpr> args) {
+    PyExpr arg = args.get(0);
 
-  @Override public JavaExpr computeForJavaSrc(List<JavaExpr> args) {
-    JavaExpr arg = args.get(0);
-
-    return toIntegerJavaExpr(JavaCodeUtils.genNewIntegerData(
-        "(int) Math.ceil(" + JavaCodeUtils.genNumberValue(arg) + ")"));
+    return new PyExpr("int(math.ceil(" + arg.getText() + "))", Integer.MAX_VALUE);
   }
-
 }

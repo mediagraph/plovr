@@ -16,86 +16,101 @@
 
 package com.google.template.soy.bididirectives;
 
-import com.google.common.collect.ImmutableList;
-import com.google.template.soy.data.restricted.StringData;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.jssrc.restricted.JsExpr;
-import com.google.template.soy.shared.AbstractSoyPrintDirectiveTestCase;
-import com.google.template.soy.shared.restricted.SharedRestrictedTestUtils;
+import static com.google.common.truth.Truth.assertThat;
 
+import com.google.common.collect.ImmutableList;
+import com.google.inject.util.Providers;
+import com.google.template.soy.data.Dir;
+import com.google.template.soy.data.SanitizedContents;
+import com.google.template.soy.internal.i18n.BidiGlobalDir;
+import com.google.template.soy.jssrc.restricted.JsExpr;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyStringExpr;
+import com.google.template.soy.shared.AbstractSoyPrintDirectiveTestCase;
+import com.google.template.soy.shared.SharedRestrictedTestUtils;
 
 /**
  * Unit tests for BidiUnicodeWrapDirective.
  *
- * @author Kai Huang
  */
 public class BidiUnicodeWrapDirectiveTest extends AbstractSoyPrintDirectiveTestCase {
 
   private static final BidiUnicodeWrapDirective BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR =
       new BidiUnicodeWrapDirective(
-          SharedRestrictedTestUtils.BIDI_GLOBAL_DIR_FOR_STATIC_LTR_PROVIDER);
+          Providers.of(BidiGlobalDir.LTR));
 
   private static final BidiUnicodeWrapDirective BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL =
       new BidiUnicodeWrapDirective(
-          SharedRestrictedTestUtils.BIDI_GLOBAL_DIR_FOR_STATIC_RTL_PROVIDER);
-
-  private static final BidiUnicodeWrapDirective BIDI_UNICODE_WRAP_DIRECTIVE_FOR_ISRTL_CODE_SNIPPET =
-      new BidiUnicodeWrapDirective(
-          SharedRestrictedTestUtils.BIDI_GLOBAL_DIR_FOR_ISRTL_CODE_SNIPPET_PROVIDER);
+          Providers.of(BidiGlobalDir.RTL));
 
 
   public void testApplyForTofu() {
-
     assertTofuOutput("", "", BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR);
     assertTofuOutput("blah", "blah", BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR);
     assertTofuOutput("\u202B\u05E0\u202C\u200E", "\u05E0",
                      BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR);
 
-    assertTofuOutput("", "", BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
-    assertTofuOutput("\u202Ablah\u202C\u200F", "blah", BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
-    assertTofuOutput("\u05E0", "\u05E0", BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
-  }
+    assertTofuOutput("\u202B\u05E0\u202C\u200E",
+                     SanitizedContents.unsanitizedText("\u05E0"),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR);
+    assertTofuOutput("\u202B\u05E0\u202C\u200E",
+                     SanitizedContents.unsanitizedText("\u05E0", Dir.RTL),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR);
+    assertTofuOutput("\u05E0\u200E",
+                     SanitizedContents.unsanitizedText("\u05E0", Dir.LTR),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR);
+    assertTofuOutput("\u05E0\u200E",
+                     SanitizedContents.unsanitizedText("\u05E0", Dir.NEUTRAL),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR);
+    assertTofuOutput("blah",
+                     SanitizedContents.unsanitizedText("blah", Dir.NEUTRAL),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR);
 
+    assertTofuOutput("", "", BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
+    assertTofuOutput("\u05E0", "\u05E0", BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
+    assertTofuOutput("\u202Ablah\u202C\u200F", "blah", BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
+
+    assertTofuOutput("\u202Ablah\u202C\u200F",
+                     SanitizedContents.unsanitizedText("blah"),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
+    assertTofuOutput("\u202Ablah\u202C\u200F",
+                     SanitizedContents.unsanitizedText("blah", Dir.LTR),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
+    assertTofuOutput("blah\u200F",
+                     SanitizedContents.unsanitizedText("blah", Dir.RTL),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
+    assertTofuOutput("blah\u200F",
+                     SanitizedContents.unsanitizedText("blah", Dir.NEUTRAL),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
+    assertTofuOutput("\u05E0",
+                     SanitizedContents.unsanitizedText("\u05E0", Dir.NEUTRAL),
+                     BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL);
+  }
 
   public void testApplyForJsSrc() {
-
     JsExpr dataRef = new JsExpr("opt_data.myKey", Integer.MAX_VALUE);
-    assertEquals(
-        "soy.$$bidiUnicodeWrap(1, opt_data.myKey)",
-        BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR.applyForJsSrc(
-            dataRef, ImmutableList.<JsExpr>of()).getText());
-    assertEquals(
-        "soy.$$bidiUnicodeWrap(-1, opt_data.myKey)",
-        BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL.applyForJsSrc(
-            dataRef, ImmutableList.<JsExpr>of()).getText());
-    assertEquals(
-        "soy.$$bidiUnicodeWrap(IS_RTL?-1:1, opt_data.myKey)",
-        BIDI_UNICODE_WRAP_DIRECTIVE_FOR_ISRTL_CODE_SNIPPET.applyForJsSrc(
-            dataRef, ImmutableList.<JsExpr>of()).getText());
+    assertThat(
+        BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR
+            .applyForJsSrc(dataRef, ImmutableList.<JsExpr>of())
+            .getText()).isEqualTo("soy.$$bidiUnicodeWrap(1, opt_data.myKey)");
+    assertThat(
+        BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL
+            .applyForJsSrc(dataRef, ImmutableList.<JsExpr>of())
+            .getText()).isEqualTo("soy.$$bidiUnicodeWrap(-1, opt_data.myKey)");
+
+    BidiUnicodeWrapDirective codeSnippet = new BidiUnicodeWrapDirective(
+        SharedRestrictedTestUtils.BIDI_GLOBAL_DIR_FOR_JS_ISRTL_CODE_SNIPPET_PROVIDER);
+    assertThat(
+        codeSnippet.applyForJsSrc(dataRef, ImmutableList.<JsExpr>of())
+            .getText()).isEqualTo("soy.$$bidiUnicodeWrap(IS_RTL?-1:1, opt_data.myKey)");
   }
 
+  public void testApplyForPySrc() {
+    BidiUnicodeWrapDirective codeSnippet = new BidiUnicodeWrapDirective(
+        SharedRestrictedTestUtils.BIDI_GLOBAL_DIR_FOR_PY_ISRTL_CODE_SNIPPET_PROVIDER);
 
-  public void testApplyForJavaSrc() {
-
-    JavaExpr dataRef = new JavaExpr("myKey", StringData.class, Integer.MAX_VALUE);
-    assertEquals(
-        "com.google.template.soy.data.restricted.StringData.forValue(" +
-            "com.google.template.soy.internal.i18n.SoyBidiUtils.getBidiFormatter(" +
-            "1).unicodeWrap(myKey.toString(), true))",
-        BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_LTR.applyForJavaSrc(
-            dataRef, ImmutableList.<JavaExpr>of()).getText());
-    assertEquals(
-        "com.google.template.soy.data.restricted.StringData.forValue(" +
-            "com.google.template.soy.internal.i18n.SoyBidiUtils.getBidiFormatter(" +
-            "-1).unicodeWrap(myKey.toString(), true))",
-        BIDI_UNICODE_WRAP_DIRECTIVE_FOR_STATIC_RTL.applyForJavaSrc(
-            dataRef, ImmutableList.<JavaExpr>of()).getText());
-    assertEquals(
-        "com.google.template.soy.data.restricted.StringData.forValue(" +
-            "com.google.template.soy.internal.i18n.SoyBidiUtils.getBidiFormatter(" +
-            "IS_RTL?-1:1).unicodeWrap(myKey.toString(), true))",
-        BIDI_UNICODE_WRAP_DIRECTIVE_FOR_ISRTL_CODE_SNIPPET.applyForJavaSrc(
-            dataRef, ImmutableList.<JavaExpr>of()).getText());
+    PyExpr data = new PyStringExpr("'data'");
+    assertThat(codeSnippet.applyForPySrc(data, ImmutableList.<PyExpr>of()).getText())
+        .isEqualTo("bidi.unicode_wrap(-1 if IS_RTL else 1, 'data')");
   }
-
 }

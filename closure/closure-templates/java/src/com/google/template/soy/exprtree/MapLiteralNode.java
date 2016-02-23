@@ -16,23 +16,24 @@
 
 package com.google.template.soy.exprtree;
 
-import java.util.List;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 
+import java.util.List;
 
 /**
  * A node representing a map literal (with keys and values as alternating children).
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class MapLiteralNode extends AbstractParentExprNode {
-
+public final class MapLiteralNode extends AbstractParentExprNode {
 
   /**
    * @param alternatingKeysAndValues The keys and values (alternating) in this map.
    */
-  public MapLiteralNode(List<ExprNode> alternatingKeysAndValues) {
+  public MapLiteralNode(List<ExprNode> alternatingKeysAndValues, SourceLocation sourceLocation) {
+    super(sourceLocation);
     addChildren(alternatingKeysAndValues);
   }
 
@@ -41,8 +42,8 @@ public class MapLiteralNode extends AbstractParentExprNode {
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected MapLiteralNode(MapLiteralNode orig) {
-    super(orig);
+  private MapLiteralNode(MapLiteralNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
 
 
@@ -73,8 +74,8 @@ public class MapLiteralNode extends AbstractParentExprNode {
   }
 
 
-  @Override public MapLiteralNode clone() {
-    return new MapLiteralNode(this);
+  @Override public MapLiteralNode copy(CopyState copyState) {
+    return new MapLiteralNode(this, copyState);
   }
 
 }

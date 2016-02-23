@@ -16,26 +16,26 @@
 
 package com.google.template.soy.bidifunctions;
 
-import static com.google.template.soy.shared.restricted.SoyJavaRuntimeFunctionUtils.toSoyData;
-
 import com.google.common.collect.ImmutableSet;
-import com.google.inject.Inject;
-import com.google.inject.Provider;
-import com.google.inject.Singleton;
-import com.google.template.soy.data.SoyData;
+import com.google.template.soy.data.Dir;
+import com.google.template.soy.data.SanitizedContent;
+import com.google.template.soy.data.SanitizedContent.ContentKind;
+import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.internal.i18n.SoyBidiUtils;
-import com.google.template.soy.javasrc.restricted.JavaCodeUtils;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcFunction;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcFunctionUtils;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuFunction;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.shared.restricted.SoyJavaFunction;
 
 import java.util.List;
 import java.util.Set;
 
+import javax.inject.Inject;
+import javax.inject.Provider;
+import javax.inject.Singleton;
 
 /**
  * Soy function that maybe inserts a bidi mark character (LRM or RLM) for the current global bidi
@@ -44,12 +44,9 @@ import java.util.Set;
  * going forward, then the bidi mark is inserted to restore the global bidi directionality.
  * Otherwise, nothing is inserted.
  *
- * @author Aharon Lanin
- * @author Kai Huang
  */
 @Singleton
-class BidiMarkAfterFunction extends SoyAbstractTofuFunction
-    implements SoyJsSrcFunction, SoyJavaSrcFunction {
+class BidiMarkAfterFunction implements SoyJavaFunction, SoyJsSrcFunction, SoyPySrcFunction {
 
 
   /** Provider for the current bidi global directionality. */
@@ -69,47 +66,43 @@ class BidiMarkAfterFunction extends SoyAbstractTofuFunction
     return "bidiMarkAfter";
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(1, 2);
   }
 
-
-  @Override public SoyData compute(List<SoyData> args) {
-    String text = args.get(0).stringValue();
-    //noinspection SimplifiableConditionalExpression
-    boolean isHtml = (args.size() == 2) ? args.get(1).booleanValue() : false /* default */;
+  @Override public SoyValue computeForJava(List<SoyValue> args) {
+    SoyValue value = args.get(0);
+    boolean isHtml = args.size() == 2 && args.get(1).booleanValue();
+    Dir valueDir = null;
+    if (value instanceof SanitizedContent) {
+      SanitizedContent sanitizedContent = (SanitizedContent) value;
+      valueDir = sanitizedContent.getContentDirection();
+      isHtml = isHtml || sanitizedContent.getContentKind() == ContentKind.HTML;
+    }
 
     int bidiGlobalDir = bidiGlobalDirProvider.get().getStaticValue();
-    return toSoyData(SoyBidiUtils.getBidiFormatter(bidiGlobalDir).markAfter(text, isHtml));
+    return StringData.forValue(SoyBidiUtils.getBidiFormatter(bidiGlobalDir).markAfterKnownDir(
+        valueDir, value.coerceToString(), isHtml));
   }
 
-
   @Override public JsExpr computeForJsSrc(List<JsExpr> args) {
-    JsExpr text = args.get(0);
+    JsExpr value = args.get(0);
     JsExpr isHtml = (args.size() == 2) ? args.get(1) : null;
 
     String callText =
         "soy.$$bidiMarkAfter(" + bidiGlobalDirProvider.get().getCodeSnippet() + ", " +
-        text.getText() + (isHtml != null ? ", " + isHtml.getText() : "") + ")";
+        value.getText() + (isHtml != null ? ", " + isHtml.getText() : "") + ")";
 
     return new JsExpr(callText, Integer.MAX_VALUE);
   }
 
+  @Override public PyExpr computeForPySrc(List<PyExpr> args) {
+    PyExpr value = args.get(0);
+    PyExpr isHtml = (args.size() == 2) ? args.get(1) : null;
 
-  @Override public JavaExpr computeForJavaSrc(List<JavaExpr> args) {
-    JavaExpr text = args.get(0);
-    JavaExpr isHtml = (args.size() == 2) ? args.get(1) : null;
+    String callText = "bidi.mark_after(" + bidiGlobalDirProvider.get().getCodeSnippet() + ", " +
+        value.getText() + (isHtml != null ? ", " + isHtml.getText() : "") + ")";
 
-    String bidiFunctionName = SoyBidiUtils.class.getName() + ".getBidiFormatter(" +
-        bidiGlobalDirProvider.get().getCodeSnippet() + ").markAfter";
-
-    return SoyJavaSrcFunctionUtils.toStringJavaExpr(
-        JavaCodeUtils.genNewStringData(
-            JavaCodeUtils.genFunctionCall(
-                bidiFunctionName,
-                JavaCodeUtils.genCoerceString(text),
-                isHtml != null ? JavaCodeUtils.genCoerceBoolean(isHtml) : "false")));
+    return new PyExpr(callText, Integer.MAX_VALUE);
   }
-
 }

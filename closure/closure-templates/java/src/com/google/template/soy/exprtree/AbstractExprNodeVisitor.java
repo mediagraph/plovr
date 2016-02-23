@@ -39,7 +39,6 @@ import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
 
-
 /**
  * Abstract base class for all ExprNode visitors. A visitor is basically a function implemented for
  * some or all ExprNodes, where the implementation can be different for each specific node class.
@@ -66,16 +65,14 @@ import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
  * @param <R> The return type of this visitor.
  *
  * @see AbstractReturningExprNodeVisitor
- * @author Kai Huang
  */
 public abstract class AbstractExprNodeVisitor<R> extends AbstractNodeVisitor<ExprNode, R> {
 
-
-  @Override protected void visit(ExprNode node) {
+  @Override protected final void visit(ExprNode node) {
 
     switch (node.getKind()) {
 
-      case EXPR_ROOT_NODE: visitExprRootNode((ExprRootNode<?>) node); break;
+      case EXPR_ROOT_NODE: visitExprRootNode((ExprRootNode) node); break;
 
       case NULL_NODE: visitNullNode((NullNode) node); break;
       case BOOLEAN_NODE: visitBooleanNode((BooleanNode) node); break;
@@ -86,14 +83,9 @@ public abstract class AbstractExprNodeVisitor<R> extends AbstractNodeVisitor<Exp
       case LIST_LITERAL_NODE: visitListLiteralNode((ListLiteralNode) node); break;
       case MAP_LITERAL_NODE: visitMapLiteralNode((MapLiteralNode) node); break;
 
-      case VAR_NODE: visitVarNode((VarNode) node); break;
-
-      case DATA_REF_NODE: visitDataRefNode((DataRefNode) node); break;
-      case DATA_REF_ACCESS_KEY_NODE: visitDataRefAccessKeyNode((DataRefAccessKeyNode) node); break;
-      case DATA_REF_ACCESS_INDEX_NODE:
-        visitDataRefAccessIndexNode((DataRefAccessIndexNode) node); break;
-      case DATA_REF_ACCESS_EXPR_NODE:
-        visitDataRefAccessExprNode((DataRefAccessExprNode) node); break;
+      case VAR_REF_NODE: visitVarRefNode((VarRefNode) node); break;
+      case FIELD_ACCESS_NODE: visitFieldAccessNode((FieldAccessNode) node); break;
+      case ITEM_ACCESS_NODE: visitItemAccessNode((ItemAccessNode) node); break;
 
       case GLOBAL_NODE: visitGlobalNode((GlobalNode) node); break;
 
@@ -123,7 +115,6 @@ public abstract class AbstractExprNodeVisitor<R> extends AbstractNodeVisitor<Exp
     }
   }
 
-
   /**
    * Helper to visit all the children of a node, in order.
    * @param node The parent node whose children to visit.
@@ -152,7 +143,7 @@ public abstract class AbstractExprNodeVisitor<R> extends AbstractNodeVisitor<Exp
   // Implementations for misc nodes.
 
 
-  protected void visitExprRootNode(ExprRootNode<?> node) {
+  protected void visitExprRootNode(ExprRootNode node) {
     visitExprNode(node);
   }
 
@@ -203,28 +194,20 @@ public abstract class AbstractExprNodeVisitor<R> extends AbstractNodeVisitor<Exp
   // Implementations for reference nodes.
 
 
-  protected void visitVarNode(VarNode node) {
+  protected void visitVarRefNode(VarRefNode node) {
     visitExprNode(node);
   }
 
-  protected void visitDataRefNode(DataRefNode node) {
+  protected void visitDataAccessNode(DataAccessNode node) {
     visitExprNode(node);
   }
 
-  protected void visitDataRefAccessKeyNode(DataRefAccessKeyNode node) {
-    visitDataRefAccessNode(node);
+  protected void visitFieldAccessNode(FieldAccessNode node) {
+    visitDataAccessNode(node);
   }
 
-  protected void visitDataRefAccessIndexNode(DataRefAccessIndexNode node) {
-    visitDataRefAccessNode(node);
-  }
-
-  protected void visitDataRefAccessExprNode(DataRefAccessExprNode node) {
-    visitDataRefAccessNode(node);
-  }
-
-  protected void visitDataRefAccessNode(DataRefAccessNode node) {
-    visitExprNode(node);
+  protected void visitItemAccessNode(ItemAccessNode node) {
+    visitDataAccessNode(node);
   }
 
   protected void visitGlobalNode(GlobalNode node) {

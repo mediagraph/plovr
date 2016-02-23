@@ -16,23 +16,25 @@
 
 package com.google.template.soy.parsepasses.contextautoesc;
 
-import java.util.Map;
-
-import javax.annotation.Nullable;
-
 import com.google.common.base.CaseFormat;
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 
+import java.util.Map;
+
+import javax.annotation.Nullable;
+
 /**
  * Ways of escaping dynamic content in a template.
  *
- * @author Mike Samuel
  */
 public enum EscapingMode {
 
   /** Encodes HTML special characters. */
   ESCAPE_HTML(true, ContentKind.HTML),
+
+  /** Escapes HTML except preserves ampersands and entities. */
+  NORMALIZE_HTML(true, null),
 
   /** Like {@link #ESCAPE_HTML} but normalizes known safe HTML since RCDATA can't contain tags. */
   ESCAPE_HTML_RCDATA(true, null),
@@ -67,7 +69,7 @@ public enum EscapingMode {
    * Encode all HTML special characters and quotes, and JS newlines as if to allow them to appear
    * literally in a JS string.
    */
-  ESCAPE_JS_STRING(false, ContentKind.JS_STR_CHARS),
+  ESCAPE_JS_STRING(false, null),
 
   /**
    * If a number or boolean, output as a JS literal.  Otherwise surround in quotes and escape.
@@ -105,15 +107,32 @@ public enum EscapingMode {
    * Percent encode non-URI characters that cannot appear unescaped in a URI such as spaces, and
    * encode characters that are not special in URIs that are special in languages that URIs are
    * embedded in such as parentheses and quotes.
+   *
    * This corresponds to the JavaScript function {@code encodeURI} but additionally encodes quotes
    * parentheses, and percent signs that are not followed by two hex digits.
+   *
+   * This is not necessarily HTML embeddable because we want ampersands to get HTML-escaped.
    */
   NORMALIZE_URI(false, ContentKind.URI),
 
   /**
-   * Like {@link #NORMALIZE_URI}, but filters out schemes like {@code javascript:} that load code.
+   * Like {@link #NORMALIZE_URI}, but filters out everything except relative and http/https URIs.
    */
   FILTER_NORMALIZE_URI(false, ContentKind.URI),
+
+  /**
+   * Like {@link #FILTER_NORMALIZE_URI}, but also accepts some {@code data:} URIs, since image
+   * sources don't execute script in the same origin as the page.  Although image decoding
+   * 0-days are discovered from time to time, a templating language can't realistically try to
+   * protect against such a thing.
+   */
+  FILTER_NORMALIZE_MEDIA_URI(false, ContentKind.URI),
+
+  /**
+   * Makes sure there URIs are trusted and not input variables. Currently used only for script
+   * sources.
+   */
+  FILTER_TRUSTED_RESOURCE_URI(false, ContentKind.TRUSTED_RESOURCE_URI),
 
   /**
    * The explicit rejection of escaping.

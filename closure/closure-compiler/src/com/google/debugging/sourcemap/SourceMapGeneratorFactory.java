@@ -18,24 +18,13 @@ package com.google.debugging.sourcemap;
 /**
  * @author johnlenz@google.com (John Lenz)
  */
-public class SourceMapGeneratorFactory {
-
-  /**
-   * @return The appropriate source map object for the given source map format.
-   */
-  public static SourceMapGenerator getInstance() {
-    return getInstance(SourceMapFormat.DEFAULT);
-  }
+public final class SourceMapGeneratorFactory {
 
   /**
    * @return The appropriate source map object for the given source map format.
    */
   public static SourceMapGenerator getInstance(SourceMapFormat format) {
     switch (format) {
-      case V1:
-        return new SourceMapGeneratorV1();
-      case V2:
-        return new SourceMapGeneratorV2();
       case DEFAULT:
       case V3:
         return new SourceMapGeneratorV3();

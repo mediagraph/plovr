@@ -16,7 +16,8 @@
 
 package com.google.template.soy.exprtree;
 
-import com.google.common.collect.Lists;
+import com.google.common.collect.ImmutableList;
+import com.google.template.soy.base.SourceLocation;
 
 import junit.framework.TestCase;
 
@@ -24,23 +25,24 @@ import junit.framework.TestCase;
 /**
  * Unit tests for MapLiteralNode.
  *
- * @author Kai Huang
  */
-public class MapLiteralNodeTest extends TestCase {
+public final class MapLiteralNodeTest extends TestCase {
 
+  private static final SourceLocation X = SourceLocation.UNKNOWN;
 
   public void testToSourceString() {
+    VarRefNode booDataRef = new VarRefNode("boo", X, false, false, null);
+    VarRefNode fooDataRef = new VarRefNode("foo", X, false, false, null);
 
-    DataRefNode booDataRef = new DataRefNode(false, false, "boo");
-    DataRefNode fooDataRef = new DataRefNode(false, false, "foo");
-
-    MapLiteralNode mapLit = new MapLiteralNode(Lists.<ExprNode>newArrayList(
-        new StringNode("aaa"), new StringNode("blah"), new StringNode("bbb"), new IntegerNode(123),
-        booDataRef, fooDataRef));
+    MapLiteralNode mapLit = new MapLiteralNode(ImmutableList.<ExprNode>of(
+        new StringNode("aaa", X),
+        new StringNode("blah", X),
+        new StringNode("bbb", X),
+        new IntegerNode(123, X),
+        booDataRef, fooDataRef), X);
     assertEquals("['aaa': 'blah', 'bbb': 123, $boo: $foo]", mapLit.toSourceString());
 
-    MapLiteralNode emptyMapLit = new MapLiteralNode(Lists.<ExprNode>newArrayList());
+    MapLiteralNode emptyMapLit = new MapLiteralNode(ImmutableList.<ExprNode>of(), X);
     assertEquals("[:]", emptyMapLit.toSourceString());
   }
-
 }

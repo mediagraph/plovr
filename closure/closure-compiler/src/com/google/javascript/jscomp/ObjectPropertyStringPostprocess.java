@@ -46,7 +46,7 @@ class ObjectPropertyStringPostprocess implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, root, new Callback());
+    NodeTraversal.traverseEs6(compiler, root, new Callback());
   }
 
   private class Callback extends AbstractPostOrderCallback {
@@ -58,8 +58,8 @@ class ObjectPropertyStringPostprocess implements CompilerPass {
 
       Node objectName = n.getFirstChild();
 
-      if (!ObjectPropertyStringPreprocess.EXTERN_OBJECT_PROPERTY_STRING.equals(
-              objectName.getQualifiedName())) {
+      if (!objectName.matchesQualifiedName(
+          ObjectPropertyStringPreprocess.EXTERN_OBJECT_PROPERTY_STRING)) {
         return;
       }
 

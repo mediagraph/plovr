@@ -17,6 +17,7 @@
 package com.google.template.soy.internal.i18n;
 
 import com.google.common.base.Preconditions;
+import com.google.template.soy.base.SoyBackendKind;
 import javax.annotation.Nullable;
 
 
@@ -26,9 +27,10 @@ import javax.annotation.Nullable;
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Aharon Lanin
  */
-public class BidiGlobalDir {
+public final class BidiGlobalDir {
+  public static final BidiGlobalDir LTR = new BidiGlobalDir(1);
+  public static final BidiGlobalDir RTL = new BidiGlobalDir(-1);
 
   /**
    * A source code snippet that evaluates at template runtime to the bidi global direction, i.e.
@@ -36,14 +38,14 @@ public class BidiGlobalDir {
    * static, the code snippet is still set: it is simply either "1" or "-1". (Zero is not allowed as
    * a static bidi global direction.) The code snippet should never be null or empty.
    */
-  private String codeSnippet;
+  private final String codeSnippet;
 
   /**
    * The "static" bidi global direction, as an integer: ltr=1, rtl=-1, unknown=0. It is zero if and
    * only if the bidi global direction is non-static: it has to be determined at template runtime by
    * evaluating the piece of code in codeSnippet.
    */
-  private int staticValue;
+  private final int staticValue;
 
 
   /**
@@ -68,7 +70,7 @@ public class BidiGlobalDir {
    */
   private BidiGlobalDir(String codeSnippet) {
     this.codeSnippet = codeSnippet;
-    // staticValue remains 0.
+    this.staticValue = 0;
   }
 
 
@@ -79,7 +81,7 @@ public class BidiGlobalDir {
    * @param isRtl Whether the global direction value is rtl. Otherwise, it is ltr.
    */
   public static BidiGlobalDir forStaticIsRtl(boolean isRtl) {
-    return new BidiGlobalDir(isRtl ? -1 : 1);
+    return isRtl ? RTL : LTR;
   }
 
 
@@ -90,7 +92,7 @@ public class BidiGlobalDir {
    * @param localeString A BCP 47 locale string. If null, indicates ltr.
    */
   public static BidiGlobalDir forStaticLocale(@Nullable String localeString) {
-    return new BidiGlobalDir(SoyBidiUtils.getBidiGlobalDir(localeString));
+    return SoyBidiUtils.getBidiGlobalDir(localeString);
   }
 
 
@@ -100,11 +102,19 @@ public class BidiGlobalDir {
    *
    * @param isRtlCodeSnippet A code snippet that will evaluate at template runtime to a boolean
    *     value indicating whether the bidi global direction is rtl.
+   * @param backend The current backend target.
    */
-  public static BidiGlobalDir forIsRtlCodeSnippet(String isRtlCodeSnippet) {
+  public static BidiGlobalDir forIsRtlCodeSnippet(String isRtlCodeSnippet, SoyBackendKind backend) {
     Preconditions.checkArgument(isRtlCodeSnippet != null && isRtlCodeSnippet.length() > 0,
         "Bidi global direction source code snippet must be non-empty.");
-    return new BidiGlobalDir(isRtlCodeSnippet + "?-1:1");
+    Preconditions.checkArgument(
+        backend == SoyBackendKind.JS_SRC || backend == SoyBackendKind.PYTHON_SRC,
+        "Bidi code snippets are only used in JS and Python.");
+    if (backend == SoyBackendKind.JS_SRC) {
+      return new BidiGlobalDir(isRtlCodeSnippet + "?-1:1");
+    } else {
+      return new BidiGlobalDir("-1 if " + isRtlCodeSnippet + " else 1");
+    }
   }
 
 

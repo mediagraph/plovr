@@ -16,20 +16,26 @@
 
 package com.google.template.soy.soytree;
 
-import com.google.template.soy.base.IdGenerator;
-import com.google.template.soy.base.SoySyntaxException;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.base.internal.IdGenerator;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.SplitLevelTopNode;
-
 
 /**
  * Node representing a Soy file set (the root of the Soy parse tree).
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class SoyFileSetNode extends AbstractParentSoyNode<SoyFileNode>
+public final class SoyFileSetNode extends AbstractParentSoyNode<SoyFileNode>
     implements SplitLevelTopNode<SoyFileNode> {
+
+  /**
+   * SoyFileSetNode is the only {@link SoyNode} that doesn't have a meaningful notion of
+   * source location (since it represents the entire compilation unit).
+   * Instead of changing the class hierarchy, just use a throwaway source location.
+   */
+  private static final SourceLocation IRRELEVANT = SourceLocation.UNKNOWN;
 
 
   /** The node id generator for this parse tree. */
@@ -39,10 +45,9 @@ public class SoyFileSetNode extends AbstractParentSoyNode<SoyFileNode>
   /**
    * @param id The id for this node.
    * @param nodeIdGen The node id generator for this parse tree.
-   * @throws SoySyntaxException If a syntax error is found.
    */
-  public SoyFileSetNode(int id, IdGenerator nodeIdGen) throws SoySyntaxException {
-    super(id);
+  public SoyFileSetNode(int id, IdGenerator nodeIdGen) {
+    super(id, IRRELEVANT);
     this.nodeIdGen = nodeIdGen;
   }
 
@@ -51,9 +56,9 @@ public class SoyFileSetNode extends AbstractParentSoyNode<SoyFileNode>
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected SoyFileSetNode(SoyFileSetNode orig) {
-    super(orig);
-    this.nodeIdGen = orig.nodeIdGen.clone();
+  private SoyFileSetNode(SoyFileSetNode orig, CopyState copyState) {
+    super(orig, copyState);
+    this.nodeIdGen = orig.nodeIdGen.copy();
   }
 
 
@@ -73,8 +78,8 @@ public class SoyFileSetNode extends AbstractParentSoyNode<SoyFileNode>
   }
 
 
-  @Override public SoyFileSetNode clone() {
-    return new SoyFileSetNode(this);
+  @Override public SoyFileSetNode copy(CopyState copyState) {
+    return new SoyFileSetNode(this, copyState);
   }
 
 }

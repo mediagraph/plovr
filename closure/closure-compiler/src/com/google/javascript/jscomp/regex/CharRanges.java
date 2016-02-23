@@ -50,7 +50,7 @@ final class CharRanges {
    * Returns an instance containing all and only the given members.
    */
   public static CharRanges withMembers(int... members) {
-    return new CharRanges(intArrayToRanges(members.clone()));
+    return new CharRanges(intArrayToRanges(members));
   }
 
   /**
@@ -59,7 +59,6 @@ final class CharRanges {
    *     non-contiguous, [inclusive start, exclusive end) ranges.
    */
   public static CharRanges withRanges(int... ranges) {
-    ranges = ranges.clone();
     if ((ranges.length & 1) != 0) { throw new IllegalArgumentException(); }
     for (int i = 1; i < ranges.length; ++i) {
       if (ranges[i] <= ranges[i - 1]) {
@@ -136,10 +135,6 @@ final class CharRanges {
     //     idx >= 0 ? ((idx & 1) == 0) : ((~idx & 1) == 1)
     // =>  idx >= 0 ? ((idx & 1) == 0) : ((idx & 1) == 0)
     // =>  (idx & 1) == 0
-  }
-
-  public int minSetBit() {
-    return ranges.length >= 0 ? ranges[0] : Integer.MIN_VALUE;
   }
 
   public boolean isEmpty() {
@@ -230,8 +225,7 @@ final class CharRanges {
     }
     // We guessed at the output length above.  Cut off the tail.
     if (k != out.length) {
-      int[] clipped = new int[k];
-      System.arraycopy(out, 0, clipped, 0, k);
+      int[] clipped = Arrays.copyOf(out, k);
       out = clipped;
     }
     return new CharRanges(out);
@@ -276,8 +270,7 @@ final class CharRanges {
       }
     }
     if (intersectionIdx != intersection.length) {
-      int[] newArr = new int[intersectionIdx];
-      System.arraycopy(intersection, 0, newArr, 0, intersectionIdx);
+      int[] newArr = Arrays.copyOf(intersection, intersectionIdx);
       intersection = newArr;
     }
     return new CharRanges(intersection);
@@ -328,8 +321,7 @@ final class CharRanges {
     }
 
     if (dIdx != difference.length) {
-      int[] newArr = new int[dIdx];
-      System.arraycopy(difference, 0, newArr, 0, dIdx);
+      int[] newArr = Arrays.copyOf(difference, dIdx);
       difference = newArr;
     }
 

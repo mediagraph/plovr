@@ -16,42 +16,33 @@
 
 package com.google.template.soy.xliffmsgplugin;
 
-import com.google.common.base.Charsets;
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.google.common.collect.Lists;
 import com.google.common.io.Resources;
-import com.google.template.soy.base.SoyFileKind;
-import com.google.template.soy.base.SoyFileSupplier;
+import com.google.template.soy.SoyFileSet;
 import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.msgs.SoyMsgBundleHandler.OutputFileOptions;
-import com.google.template.soy.msgs.internal.ExtractMsgsVisitor;
 import com.google.template.soy.msgs.restricted.SoyMsg;
 import com.google.template.soy.msgs.restricted.SoyMsgPart;
 import com.google.template.soy.msgs.restricted.SoyMsgPlaceholderPart;
 import com.google.template.soy.msgs.restricted.SoyMsgRawTextPart;
-import com.google.template.soy.soyparse.SoyFileSetParser;
-import com.google.template.soy.soytree.SoyFileSetNode;
 
 import junit.framework.TestCase;
 
 import java.net.URL;
 import java.util.List;
 
-
 /**
  * Unit tests for XliffMsgPlugin.
  *
- * @author Kai Huang
  */
-public class XliffMsgPluginTest extends TestCase {
-
+public final class XliffMsgPluginTest extends TestCase {
 
   public void testGenerateExtractedMsgsFile() throws Exception {
 
     URL testSoyFile = Resources.getResource(XliffMsgPluginTest.class, "test_data/test-v2.soy");
-    SoyFileSetNode soyTree =
-        (new SoyFileSetParser(SoyFileSupplier.Factory.create(testSoyFile, SoyFileKind.SRC)))
-            .parse();
-    SoyMsgBundle msgBundle = (new ExtractMsgsVisitor()).exec(soyTree);
+    SoyMsgBundle msgBundle = SoyFileSet.builder().add(testSoyFile).build().extractMsgs();
 
     XliffMsgPlugin msgPlugin = new XliffMsgPlugin();
 
@@ -63,7 +54,7 @@ public class XliffMsgPluginTest extends TestCase {
     URL expectedExtractedMsgsFile = Resources.getResource(
         XliffMsgPluginTest.class, "test_data/test-v2_extracted.xlf");
     assertEquals(
-        Resources.toString(expectedExtractedMsgsFile, Charsets.UTF_8),
+        Resources.toString(expectedExtractedMsgsFile, UTF_8),
         extractedMsgsFile.toString());
 
     // Test with target language.
@@ -73,7 +64,7 @@ public class XliffMsgPluginTest extends TestCase {
     expectedExtractedMsgsFile = Resources.getResource(
         XliffMsgPluginTest.class, "test_data/test-v2_extracted_x-zz.xlf");
     assertEquals(
-        Resources.toString(expectedExtractedMsgsFile, Charsets.UTF_8),
+        Resources.toString(expectedExtractedMsgsFile, UTF_8),
         extractedMsgsFile.toString());
   }
 
@@ -84,7 +75,7 @@ public class XliffMsgPluginTest extends TestCase {
         XliffMsgPluginTest.class, "test_data/test-v2_translated_x-zz.xlf");
     XliffMsgPlugin msgPlugin = new XliffMsgPlugin();
     SoyMsgBundle msgBundle = msgPlugin.parseTranslatedMsgsFile(
-        Resources.toString(translatedMsgsFile, Charsets.UTF_8));
+        Resources.toString(translatedMsgsFile, UTF_8));
 
     assertEquals(5, msgBundle.getNumMsgs());
 

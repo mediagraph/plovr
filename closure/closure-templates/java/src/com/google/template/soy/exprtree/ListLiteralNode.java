@@ -16,23 +16,24 @@
 
 package com.google.template.soy.exprtree;
 
-import java.util.List;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 
+import java.util.List;
 
 /**
  * A node representing a list literal (with items as children).
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class ListLiteralNode extends AbstractParentExprNode {
-
+public final class ListLiteralNode extends AbstractParentExprNode {
 
   /**
    * @param items The expressions for the items in this list.
    */
-  public ListLiteralNode(List<ExprNode> items) {
+  public ListLiteralNode(List<ExprNode> items, SourceLocation sourceLocation) {
+    super(sourceLocation);
     addChildren(items);
   }
 
@@ -41,8 +42,8 @@ public class ListLiteralNode extends AbstractParentExprNode {
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected ListLiteralNode(ListLiteralNode orig) {
-    super(orig);
+  private ListLiteralNode(ListLiteralNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
 
 
@@ -71,8 +72,8 @@ public class ListLiteralNode extends AbstractParentExprNode {
   }
 
 
-  @Override public ListLiteralNode clone() {
-    return new ListLiteralNode(this);
+  @Override public ListLiteralNode copy(CopyState copyState) {
+    return new ListLiteralNode(this, copyState);
   }
 
 }

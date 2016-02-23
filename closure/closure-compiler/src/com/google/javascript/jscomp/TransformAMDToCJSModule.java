@@ -16,11 +16,11 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.Iterators;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 
+import java.util.Collections;
 import java.util.Iterator;
 
 /**
@@ -28,7 +28,7 @@ import java.util.Iterator;
  * CommonJS module. See {@link ProcessCommonJSModules} for follow up processing
  * step.
  */
-class TransformAMDToCJSModule implements CompilerPass {
+public final class TransformAMDToCJSModule implements CompilerPass {
 
   @VisibleForTesting
   static final DiagnosticType UNSUPPORTED_DEFINE_SIGNATURE_ERROR =
@@ -52,16 +52,16 @@ class TransformAMDToCJSModule implements CompilerPass {
   private final AbstractCompiler compiler;
   private int renameIndex = 0;
 
-  TransformAMDToCJSModule(AbstractCompiler compiler) {
+  public TransformAMDToCJSModule(AbstractCompiler compiler) {
     this.compiler = compiler;
   }
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, root, new TransformAMDModulesCallback());
+    NodeTraversal.traverseEs6(compiler, root, new TransformAMDModulesCallback());
   }
 
-  private void unsupportedDefineError(NodeTraversal t, Node n) {
+  private static void unsupportedDefineError(NodeTraversal t, Node n) {
     t.report(n, UNSUPPORTED_DEFINE_SIGNATURE_ERROR);
   }
 
@@ -69,7 +69,7 @@ class TransformAMDToCJSModule implements CompilerPass {
    * The modules "exports", "require" and "module" are virtual in terms of
    * existing implicitly in CommonJS.
    */
-  private boolean isVirtualModuleName(String moduleName) {
+  private static boolean isVirtualModuleName(String moduleName) {
     return "exports".equals(moduleName) || "require".equals(moduleName) ||
         "module".equals(moduleName);
   }
@@ -85,7 +85,7 @@ class TransformAMDToCJSModule implements CompilerPass {
       if (n.isCall() && n.getFirstChild() != null &&
           n.getFirstChild().isName() &&
           "define".equals(n.getFirstChild().getString())) {
-        Scope.Var define = t.getScope().getVar(n.getFirstChild().
+        Var define = t.getScope().getVar(n.getFirstChild().
             getString());
         if (define != null && !define.isGlobal()) {
           // Ignore non-global define.
@@ -125,7 +125,7 @@ class TransformAMDToCJSModule implements CompilerPass {
         handleRequiresAndParamList(t, n, script, requiresNode, callback);
 
         Node callbackBlock = callback.getChildAtIndex(2);
-        NodeTraversal.traverse(compiler, callbackBlock,
+        NodeTraversal.traverseEs6(compiler, callbackBlock,
             new DefineCallbackReturnCallback());
 
         moveCallbackContentToTopLevel(parent, script, callbackBlock);
@@ -134,15 +134,18 @@ class TransformAMDToCJSModule implements CompilerPass {
     }
 
     /**
-     * When define is called with an object literal, assign it to exports and
+     * When define is called with an object literal, assign it to module.exports and
      * we're done.
      */
     private void handleDefineObjectLiteral(Node parent, Node onlyExport,
         Node script) {
       onlyExport.getParent().removeChild(onlyExport);
       script.replaceChild(parent,
-          IR.exprResult(IR.assign(IR.name("exports"), onlyExport))
-              .copyInformationFromForTree(onlyExport));
+          IR.exprResult(
+              IR.assign(
+                  NodeUtil.newQName(compiler, "module.exports"),
+                  onlyExport))
+          .useSourceInfoIfMissingFromForTree(onlyExport));
       compiler.reportCodeChange();
     }
 
@@ -155,7 +158,7 @@ class TransformAMDToCJSModule implements CompilerPass {
       Iterator<Node> paramList = callback.getChildAtIndex(1).children().
           iterator();
       Iterator<Node> requires = requiresNode != null ?
-          requiresNode.children().iterator() : Iterators.<Node>emptyIterator();
+          requiresNode.children().iterator() : Collections.<Node>emptyIterator();
       while (paramList.hasNext() || requires.hasNext()) {
         Node aliasNode = paramList.hasNext() ? paramList.next() : null;
         Node modNode = requires.hasNext() ? requires.next() : null;
@@ -184,7 +187,7 @@ class TransformAMDToCJSModule implements CompilerPass {
         while (true) {
           String renamed = aliasName + VAR_RENAME_SUFFIX + renameIndex;
           if (!globalScope.isDeclared(renamed, true)) {
-            NodeTraversal.traverse(compiler, callback,
+            NodeTraversal.traverseEs6(compiler, callback,
                 new RenameCallback(aliasName, renamed));
             aliasName = renamed;
             break;
@@ -199,10 +202,10 @@ class TransformAMDToCJSModule implements CompilerPass {
         call.putBooleanProp(Node.FREE_CALL, true);
         if (aliasName != null) {
           requireNode = IR.var(IR.name(aliasName), call)
-              .copyInformationFromForTree(aliasNode);
+              .useSourceInfoIfMissingFromForTree(aliasNode);
         } else {
           requireNode = IR.exprResult(call).
-              copyInformationFromForTree(modNode);
+              useSourceInfoIfMissingFromForTree(modNode);
         }
       } else {
         // ignore exports, require and module (because they are implicit
@@ -211,7 +214,7 @@ class TransformAMDToCJSModule implements CompilerPass {
           return;
         }
         requireNode = IR.var(IR.name(aliasName), IR.nullNode())
-            .copyInformationFromForTree(aliasNode);
+            .useSourceInfoIfMissingFromForTree(aliasNode);
       }
 
       script.addChildBefore(requireNode,
@@ -264,7 +267,7 @@ class TransformAMDToCJSModule implements CompilerPass {
    * Rewrites the return statement of the callback to be an assignment to
    * module.exports.
    */
-  private class DefineCallbackReturnCallback extends
+  private static class DefineCallbackReturnCallback extends
       NodeTraversal.AbstractShallowStatementCallback {
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
@@ -282,7 +285,7 @@ class TransformAMDToCJSModule implements CompilerPass {
   /**
    * Renames names;
    */
-  private class RenameCallback extends AbstractPostOrderCallback {
+  private static class RenameCallback extends AbstractPostOrderCallback {
 
     private final String from;
     private final String to;

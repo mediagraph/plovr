@@ -100,6 +100,12 @@ public class UnknownType extends ObjectType {
 
   @Override
   public boolean isSubtype(JSType that) {
+    return isSubtype(that, null);
+  }
+
+  @Override
+  protected boolean isSubtype(JSType that,
+      ImplCache implicitImplCache) {
     return true;
   }
 
@@ -155,7 +161,7 @@ public class UnknownType extends ObjectType {
   }
 
   @Override
-  JSType resolveInternal(ErrorReporter t, StaticScope<JSType> scope) {
+  JSType resolveInternal(ErrorReporter t, StaticTypedScope<JSType> scope) {
     return this;
   }
 }

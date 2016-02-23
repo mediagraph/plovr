@@ -20,7 +20,7 @@ package com.google.javascript.jscomp;
  * Unit tests for {@link OptimizeArgumentsArray}.
  *
  */
-public class OptimizeArgumentsArrayTest extends CompilerTestCase {
+public final class OptimizeArgumentsArrayTest extends CompilerTestCase {
 
   public OptimizeArgumentsArrayTest() {
     /*
@@ -31,11 +31,6 @@ public class OptimizeArgumentsArrayTest extends CompilerTestCase {
      * externs/es3.js as extern.
      */
     super("var arguments, alert" /* Externs */);
-  }
-
-  @Override
-  public void setUp() {
-    super.enableLineNumberCheck(false);
   }
 
   @Override
@@ -162,5 +157,13 @@ public class OptimizeArgumentsArrayTest extends CompilerTestCase {
 
   public void testNoOptimizationWhenArgumentIsUsedAsFunctionCall() {
     testSame("function f() {arguments[0]()}");
+  }
+
+  public void testUnusualArgumentsUsage() {
+    testSame("function f(x) { x[arguments]; }");
+  }
+
+  public void testNegativeIndexNoCrash() {
+    testSame("function badFunction() { arguments[-1]; }");
   }
 }

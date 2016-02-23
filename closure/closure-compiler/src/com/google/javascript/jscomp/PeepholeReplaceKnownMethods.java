@@ -16,11 +16,14 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Strings.isNullOrEmpty;
+
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 
+import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 
@@ -30,8 +33,6 @@ import java.util.Locale;
  */
 class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
 
-  // The LOCALE independent "locale"
-  private static final Locale ROOT_LOCALE = new Locale("");
   private final boolean late;
 
   /**
@@ -149,14 +150,9 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
 
       String functionNameString = callTarget.getString();
       Node firstArgument = callTarget.getNext();
-      if ((firstArgument != null) &&
-          (firstArgument.isString() ||
-           firstArgument.isNumber())) {
-        if (functionNameString.equals("parseInt") ||
-            functionNameString.equals("parseFloat")) {
-          subtree = tryFoldParseNumber(subtree, functionNameString,
-              firstArgument);
-        }
+      if ((firstArgument != null) && (firstArgument.isString() || firstArgument.isNumber())
+          && (functionNameString.equals("parseInt") || functionNameString.equals("parseFloat"))) {
+        subtree = tryFoldParseNumber(subtree, functionNameString, firstArgument);
       }
     }
     return subtree;
@@ -167,7 +163,7 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
    */
   private Node tryFoldStringToLowerCase(Node subtree, Node stringNode) {
     // From Rhino, NativeString.java. See ECMA 15.5.4.11
-    String lowered = stringNode.getString().toLowerCase(ROOT_LOCALE);
+    String lowered = stringNode.getString().toLowerCase(Locale.ROOT);
     Node replacement = IR.string(lowered);
     subtree.getParent().replaceChild(subtree, replacement);
     reportCodeChange();
@@ -179,7 +175,7 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
    */
   private Node tryFoldStringToUpperCase(Node subtree, Node stringNode) {
     // From Rhino, NativeString.java. See ECMA 15.5.4.12
-    String upped = stringNode.getString().toUpperCase(ROOT_LOCALE);
+    String upped = stringNode.getString().toUpperCase(Locale.ROOT);
     Node replacement = IR.string(upped);
     subtree.getParent().replaceChild(subtree, replacement);
     reportCodeChange();
@@ -190,8 +186,8 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
    * @param input string representation of a number
    * @return string with leading and trailing zeros removed
    */
-  private String normalizeNumericString(String input) {
-    if (input == null || input.length() == 0) {
+  private static String normalizeNumericString(String input) {
+    if (isNullOrEmpty(input)) {
       return input;
     }
 
@@ -290,7 +286,7 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
       }
 
       stringVal = NodeUtil.trimJsWhiteSpace(stringVal);
-      if (stringVal.length() == 0) {
+      if (stringVal.isEmpty()) {
         return n;
       }
     }
@@ -421,7 +417,7 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
     }
 
     String joinString = (right == null) ? "," : NodeUtil.getStringValue(right);
-    List<Node> arrayFoldedChildren = Lists.newLinkedList();
+    List<Node> arrayFoldedChildren = new LinkedList<>();
     StringBuilder sb = null;
     int foldedSize = 0;
     Node prev = null;
@@ -441,7 +437,7 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
           // + 2 for the quotes.
           foldedSize += sb.length() + 2;
           arrayFoldedChildren.add(
-              IR.string(sb.toString()).copyInformationFrom(prev));
+              IR.string(sb.toString()).useSourceInfoIfMissingFrom(prev));
           sb = null;
         }
         foldedSize += InlineCostEstimator.getCost(elem);
@@ -456,7 +452,7 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
       // + 2 for the quotes.
       foldedSize += sb.length() + 2;
       arrayFoldedChildren.add(
-          IR.string(sb.toString()).copyInformationFrom(prev));
+          IR.string(sb.toString()).useSourceInfoIfMissingFrom(prev));
     }
     // one for each comma.
     foldedSize += arrayFoldedChildren.size() - 1;
@@ -679,8 +675,8 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
    * Support function for jsSplit, find the first occurrence of
    * separator within stringValue starting at startIndex.
    */
-  private int jsSplitMatch(String stringValue, int startIndex,
-      String separator) {
+  private static int jsSplitMatch(String stringValue, int startIndex,
+                                  String separator) {
 
     if (startIndex + separator.length() > stringValue.length()) {
       return -1;
@@ -713,11 +709,11 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
       return new String[] {stringValue};
     }
 
-    List<String> splitStrings = Lists.newArrayList();
+    List<String> splitStrings = new ArrayList<>();
 
     // If an empty string is specified for the separator, split apart each
     // character of the string.
-    if (separator.length() == 0) {
+    if (separator.isEmpty()) {
       for (int i = 0; i < stringValue.length() && i < limit; i++) {
         splitStrings.add(stringValue.substring(i, i + 1));
       }
@@ -783,9 +779,8 @@ class PeepholeReplaceKnownMethods extends AbstractPeepholeOptimization{
     // Split the string and convert the returned array into JS nodes
     String[] stringArray = jsSplit(stringValue, separator, limit);
     Node arrayOfStrings = IR.arraylit();
-    for (int i = 0; i < stringArray.length; i++) {
-      arrayOfStrings.addChildToBack(
-          IR.string(stringArray[i]).srcref(stringNode));
+    for (String element : stringArray) {
+      arrayOfStrings.addChildToBack(IR.string(element).srcref(stringNode));
     }
 
     Node parent = n.getParent();

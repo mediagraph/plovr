@@ -18,14 +18,14 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
+import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.jscomp.NodeTraversal.ScopedCallback;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -117,11 +117,7 @@ class ExpandJqueryAliases extends AbstractPostOrderCallback
 
   public boolean isJqueryExpandedEachCall(Node call, String qName) {
     Preconditions.checkArgument(call.isCall());
-    if (call.getFirstChild() != null &&
-        JQUERY_EXPANDED_EACH_NAME.equals(qName)) {
-      return true;
-    }
-    return false;
+    return call.getFirstChild() != null && JQUERY_EXPANDED_EACH_NAME.equals(qName);
   }
 
   @Override
@@ -146,7 +142,7 @@ class ExpandJqueryAliases extends AbstractPostOrderCallback
   public void process(Node externs, Node root) {
     logger.fine("Expanding Jquery Aliases");
 
-    NodeTraversal.traverse(compiler, root, this);
+    NodeTraversal.traverseEs6(compiler, root, this);
   }
 
   private void maybeReplaceJqueryPrototypeAlias(Node n) {
@@ -215,15 +211,23 @@ class ExpandJqueryAliases extends AbstractPostOrderCallback
 
     while (extendArg.hasChildren()) {
       Node currentProp = extendArg.removeFirstChild();
-      currentProp.setType(Token.STRING);
-
-      Node propValue = currentProp.removeFirstChild();
+      Node propValue;
+      if (currentProp.hasChildren()) {
+        propValue = currentProp.getLastChild().detachFromParent();
+      } else {
+        propValue = IR.name(currentProp.getString()).srcref(currentProp);
+      }
 
       Node newProp;
       if (currentProp.isQuotedString()) {
         newProp = IR.getelem(objectToExtend.cloneTree(),
             currentProp).srcref(currentProp);
+      } else if (currentProp.isComputedProp()) {
+        Node childOfcompProp = currentProp.removeFirstChild();
+        newProp = IR.getelem(objectToExtend.cloneTree(),
+            childOfcompProp).srcref(currentProp);
       } else {
+        currentProp.setType(Token.STRING);
         newProp = IR.getprop(objectToExtend.cloneTree(),
             currentProp).srcref(currentProp);
       }
@@ -306,16 +310,18 @@ class ExpandJqueryAliases extends AbstractPostOrderCallback
     }
 
     // Find all references to the callback function arguments
-    List<Node> keyNodeReferences = Lists.newArrayList();
-    List<Node> valueNodeReferences = Lists.newArrayList();
+    List<Node> keyNodeReferences = new ArrayList<>();
+    List<Node> valueNodeReferences = new ArrayList<>();
 
-    NodeTraversal.traverse(compiler,
-        NodeUtil.getFunctionBody(callbackFunction),
+    new NodeTraversal(
+        compiler,
         new FindCallbackArgumentReferences(callbackFunction,
             keyNodeReferences, valueNodeReferences,
-            objectToLoopOver.isArrayLit()));
+            objectToLoopOver.isArrayLit()))
+        .traverseInnerNode(
+            NodeUtil.getFunctionBody(callbackFunction), callbackFunction, t.getScope());
 
-    if (keyNodeReferences.size() == 0) {
+    if (keyNodeReferences.isEmpty()) {
      // We didn't do anything useful ...
       t.report(n, JQUERY_USELESS_EACH_EXPANSION, (String) null);
       return;
@@ -352,17 +358,24 @@ class ExpandJqueryAliases extends AbstractPostOrderCallback
           val = IR.number(i).srcref(key);
         } else {
           val = key.getFirstChild();
+          if (val == null) {
+            val = IR.name(key.getString());
+          }
         }
       }
 
       // Keep track of the replaced nodes so we can reset the tree
-      List<Node> newKeys = Lists.newArrayList();
-      List<Node> newValues = Lists.newArrayList();
-      List<Node> origGetElems = Lists.newArrayList();
-      List<Node> newGetProps = Lists.newArrayList();
+      List<Node> newKeys = new ArrayList<>();
+      List<Node> newValues = new ArrayList<>();
+      List<Node> origGetElems = new ArrayList<>();
+      List<Node> newGetProps = new ArrayList<>();
 
       // Replace all of the key nodes with the prop name
       for (int j = 0; j < keyNodes.size(); j++) {
+        if (key.isComputedProp()) {
+          t.report(key, JQUERY_UNABLE_TO_EXPAND_INVALID_NAME_ERROR);
+          return null;
+        }
         Node origNode = keyNodes.get(j);
         Node ancestor = origNode.getParent();
 
@@ -393,7 +406,7 @@ class ExpandJqueryAliases extends AbstractPostOrderCallback
           Node prop = ancestorClone.getChildAtIndex(1);
 
           if (prop.isString() &&
-            NodeUtil.isValidPropertyName(prop.getString())) {
+            NodeUtil.isValidPropertyName(LanguageMode.ECMASCRIPT3, prop.getString())) {
             Node target = ancestorClone.getFirstChild();
             Node newGetProp = IR.getprop(target.detachFromParent(),
                 prop.detachFromParent());
@@ -402,7 +415,7 @@ class ExpandJqueryAliases extends AbstractPostOrderCallback
             ancestor.getParent().replaceChild(ancestor, newGetProp);
           } else {
             if (prop.isString() &&
-                !NodeUtil.isValidPropertyName(prop.getString())) {
+                !NodeUtil.isValidPropertyName(LanguageMode.ECMASCRIPT3, prop.getString())) {
               t.report(n,
                   JQUERY_UNABLE_TO_EXPAND_INVALID_NAME_ERROR,
                   prop.getString());
@@ -504,7 +517,7 @@ class ExpandJqueryAliases extends AbstractPostOrderCallback
    * Given a jQuery.expandedEach callback function, traverse it and collect any
    * references to its parameter names.
    */
-  class FindCallbackArgumentReferences extends AbstractPostOrderCallback
+  static class FindCallbackArgumentReferences extends AbstractPostOrderCallback
       implements ScopedCallback {
 
     private final String keyName;
@@ -557,7 +570,7 @@ class ExpandJqueryAliases extends AbstractPostOrderCallback
     public void visit(NodeTraversal t, Node n, Node parent) {
       // In the top scope, "this" is a reference to "value"
       boolean isThis = false;
-      if (t.getScope() == this.startingScope) {
+      if (t.getClosestHoistScope() == this.startingScope) {
         isThis = n.isThis();
       }
 

@@ -39,13 +39,15 @@
 
 package com.google.javascript.rhino.jstype;
 
+import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 
 /**
  * An object type with declared template types, such as
- * <code>Array.<string></code>.
+ * <code>Array<string></code>.
  *
  */
 public final class TemplatizedType extends ProxyObjectType {
@@ -66,7 +68,7 @@ public final class TemplatizedType extends ProxyObjectType {
         objectType.getTemplateTypeMap().getUnfilledTemplateKeys();
     ImmutableList.Builder<JSType> builder = ImmutableList.builder();
     for (TemplateType filledTemplateKey : filledTemplateKeys) {
-      builder.add(getTemplateTypeMap().getTemplateType(filledTemplateKey));
+      builder.add(getTemplateTypeMap().getResolvedTemplateType(filledTemplateKey));
     }
     this.templateTypes = builder.build();
 
@@ -74,11 +76,17 @@ public final class TemplatizedType extends ProxyObjectType {
   }
 
   @Override
-  String toStringHelper(boolean forAnnotations) {
+  String toStringHelper(final boolean forAnnotations) {
     String typeString = super.toStringHelper(forAnnotations);
 
     if (!templateTypes.isEmpty()) {
-      typeString += ".<" + Joiner.on(",").join(templateTypes) + ">";
+      typeString += "<"
+          + Joiner.on(",").join(Lists.transform(templateTypes, new Function<JSType, String>() {
+            @Override
+            public String apply(JSType type) {
+              return type.toStringHelper(forAnnotations);
+            }
+          })) + ">";
     }
 
     return typeString;
@@ -111,17 +119,19 @@ public final class TemplatizedType extends ProxyObjectType {
 
   @Override
   public boolean isSubtype(JSType that) {
-    return isSubtypeHelper(this, that);
+    return isSubtype(that, ImplCache.create());
+  }
+
+  @Override
+  protected boolean isSubtype(JSType that,
+      ImplCache implicitImplCache) {
+    return isSubtypeHelper(this, that, implicitImplCache);
   }
 
   boolean wrapsSameRawType(JSType that) {
     return that.isTemplatizedType() && this.getReferencedTypeInternal()
         .isEquivalentTo(
             that.toMaybeTemplatizedType().getReferencedTypeInternal());
-  }
-
-  boolean wrapsRawType(JSType that) {
-    return this.getReferencedTypeInternal().isEquivalentTo(that);
   }
 
   /**

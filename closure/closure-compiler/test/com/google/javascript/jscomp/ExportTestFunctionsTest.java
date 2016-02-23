@@ -19,7 +19,7 @@ package com.google.javascript.jscomp;
  * Tests for ExportTestFunctions.
  *
  */
-public class ExportTestFunctionsTest extends CompilerTestCase {
+public final class ExportTestFunctionsTest extends Es6CompilerTestCase {
 
   private static final String EXTERNS =
       "function google_exportSymbol(a, b) {}; "
@@ -29,7 +29,9 @@ public class ExportTestFunctionsTest extends CompilerTestCase {
       "function Foo(arg) {}; "
       + "function setUp(arg3) {}; "
       + "function tearDown(arg, arg2) {}; "
-      + "function testBar(arg) {}";
+      + "function testBar(arg) {}; "
+      + "function test$(arg) {}; "
+      + "function test$foo(arg) {}";
 
   public ExportTestFunctionsTest() {
     super(EXTERNS);
@@ -58,18 +60,22 @@ public class ExportTestFunctionsTest extends CompilerTestCase {
         + "function setUp(arg3){} google_exportSymbol(\"setUp\",setUp);; "
         + "function tearDown(arg,arg2) {} "
         + "google_exportSymbol(\"tearDown\",tearDown);; "
-        + "function testBar(arg){} google_exportSymbol(\"testBar\",testBar)"
+        + "function testBar(arg){} google_exportSymbol(\"testBar\",testBar);; "
+        + "function test$(arg){} google_exportSymbol(\"test$\",test$);; "
+        + "function test$foo(arg){} google_exportSymbol(\"test$foo\",test$foo)"
     );
   }
 
   // Helper functions
   public void testBasicTestFunctionsAreExported() {
-    test("function Foo() {function testA() {}}",
-         "function Foo() {function testA(){}}");
+    testSame("function Foo() {function testA(){}}");
     test("function setUp() {}",
          "function setUp(){} google_exportSymbol('setUp',setUp)");
     test("function setUpPage() {}",
          "function setUpPage(){} google_exportSymbol('setUpPage',setUpPage)");
+    test("function shouldRunTests() {}",
+         "function shouldRunTests(){}"
+             + "google_exportSymbol('shouldRunTests',shouldRunTests)");
     test("function tearDown() {}",
          "function tearDown(){} google_exportSymbol('tearDown',tearDown)");
     test("function tearDownPage() {}",
@@ -91,14 +97,16 @@ public class ExportTestFunctionsTest extends CompilerTestCase {
    * This format should be supported in addition to function statements.
    */
   public void testFunctionExpressionsAreExported() {
-    test("var Foo = function() {var testA = function() {}}",
-         "var Foo = function() {var testA = function() {}}");
+    testSame("var Foo = function() {var testA = function() {}}");
     test("var setUp = function() {}",
          "var setUp = function() {}; " +
          "google_exportSymbol('setUp',setUp)");
     test("var setUpPage = function() {}",
          "var setUpPage = function() {}; " +
          "google_exportSymbol('setUpPage',setUpPage)");
+    test("var shouldRunTests = function() {}",
+         "var shouldRunTests = function() {}; " +
+         "google_exportSymbol('shouldRunTests',shouldRunTests)");
     test("var tearDown = function() {}",
          "var tearDown = function() {}; " +
          "google_exportSymbol('tearDown',tearDown)");
@@ -110,14 +118,66 @@ public class ExportTestFunctionsTest extends CompilerTestCase {
          "google_exportSymbol('testBar',testBar)");
   }
 
+  public void testFunctionExpressionsByLetAreExported() {
+    testSameEs6("let Foo = function() {var testA = function() {}}");
+    testEs6("let setUp = function() {}",
+        LINE_JOINER.join(
+            "let setUp = function() {}; ",
+            "google_exportSymbol('setUp', setUp)"));
+    testEs6("let testBar = function() {}",
+        LINE_JOINER.join(
+            "let testBar = function() {}; ",
+            "google_exportSymbol('testBar', testBar)"));
+    testEs6("let tearDown = function() {}",
+        LINE_JOINER.join(
+            "let tearDown = function() {}; ",
+            "google_exportSymbol('tearDown', tearDown)"));
+  }
+
+  public void testFunctionExpressionsByConstAreExported() {
+    testSameEs6("const Foo = function() {var testA = function() {}}");
+    testEs6("const setUp = function() {}",
+        LINE_JOINER.join(
+            "const setUp = function() {}; ",
+            "google_exportSymbol('setUp', setUp)"));
+    testEs6("const testBar = function() {}",
+        LINE_JOINER.join(
+            "const testBar = function() {}; ",
+            "google_exportSymbol('testBar', testBar)"));
+    testEs6("const tearDown = function() {}",
+        LINE_JOINER.join(
+            "const tearDown = function() {}; ",
+            "google_exportSymbol('tearDown', tearDown)"));
+  }
+
+  public void testArrowFunctionExpressionsAreExported() {
+    testSameEs6("var Foo = ()=>{var testA = function() {}}");
+    testEs6("var setUp = ()=>{}",
+        LINE_JOINER.join(
+            "var setUp = ()=>{}; ",
+            "google_exportSymbol('setUp', setUp)"));
+    testEs6("var testBar = ()=>{}",
+        LINE_JOINER.join(
+            "var testBar = ()=>{}; ",
+            "google_exportSymbol('testBar', testBar)"));
+    testEs6("var tearDown = ()=>{}",
+        LINE_JOINER.join(
+            "var tearDown = ()=>{}; ",
+            "google_exportSymbol('tearDown', tearDown)"));
+  }
+
   public void testFunctionAssignmentsAreExported() {
-    test("Foo = {}; Foo.prototype.bar = function() {};",
-         "Foo = {}; Foo.prototype.bar = function() {};");
+    testSame("Foo = {}; Foo.prototype.bar = function() {};");
 
     test("Foo = {}; Foo.prototype.setUpPage = function() {};",
          "Foo = {}; Foo.prototype.setUpPage = function() {};"
          + "google_exportProperty(Foo.prototype, 'setUpPage', "
          + "Foo.prototype.setUpPage);");
+
+    test("Foo = {}; Foo.prototype.shouldRunTests = function() {};",
+         "Foo = {}; Foo.prototype.shouldRunTests = function() {};"
+         + "google_exportProperty(Foo.prototype, 'shouldRunTests', "
+         + "Foo.prototype.shouldRunTests);");
 
     test("Foo = {}; Foo.prototype.testBar = function() {};",
          "Foo = {}; Foo.prototype.testBar = function() {};"
@@ -137,5 +197,18 @@ public class ExportTestFunctionsTest extends CompilerTestCase {
          + "{ var testBaz = function() {}};"
          + "google_exportProperty(Foo.baz.prototype, 'testBar', "
          + "Foo.baz.prototype.testBar);");
+  }
+
+  public void testExportTestSuite() {
+    testSame("goog.testing.testSuite({'a': function() {}, 'b': function() {}});");
+    test(
+        "goog.testing.testSuite({a: function() {}, b: function() {}});",
+        "goog.testing.testSuite({'a': function() {}, 'b': function() {}});");
+  }
+
+  public void testMemberDefInObjLit() {
+    testEs6(
+        "goog.testing.testSuite({a() {}, b() {}});",
+        "goog.testing.testSuite({'a': function() {}, 'b': function() {}});");
   }
 }

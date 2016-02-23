@@ -16,6 +16,8 @@
 
 package com.google.template.soy.exprtree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.exprtree.ExprNode.OperatorNode;
 import com.google.template.soy.exprtree.Operator.Associativity;
 import com.google.template.soy.exprtree.Operator.Operand;
@@ -25,13 +27,11 @@ import com.google.template.soy.exprtree.Operator.Token;
 
 import java.util.List;
 
-
 /**
  * Abstract implementation of an OperatorNode.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
 public abstract class AbstractOperatorNode extends AbstractParentExprNode implements OperatorNode {
 
@@ -40,7 +40,8 @@ public abstract class AbstractOperatorNode extends AbstractParentExprNode implem
   private final Operator operator;
 
 
-  public AbstractOperatorNode(Operator operator) {
+  public AbstractOperatorNode(Operator operator, SourceLocation sourceLocation) {
+    super(sourceLocation);
     this.operator = operator;
   }
 
@@ -49,8 +50,8 @@ public abstract class AbstractOperatorNode extends AbstractParentExprNode implem
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected AbstractOperatorNode(AbstractOperatorNode orig) {
-    super(orig);
+  protected AbstractOperatorNode(AbstractOperatorNode orig, CopyState copyState) {
+    super(orig, copyState);
     this.operator = orig.operator;
   }
 

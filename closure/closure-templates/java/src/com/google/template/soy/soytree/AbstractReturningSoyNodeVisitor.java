@@ -17,14 +17,10 @@
 package com.google.template.soy.soytree;
 
 import com.google.template.soy.basetree.AbstractReturningNodeVisitor;
-import com.google.template.soy.basetree.ParentNode;
 import com.google.template.soy.soytree.SoyNode.LoopNode;
-import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
-import com.google.template.soy.soytree.jssrc.GoogMsgNode;
+import com.google.template.soy.soytree.SoyNode.MsgSubstUnitNode;
+import com.google.template.soy.soytree.jssrc.GoogMsgDefNode;
 import com.google.template.soy.soytree.jssrc.GoogMsgRefNode;
-
-import java.util.List;
-
 
 /**
  * Abstract base class for all SoyNode visitors. A visitor is basically a function implemented for
@@ -52,11 +48,9 @@ import java.util.List;
  * @param <R> The return type of this visitor.
  *
  * @see AbstractSoyNodeVisitor
- * @author Kai Huang
  */
 public abstract class AbstractReturningSoyNodeVisitor<R>
     extends AbstractReturningNodeVisitor<SoyNode, R> {
-
 
   @Override protected R visit(SoyNode node) {
 
@@ -69,15 +63,14 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
 
       case RAW_TEXT_NODE: return visitRawTextNode((RawTextNode) node);
 
-      case GOOG_MSG_NODE: return visitGoogMsgNode((GoogMsgNode) node);
+      case GOOG_MSG_DEF_NODE: return visitGoogMsgDefNode((GoogMsgDefNode) node);
       case GOOG_MSG_REF_NODE: return visitGoogMsgRefNode((GoogMsgRefNode) node);
 
+      case MSG_FALLBACK_GROUP_NODE: return visitMsgFallbackGroupNode((MsgFallbackGroupNode) node);
       case MSG_NODE: return visitMsgNode((MsgNode) node);
       case MSG_PLURAL_NODE: return visitMsgPluralNode((MsgPluralNode) node);
       case MSG_PLURAL_CASE_NODE: return visitMsgPluralCaseNode((MsgPluralCaseNode) node);
       case MSG_PLURAL_DEFAULT_NODE: return visitMsgPluralDefaultNode((MsgPluralDefaultNode) node);
-      case MSG_PLURAL_REMAINDER_NODE:
-        return visitMsgPluralRemainderNode((MsgPluralRemainderNode) node);
       case MSG_SELECT_NODE: return visitMsgSelectNode((MsgSelectNode) node);
       case MSG_SELECT_CASE_NODE: return visitMsgSelectCaseNode((MsgSelectCaseNode) node);
       case MSG_SELECT_DEFAULT_NODE: return visitMsgSelectDefaultNode((MsgSelectDefaultNode) node);
@@ -88,6 +81,7 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
       case PRINT_DIRECTIVE_NODE: return visitPrintDirectiveNode((PrintDirectiveNode) node);
 
       case CSS_NODE: return visitCssNode((CssNode) node);
+      case XID_NODE: return visitXidNode((XidNode) node);
 
       case LET_VALUE_NODE: return visitLetValueNode((LetValueNode) node);
       case LET_CONTENT_NODE: return visitLetContentNode((LetContentNode) node);
@@ -114,34 +108,8 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
       case LOG_NODE: return visitLogNode((LogNode) node);
       case DEBUGGER_NODE: return visitDebuggerNode((DebuggerNode) node);
 
-      default: throw new UnsupportedOperationException();
+      default: return visitSoyNode(node);
     }
-  }
-
-
-  /**
-   * Helper to visit all the children of a node, in order.
-   * @param node The parent node whose children to visit.
-   * @return The list of return values from visiting the children.
-   * @see #visitChildrenAllowingConcurrentModification
-   */
-  protected List<R> visitChildren(ParentSoyNode<?> node) {
-    return visitChildren((ParentNode<? extends SoyNode>) node);
-  }
-
-
-  /**
-   * Helper to visit all the children of a node, in order.
-   *
-   * This method differs from {@code visitChildren} in that we are iterating through a copy of the
-   * children. Thus, concurrent modification of the list of children is allowed.
-   *
-   * @param node The parent node whose children to visit.
-   * @return The list of return values from visiting the children.
-   * @see #visitChildren
-   */
-  protected List<R> visitChildrenAllowingConcurrentModification(ParentSoyNode<?> node) {
-    return visitChildrenAllowingConcurrentModification((ParentNode<? extends SoyNode>) node);
   }
 
 
@@ -173,11 +141,15 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
     return visitSoyNode(node);
   }
 
-  protected R visitGoogMsgNode(GoogMsgNode node) {
+  protected R visitGoogMsgDefNode(GoogMsgDefNode node) {
     return visitSoyNode(node);
   }
 
   protected R visitGoogMsgRefNode(GoogMsgRefNode node) {
+    return visitSoyNode(node);
+  }
+
+  protected R visitMsgFallbackGroupNode(MsgFallbackGroupNode node) {
     return visitSoyNode(node);
   }
 
@@ -186,7 +158,7 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
   }
 
   protected R visitMsgPluralNode(MsgPluralNode node) {
-    return visitSoyNode(node);
+    return visitMsgSubstUnitNode(node);
   }
 
   protected R visitMsgPluralCaseNode(MsgPluralCaseNode node) {
@@ -197,12 +169,8 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
     return visitSoyNode(node);
   }
 
-  protected R visitMsgPluralRemainderNode(MsgPluralRemainderNode node) {
-    return visitSoyNode(node);
-  }
-
   protected R visitMsgSelectNode(MsgSelectNode node) {
-    return visitSoyNode(node);
+    return visitMsgSubstUnitNode(node);
   }
 
   protected R visitMsgSelectCaseNode(MsgSelectCaseNode node) {
@@ -214,10 +182,14 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
   }
 
   protected R visitMsgPlaceholderNode(MsgPlaceholderNode node) {
-    return visitSoyNode(node);
+    return visitMsgSubstUnitNode(node);
   }
 
   protected R visitMsgHtmlTagNode(MsgHtmlTagNode node) {
+    return visitSoyNode(node);
+  }
+
+  protected R visitMsgSubstUnitNode(MsgSubstUnitNode node) {
     return visitSoyNode(node);
   }
 
@@ -230,6 +202,10 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
   }
 
   protected R visitCssNode(CssNode node) {
+    return visitSoyNode(node);
+  }
+
+  protected R visitXidNode(XidNode node) {
     return visitSoyNode(node);
   }
 
@@ -332,5 +308,4 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
   protected R visitSoyNode(SoyNode node) {
     throw new UnsupportedOperationException();
   }
-
 }

@@ -16,18 +16,18 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Maps;
-
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.rhino.Node;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Unit test for AmbiguateProperties Compiler pass.
  *
  */
-public class AmbiguatePropertiesTest extends CompilerTestCase {
+
+public final class AmbiguatePropertiesTest extends CompilerTestCase {
   private AmbiguateProperties lastPass;
 
   private static final String EXTERNS =
@@ -39,8 +39,10 @@ public class AmbiguatePropertiesTest extends CompilerTestCase {
   public AmbiguatePropertiesTest() {
     super(EXTERNS);
     enableNormalize();
-    enableTypeCheck(CheckLevel.WARNING);
+    enableTypeCheck();
     enableClosurePass();
+    enableGatherExternProperties();
+    compareJsDoc = false;
   }
 
   @Override
@@ -48,7 +50,8 @@ public class AmbiguatePropertiesTest extends CompilerTestCase {
     return new CompilerPass() {
       @Override
       public void process(Node externs, Node root) {
-        lastPass = new AmbiguateProperties(compiler, new char[]{'$'});
+        lastPass = AmbiguateProperties.makePassForTesting(
+            compiler, new char[]{'$'});
         lastPass.process(externs, root);
       }
     };
@@ -238,7 +241,7 @@ public class AmbiguatePropertiesTest extends CompilerTestCase {
     StringBuilder output = new StringBuilder();
     js.append("/** @constructor */ var Foo = function(){};\n");
     js.append("/** @constructor */ var Bar = function(){};\n");
-    output.append(js.toString());
+    output.append(js);
 
     int vars = 10;
     for (int i = 0; i < vars; i++) {
@@ -337,7 +340,7 @@ public class AmbiguatePropertiesTest extends CompilerTestCase {
   }
 
   public void testReadPropertyOfGlobalThis() {
-    testSame("f(this.prop);");
+    testSame("Object.prototype.prop;", "f(this.prop);", null);
   }
 
   public void testSetQuotedPropertyOfThis() {
@@ -458,7 +461,7 @@ public class AmbiguatePropertiesTest extends CompilerTestCase {
         + "Foo.prototype.c=0;";
     test(js, output);
 
-    Map<String, String> answerMap = Maps.newHashMap();
+    Map<String, String> answerMap = new HashMap<>();
     answerMap.put("x", "b");
     answerMap.put("y", "c");
     answerMap.put("z", "a");
@@ -474,6 +477,7 @@ public class AmbiguatePropertiesTest extends CompilerTestCase {
         + " * @implements {Foo}\n"
         + " */\n"
         + "function Bar(){}\n"
+        + "Bar.prototype.y;\n"
         + "/** @inheritDoc */\n"
         + "Bar.prototype.x = function() { return this.y; };\n"
         + "Bar.prototype.z = function() {};\n"
@@ -481,12 +485,13 @@ public class AmbiguatePropertiesTest extends CompilerTestCase {
         + "/** @type {Foo} */ (new Bar).y;";
     String output = ""
         + "function Foo(){}\n"
-        + "Foo.prototype.a = function(){};\n"
+        + "Foo.prototype.b = function(){};\n"
         + "function Bar(){}\n"
-        + "Bar.prototype.a = function() { return this.b; };\n"
+        + "Bar.prototype.a;\n"
+        + "Bar.prototype.b = function() { return this.a; };\n"
         + "Bar.prototype.c = function() {};\n"
         // Simulates inline getters.
-        + "(new Bar).b;";
+        + "(new Bar).a;";
     test(js, output);
   }
 
@@ -595,6 +600,77 @@ public class AmbiguatePropertiesTest extends CompilerTestCase {
         "}" +
         "/** @param {goog.Foo} x */" +
         "function f(x) { x.y = 4; }";
+    test(js, result);
+  }
+
+  public void testBug14291280() {
+    String js =
+        "/** @constructor \n @template T */\n" +
+        "function C() {\n" +
+        "  this.aa = 1;\n" +
+        "}\n" +
+        "/** @return {C.<T>} */\n" +
+        "C.prototype.method = function() {\n" +
+        "  return this;\n" +
+        "}\n" +
+        "/** @type {C.<string>} */\n" +
+        "var x = new C().method();\n" +
+        "x.bb = 2;\n" +
+        "x.cc = 3;";
+    String result =
+        "function C() {" +
+        "  this.b = 1;" +
+        "}" +
+        "C.prototype.a = function() {" +
+        "  return this;" +
+        "};" +
+        "var x = (new C).a();" +
+        "x.c = 2;" +
+        "x.d = 3;";
+    test(js, result);
+  }
+
+  public void testAmbiguateWithAnAlias() {
+    String js =
+        "/** @constructor */ function Foo() { this.abc = 5; }\n" +
+        "/** @const */ var alias = Foo;\n" +
+        "/** @constructor @extends alias */\n" +
+        "function Bar() {\n" +
+        "  this.xyz = 7;\n" +
+        "}";
+    String result =
+        "/** @constructor */ function Foo() { this.a = 5; }\n" +
+        "/** @const */ var alias = Foo;\n" +
+        "/** @constructor @extends alias */\n" +
+        "function Bar() {\n" +
+        "  this.b = 7;\n" +
+        "}";
+    test(js, result);
+  }
+
+  public void testAmbiguateWithAliases() {
+    String js =
+        "/** @constructor */ function Foo() { this.abc = 5; }\n" +
+        "/** @const */ var alias = Foo;\n" +
+        "/** @constructor @extends alias */\n" +
+        "function Bar() {\n" +
+        "  this.def = 7;\n" +
+        "}\n" +
+        "/** @constructor @extends alias */\n" +
+        "function Baz() {\n" +
+        "  this.xyz = 8;\n" +
+        "}";
+    String result =
+        "/** @constructor */ function Foo() { this.a = 5; }\n" +
+        "/** @const */ var alias = Foo;\n" +
+        "/** @constructor @extends alias */\n" +
+        "function Bar() {\n" +
+        "  this.b = 7;\n" +
+        "}\n" +
+        "/** @constructor @extends alias */\n" +
+        "function Baz() {\n" +
+        "  this.b = 8;\n" +
+        "}";
     test(js, result);
   }
 }

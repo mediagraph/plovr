@@ -16,19 +16,19 @@
 
 package com.google.javascript.jscomp;
 
-import static com.google.javascript.jscomp.SyntacticScopeCreator.VAR_MULTIPLY_DECLARED_ERROR;
+import static com.google.common.truth.Truth.assertThat;
 
-import com.google.common.collect.Maps;
 import com.google.javascript.jscomp.GlobalNamespace.Name;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
  * @author nicksantos@google.com (Nick Santos)
  */
-public class ProcessDefinesTest extends CompilerTestCase {
+public final class ProcessDefinesTest extends CompilerTestCase {
 
   public ProcessDefinesTest() {
     super("var externMethod;");
@@ -38,13 +38,14 @@ public class ProcessDefinesTest extends CompilerTestCase {
     allowSourcelessWarnings();
   }
 
-  private Map<String, Node> overrides = Maps.newHashMap();
+  private Map<String, Node> overrides = new HashMap<>();
   private GlobalNamespace namespace;
 
   @Override
   public void setUp() throws Exception {
     super.setUp();
     overrides.clear();
+    compareJsDoc = false;
   }
 
   @Override
@@ -80,17 +81,16 @@ public class ProcessDefinesTest extends CompilerTestCase {
   }
 
   public void testDefineBadType() {
-    test("/** @define {Object} */ var DEF = {}",
-        null, ProcessDefines.INVALID_DEFINE_TYPE_ERROR);
+    testError("/** @define {Object} */ var DEF = {}", ProcessDefines.INVALID_DEFINE_TYPE_ERROR);
   }
 
   public void testDefineWithBadValue1() {
-    test("/** @define {boolean} */ var DEF = new Boolean(true);", null,
+    testError("/** @define {boolean} */ var DEF = new Boolean(true);",
         ProcessDefines.INVALID_DEFINE_INIT_ERROR);
   }
 
   public void testDefineWithBadValue2() {
-    test("/** @define {string} */ var DEF = 'x' + y;", null,
+    testError("/** @define {string} */ var DEF = 'x' + y;",
         ProcessDefines.INVALID_DEFINE_INIT_ERROR);
   }
 
@@ -106,10 +106,9 @@ public class ProcessDefinesTest extends CompilerTestCase {
 
 
   public void testDefineWithInvalidDependentValue() {
-    test("var BASE = false;\n" +
-         "/** @define {boolean} */ var DEF = !BASE;",
-         null,
-          ProcessDefines.INVALID_DEFINE_INIT_ERROR);
+    testError("var BASE = false;\n" +
+        "/** @define {boolean} */ var DEF = !BASE;",
+        ProcessDefines.INVALID_DEFINE_INIT_ERROR);
   }
 
   public void testOverriding1() {
@@ -185,7 +184,7 @@ public class ProcessDefinesTest extends CompilerTestCase {
         "var DEF=3;true;3");
 
     Name def = namespace.getNameIndex().get("DEF");
-    assertEquals(1, def.getRefs().size());
+    assertThat(def.getRefs()).hasSize(1);
     assertEquals(1, def.globalSets);
     assertNotNull(def.getDeclaration());
   }
@@ -195,42 +194,36 @@ public class ProcessDefinesTest extends CompilerTestCase {
         "var DEF=true;var x;x=true");
   }
 
-  public void testDuplicateVar() {
-    test("/** @define {boolean} */ var DEF = false; var DEF = true;",
-         null, VAR_MULTIPLY_DECLARED_ERROR);
-  }
-
   public void testAssignBeforeDeclaration1() {
-    test("DEF=false;var b=false,/** @define {boolean} */DEF=true,c=false",
-         null, ProcessDefines.INVALID_DEFINE_INIT_ERROR);
+    testError("DEF=false;var b=false,/** @define {boolean} */DEF=true,c=false",
+        ProcessDefines.INVALID_DEFINE_INIT_ERROR);
   }
 
   public void testAssignBeforeDeclaration2() {
     overrides.put("DEF_OVERRIDE_TO_TRUE", new Node(Token.TRUE));
-    test(
+    testError(
         "DEF_OVERRIDE_TO_TRUE = 3;" +
         "/** @define {boolean|number} */ var DEF_OVERRIDE_TO_TRUE = false;",
-        null, ProcessDefines.INVALID_DEFINE_INIT_ERROR);
+        ProcessDefines.INVALID_DEFINE_INIT_ERROR);
   }
 
   public void testEmptyDeclaration() {
-    test("/** @define {boolean} */ var DEF;",
-         null, ProcessDefines.INVALID_DEFINE_INIT_ERROR);
+    testError("/** @define {boolean} */ var DEF;", ProcessDefines.INVALID_DEFINE_INIT_ERROR);
   }
 
   public void testReassignAfterCall() {
-    test("/** @define {boolean} */var DEF=true;externMethod();DEF=false",
-        null, ProcessDefines.DEFINE_NOT_ASSIGNABLE_ERROR);
+    testError("/** @define {boolean} */var DEF=true;externMethod();DEF=false",
+        ProcessDefines.DEFINE_NOT_ASSIGNABLE_ERROR);
   }
 
   public void testReassignAfterRef() {
-    test("/** @define {boolean} */var DEF=true;var x = DEF;DEF=false",
-        null, ProcessDefines.DEFINE_NOT_ASSIGNABLE_ERROR);
+    testError("/** @define {boolean} */var DEF=true;var x = DEF;DEF=false",
+        ProcessDefines.DEFINE_NOT_ASSIGNABLE_ERROR);
   }
 
   public void testReassignWithExpr() {
-    test("/** @define {boolean} */var DEF=true;var x;DEF=x=false",
-        null, ProcessDefines.INVALID_DEFINE_INIT_ERROR);
+    testError("/** @define {boolean} */var DEF=true;var x;DEF=x=false",
+        ProcessDefines.INVALID_DEFINE_INIT_ERROR);
   }
 
   public void testReassignAfterNonGlobalRef() {
@@ -240,31 +233,31 @@ public class ProcessDefinesTest extends CompilerTestCase {
         "var DEF=false;var x=function(){var y=DEF};false");
 
     Name def = namespace.getNameIndex().get("DEF");
-    assertEquals(2, def.getRefs().size());
+    assertThat(def.getRefs()).hasSize(2);
     assertEquals(1, def.globalSets);
     assertNotNull(def.getDeclaration());
   }
 
   public void testReassignAfterRefInConditional() {
-    test(
+    testError(
         "/** @define {boolean} */var DEF=true;" +
         "if (false) {var x=DEF} DEF=false;",
-        null, ProcessDefines.DEFINE_NOT_ASSIGNABLE_ERROR);
+        ProcessDefines.DEFINE_NOT_ASSIGNABLE_ERROR);
   }
 
   public void testAssignInNonGlobalScope() {
-    test("/** @define {boolean} */var DEF=true;function foo() {DEF=false};",
-        null, ProcessDefines.NON_GLOBAL_DEFINE_INIT_ERROR);
+    testError("/** @define {boolean} */var DEF=true;function foo() {DEF=false};",
+        ProcessDefines.NON_GLOBAL_DEFINE_INIT_ERROR);
   }
 
   public void testDeclareInNonGlobalScope() {
-    test("function foo() {/** @define {boolean} */var DEF=true;};",
-        null, ProcessDefines.NON_GLOBAL_DEFINE_INIT_ERROR);
+    testError("function foo() {/** @define {boolean} */var DEF=true;};",
+        ProcessDefines.NON_GLOBAL_DEFINE_INIT_ERROR);
   }
 
   public void testDefineAssignmentInLoop() {
-    test("/** @define {boolean} */var DEF=true;var x=0;while (x) {DEF=false;}",
-        null, ProcessDefines.NON_GLOBAL_DEFINE_INIT_ERROR);
+    testError("/** @define {boolean} */var DEF=true;var x=0;while (x) {DEF=false;}",
+        ProcessDefines.NON_GLOBAL_DEFINE_INIT_ERROR);
   }
 
   public void testWithNoDefines() {
@@ -276,7 +269,7 @@ public class ProcessDefinesTest extends CompilerTestCase {
          "var a = {}; a.B = true; true;");
 
     Name aDotB = namespace.getNameIndex().get("a.B");
-    assertEquals(1, aDotB.getRefs().size());
+    assertThat(aDotB.getRefs()).hasSize(1);
     assertEquals(1, aDotB.globalSets);
     assertNotNull(aDotB.getDeclaration());
   }
@@ -288,21 +281,17 @@ public class ProcessDefinesTest extends CompilerTestCase {
   }
 
   public void testNamespacedDefine2b() {
-    // TODO(johnlenz): We should either reject the define as invalid
-    // or replace its value.
     overrides.put("a.B", new Node(Token.TRUE));
-    test("var a = { /** @define {boolean} */ B : false };",
-         "var a = {B : false};",
-         null, ProcessDefines.UNKNOWN_DEFINE_WARNING);
+    testError(
+        "var a = { /** @define {boolean} */ B : false };",
+        ProcessDefines.INVALID_DEFINE_INIT_ERROR);
   }
 
   public void testNamespacedDefine2c() {
-    // TODO(johnlenz): We should either reject the define as invalid
-    // or replace its value.
     overrides.put("a.B", new Node(Token.TRUE));
-    test("var a = { /** @define {boolean} */ get B() { return false } };",
-      "var a = {get B() { return false } };",
-      null, ProcessDefines.UNKNOWN_DEFINE_WARNING);
+    testError(
+        "var a = { /** @define {boolean} */ get B() { return false } };",
+        ProcessDefines.INVALID_DEFINE_INIT_ERROR);
   }
 
   public void testNamespacedDefine3() {
@@ -319,8 +308,8 @@ public class ProcessDefinesTest extends CompilerTestCase {
 
 
   public void testOverrideAfterAlias() {
-    test("var x; /** @define {boolean} */var DEF=true; x=DEF; DEF=false;",
-         null, ProcessDefines.DEFINE_NOT_ASSIGNABLE_ERROR);
+    testError("var x; /** @define {boolean} */var DEF=true; x=DEF; DEF=false;",
+        ProcessDefines.DEFINE_NOT_ASSIGNABLE_ERROR);
   }
 
   private class ProcessDefinesWithInjectedNamespace implements CompilerPass {

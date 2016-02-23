@@ -16,23 +16,24 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.ControlFlowGraph.Branch;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.jscomp.graph.Annotation;
 import com.google.javascript.jscomp.graph.DiGraph.DiGraphNode;
 import com.google.javascript.jscomp.graph.LatticeElement;
+import com.google.javascript.jscomp.parsing.parser.util.format.SimpleFormat;
 import com.google.javascript.rhino.Node;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * A framework to help writing static program analysis. A subclass of
@@ -123,9 +124,9 @@ abstract class DataFlowAnalysis<N, L extends LatticeElement> {
     Comparator<DiGraphNode<N, Branch>> nodeComparator =
       cfg.getOptionalNodeComparator(isForward());
     if (nodeComparator != null) {
-      this.orderedWorkSet = Sets.newTreeSet(nodeComparator);
+      this.orderedWorkSet = new TreeSet<>(nodeComparator);
     } else {
-      this.orderedWorkSet = Sets.newLinkedHashSet();
+      this.orderedWorkSet = new LinkedHashSet<>();
     }
   }
 
@@ -150,7 +151,7 @@ abstract class DataFlowAnalysis<N, L extends LatticeElement> {
 
   @SuppressWarnings("unchecked")
   protected L join(L latticeA, L latticeB) {
-    return joinOp.apply(Lists.<L>newArrayList(latticeA, latticeB));
+    return joinOp.apply(ImmutableList.of(latticeA, latticeB));
   }
 
   /**
@@ -251,7 +252,7 @@ abstract class DataFlowAnalysis<N, L extends LatticeElement> {
     // call analyze.
     orderedWorkSet.clear();
     for (DiGraphNode<N, Branch> node : cfg.getDirectedGraphNodes()) {
-      node.setAnnotation(new FlowState<L>(createInitialEstimateLattice(),
+      node.setAnnotation(new FlowState<>(createInitialEstimateLattice(),
           createInitialEstimateLattice()));
       if (node != cfg.getImplicitReturn()) {
         orderedWorkSet.add(node);
@@ -294,7 +295,7 @@ abstract class DataFlowAnalysis<N, L extends LatticeElement> {
           FlowState<L> inNodeState = inNodes.get(0).getAnnotation();
           state.setIn(inNodeState.getOut());
         } else if (inNodes.size() > 1) {
-          List<L> values = new ArrayList<L>(inNodes.size());
+          List<L> values = new ArrayList<>(inNodes.size());
           for (DiGraphNode<N, Branch> currentNode : inNodes) {
             FlowState<L> currentNodeState = currentNode.getAnnotation();
             values.add(currentNodeState.getOut());
@@ -313,7 +314,7 @@ abstract class DataFlowAnalysis<N, L extends LatticeElement> {
           state.setOut(inNodeState.getIn());
         }
       } else if (inNodes.size() > 1) {
-        List<L> values = new ArrayList<L>(inNodes.size());
+        List<L> values = new ArrayList<>(inNodes.size());
         for (DiGraphNode<N, Branch> currentNode : inNodes) {
           FlowState<L> currentNodeState = currentNode.getAnnotation();
           values.add(currentNodeState.getIn());
@@ -365,12 +366,12 @@ abstract class DataFlowAnalysis<N, L extends LatticeElement> {
 
     @Override
     public String toString() {
-      return String.format("IN: %s OUT: %s", in, out);
+      return SimpleFormat.format("IN: %s OUT: %s", in, out);
     }
 
     @Override
     public int hashCode() {
-      return Objects.hashCode(in, out);
+      return Objects.hash(in, out);
     }
   }
 
@@ -394,11 +395,11 @@ abstract class DataFlowAnalysis<N, L extends LatticeElement> {
       orderedWorkSet.clear();
       for (DiGraphNode<N, Branch> node : getCfg().getDirectedGraphNodes()) {
         int outEdgeCount = getCfg().getOutEdges(node.getValue()).size();
-        List<L> outLattices = Lists.newArrayList();
+        List<L> outLattices = new ArrayList<>();
         for (int i = 0; i < outEdgeCount; i++) {
           outLattices.add(createInitialEstimateLattice());
         }
-        node.setAnnotation(new BranchedFlowState<L>(
+        node.setAnnotation(new BranchedFlowState<>(
             createInitialEstimateLattice(), outLattices));
         if (node != getCfg().getImplicitReturn()) {
           orderedWorkSet.add(node);
@@ -459,7 +460,7 @@ abstract class DataFlowAnalysis<N, L extends LatticeElement> {
       BranchedFlowState<L> state = node.getAnnotation();
       List<DiGraphNode<N, Branch>> predNodes =
           getCfg().getDirectedPredNodes(node);
-      List<L> values = new ArrayList<L>(predNodes.size());
+      List<L> values = new ArrayList<>(predNodes.size());
 
       for (DiGraphNode<N, Branch> predNode : predNodes) {
         BranchedFlowState<L> predNodeState = predNode.getAnnotation();
@@ -509,26 +510,14 @@ abstract class DataFlowAnalysis<N, L extends LatticeElement> {
       this.in = in;
     }
 
-    List<L> getOut() {
-      return out;
-    }
-
-    void setOut(List<L> out) {
-      Preconditions.checkNotNull(out);
-      for (L item : out) {
-        Preconditions.checkNotNull(item);
-      }
-      this.out = out;
-    }
-
     @Override
     public String toString() {
-      return String.format("IN: %s OUT: %s", in, out);
+      return SimpleFormat.format("IN: %s OUT: %s", in, out);
     }
 
     @Override
     public int hashCode() {
-      return Objects.hashCode(in, out);
+      return Objects.hash(in, out);
     }
   }
 

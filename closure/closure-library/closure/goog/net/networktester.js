@@ -32,7 +32,8 @@ goog.require('goog.log');
  *     was reachable, false indicates it wasn't.
  * @param {Object=} opt_handler Handler object for the callback.
  * @param {goog.Uri=} opt_uri URI to use for testing.
- * @constructor
+ * @constructor @struct
+ * @final
  */
 goog.net.NetworkTester = function(callback, opt_handler, opt_uri) {
   /**
@@ -142,6 +143,10 @@ goog.net.NetworkTester.prototype.timeoutTimer_ = null;
 goog.net.NetworkTester.prototype.pauseTimer_ = null;
 
 
+/** @private {?Image} */
+goog.net.NetworkTester.prototype.image_;
+
+
 /**
  * Returns the timeout in milliseconds.
  * @return {number} Timeout in milliseconds.
@@ -202,6 +207,15 @@ goog.net.NetworkTester.prototype.setPauseBetweenRetries = function(pauseMs) {
  */
 goog.net.NetworkTester.prototype.getUri = function() {
   return this.uri_;
+};
+
+
+/**
+ * Returns the current attempt count.
+ * @return {number} The attempt count.
+ */
+goog.net.NetworkTester.prototype.getAttemptCount = function() {
+  return this.attempt_;
 };
 
 
@@ -278,7 +292,7 @@ goog.net.NetworkTester.prototype.startNextAttempt_ = function() {
  * @private
  */
 goog.net.NetworkTester.getNavigatorOffline_ = function() {
-  return 'onLine' in navigator && !navigator.onLine;
+  return navigator !== null && 'onLine' in navigator && !navigator.onLine;
 };
 
 

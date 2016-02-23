@@ -16,10 +16,9 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Sets;
-
 import java.io.Serializable;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -36,13 +35,14 @@ import java.util.Set;
  *
  * @author nicksantos@google.com (Nick Santos)
  */
-public class DependencyOptions implements Serializable {
+public final class DependencyOptions implements Serializable {
   private static final long serialVersionUID = 1L;
 
   private boolean sortDependencies = false;
   private boolean pruneDependencies = false;
   private boolean dropMoochers = false;
-  private final Set<String> entryPoints = Sets.newHashSet();
+  private boolean es6ModuleOrder = false;
+  private final Set<String> entryPoints = new HashSet<>();
 
   /**
    * Enables or disables dependency sorting mode.
@@ -71,6 +71,19 @@ public class DependencyOptions implements Serializable {
    */
   public DependencyOptions setDependencyPruning(boolean enabled) {
     this.pruneDependencies = enabled;
+    return this;
+  }
+
+  /**
+   * Enables or disables ES6 module style ordering.
+   *
+   * This ordering differs from classic ordering in that inputs are sorted
+   * using a depth first instead of breadth first graph traversal and circular
+   * references are allowed.
+   * @return this for easy building.
+   */
+  public DependencyOptions setEs6ModuleOrder(boolean es6ModuleOrder) {
+    this.es6ModuleOrder = es6ModuleOrder;
     return this;
   }
 
@@ -117,9 +130,13 @@ public class DependencyOptions implements Serializable {
     return this;
   }
 
+  public boolean isEs6ModuleOrder() {
+    return es6ModuleOrder;
+  }
+
   /** Returns whether re-ordering of files is needed. */
   boolean needsManagement() {
-    return sortDependencies || pruneDependencies;
+    return sortDependencies || pruneDependencies || es6ModuleOrder;
   }
 
   boolean shouldSortDependencies() {

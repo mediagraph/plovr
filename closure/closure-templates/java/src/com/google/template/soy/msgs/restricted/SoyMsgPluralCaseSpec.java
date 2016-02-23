@@ -21,16 +21,15 @@ import com.google.template.soy.msgs.SoyMsgException;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Locale;
-
+import java.util.Objects;
 
 /**
  * Represents a plural case value.
  *
- * A plural case value can be either a number, or one of {@code ZERO}, {@code ONE}, {@code TWO}, 
+ * A plural case value can be either a number, or one of {@code ZERO}, {@code ONE}, {@code TWO},
  * {@code FEW}, {@code MANY} or {@code OTHER}.  Here, a number is represented by the number
  * {@code explicitValue} with status set to EXPLICIT and the remaining by an enum value.
  *
- * @author Umesh Nair
  */
 public class SoyMsgPluralCaseSpec {
 
@@ -38,7 +37,7 @@ public class SoyMsgPluralCaseSpec {
   public enum Type { EXPLICIT, ZERO, ONE, TWO, FEW, MANY, OTHER }
 
   /** Internal mapping of Type to String, reduces memory usage */
-  private static final EnumMap<Type, String> TYPE_TO_STRING = new EnumMap<Type, String>(Type.class);
+  private static final EnumMap<Type, String> TYPE_TO_STRING = new EnumMap<>(Type.class);
   static {
     for (Type t : EnumSet.allOf(Type.class)) {
       TYPE_TO_STRING.put(t, t.name().toLowerCase(Locale.ENGLISH));
@@ -99,8 +98,24 @@ public class SoyMsgPluralCaseSpec {
     return explicitValue;
   }
 
+
   @Override
   public String toString() {
     return (type == Type.EXPLICIT) ? "=" + explicitValue : TYPE_TO_STRING.get(type);
+  }
+
+
+  @Override public boolean equals(Object other) {
+    if (!(other instanceof SoyMsgPluralCaseSpec)) {
+      return false;
+    }
+    SoyMsgPluralCaseSpec otherSpec = (SoyMsgPluralCaseSpec) other;
+    return type == otherSpec.type
+        && explicitValue == otherSpec.explicitValue;
+  }
+
+
+  @Override public int hashCode() {
+    return Objects.hash(SoyMsgPluralCaseSpec.class, type, explicitValue);
   }
 }

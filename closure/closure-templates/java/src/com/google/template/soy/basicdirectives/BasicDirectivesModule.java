@@ -20,11 +20,9 @@ import com.google.inject.AbstractModule;
 import com.google.inject.multibindings.Multibinder;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 
-
 /**
  * Guice module for basic Soy print directives.
  *
- * @author Kai Huang
  */
 public class BasicDirectivesModule extends AbstractModule {
 
@@ -37,7 +35,7 @@ public class BasicDirectivesModule extends AbstractModule {
     // Basic escape directives.
     soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.EscapeCssString());
     soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.FilterCssValue());
-    soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.CleanHtml());
+    soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.NormalizeHtml());
     soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.EscapeHtmlRcdata());
     soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.EscapeHtmlAttribute());
     soyDirectivesSetBinder.addBinding().toInstance(
@@ -49,6 +47,10 @@ public class BasicDirectivesModule extends AbstractModule {
     soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.EscapeJsString());
     soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.EscapeJsValue());
     soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.FilterNormalizeUri());
+    soyDirectivesSetBinder.addBinding().toInstance(
+        new BasicEscapeDirective.FilterNormalizeMediaUri());
+    soyDirectivesSetBinder.addBinding().toInstance(
+        new BasicEscapeDirective.FilterTrustedResourceUri());
     soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.NormalizeUri());
     soyDirectivesSetBinder.addBinding().toInstance(new BasicEscapeDirective.EscapeUri());
 
@@ -57,6 +59,8 @@ public class BasicDirectivesModule extends AbstractModule {
     soyDirectivesSetBinder.addBinding().to(InsertWordBreaksDirective.class);
     soyDirectivesSetBinder.addBinding().to(TruncateDirective.class);
     soyDirectivesSetBinder.addBinding().to(TextDirective.class);
+    soyDirectivesSetBinder.addBinding().to(CleanHtmlDirective.class);
+    soyDirectivesSetBinder.addBinding().to(FilterImageDataUriDirective.class);
   }
 
 }

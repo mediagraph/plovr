@@ -47,7 +47,7 @@ class PrepareAst implements CompilerPass {
 
   private void reportChange() {
     if (checkOnly) {
-      Preconditions.checkState(false, "normalizeNodeType constraints violated");
+      throw new IllegalStateException("normalizeNodeType constraints violated");
     }
   }
 
@@ -61,11 +61,11 @@ class PrepareAst implements CompilerPass {
       // they DIRECT_EVAL shouldn't be applied after inlining has been
       // performed.
       if (externs != null) {
-        NodeTraversal.traverse(
+        NodeTraversal.traverseEs6(
             compiler, externs, new PrepareAnnotations());
       }
       if (root != null) {
-        NodeTraversal.traverse(
+        NodeTraversal.traverseEs6(
             compiler, root, new PrepareAnnotations());
       }
     }
@@ -98,10 +98,9 @@ class PrepareAst implements CompilerPass {
         if (NodeUtil.isControlStructureCodeBlock(n, c) && !c.isBlock()) {
           Node newBlock = IR.block().srcref(n);
           n.replaceChild(c, newBlock);
+          newBlock.setIsAddedBlock(true);
           if (!c.isEmpty()) {
             newBlock.addChildrenToFront(c);
-          } else {
-            newBlock.setWasEmptyNode(true);
           }
           c = newBlock;
           reportChange();
@@ -115,18 +114,7 @@ class PrepareAst implements CompilerPass {
    * around existing JSDoc annotations as well as internal annotations.
    */
   static class PrepareAnnotations
-      implements NodeTraversal.Callback {
-
-    PrepareAnnotations() {
-    }
-
-    @Override
-    public boolean shouldTraverse(NodeTraversal t, Node n, Node parent) {
-      if (n.isObjectLit()) {
-        normalizeObjectLiteralAnnotations(n);
-      }
-      return true;
-    }
+      extends NodeTraversal.AbstractPostOrderCallback {
 
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
@@ -134,19 +122,6 @@ class PrepareAst implements CompilerPass {
         case Token.CALL:
           annotateCalls(n);
           break;
-
-        case Token.FUNCTION:
-          annotateDispatchers(n, parent);
-          break;
-      }
-    }
-
-    private void normalizeObjectLiteralAnnotations(Node objlit) {
-      Preconditions.checkState(objlit.isObjectLit());
-      for (Node key = objlit.getFirstChild();
-           key != null; key = key.getNext()) {
-        Node value = key.getFirstChild();
-        normalizeObjectLiteralKeyAnnotations(objlit, key, value);
       }
     }
 
@@ -154,7 +129,7 @@ class PrepareAst implements CompilerPass {
      * There are two types of calls we are interested in calls without explicit
      * "this" values (what we are call "free" calls) and direct call to eval.
      */
-    private void annotateCalls(Node n) {
+    private static void annotateCalls(Node n) {
       Preconditions.checkState(n.isCall());
 
       // Keep track of of the "this" context of a call.  A call without an
@@ -172,47 +147,8 @@ class PrepareAst implements CompilerPass {
 
       // Keep track of the context in which eval is called. It is important
       // to distinguish between "(0, eval)()" and "eval()".
-      if (first.isName() &&
-          "eval".equals(first.getString())) {
+      if (first.isName() && "eval".equals(first.getString())) {
         first.putBooleanProp(Node.DIRECT_EVAL, true);
-      }
-    }
-
-    /**
-     * Translate dispatcher info into the property expected node.
-     */
-    private void annotateDispatchers(Node n, Node parent) {
-      Preconditions.checkState(n.isFunction());
-      if (parent.getJSDocInfo() != null
-          && parent.getJSDocInfo().isJavaDispatch()) {
-        if (parent.isAssign()) {
-          Preconditions.checkState(parent.getLastChild() == n);
-          n.putBooleanProp(Node.IS_DISPATCHER, true);
-        }
-      }
-    }
-
-    /**
-     * In the AST that Rhino gives us, it needs to make a distinction
-     * between JsDoc on the object literal node and JsDoc on the object literal
-     * value. For example,
-     * <pre>
-     * var x = {
-     *   / JSDOC /
-     *   a: 'b',
-     *   c: / JSDOC / 'd'
-     * };
-     * </pre>
-     *
-     * But in few narrow cases (in particular, function literals), it's
-     * a lot easier for us if the doc is attached to the value.
-     */
-    private void normalizeObjectLiteralKeyAnnotations(
-        Node objlit, Node key, Node value) {
-      Preconditions.checkState(objlit.isObjectLit());
-      if (key.getJSDocInfo() != null &&
-          value.isFunction()) {
-        value.setJSDocInfo(key.getJSDocInfo());
       }
     }
   }

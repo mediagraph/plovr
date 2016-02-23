@@ -73,7 +73,13 @@ public class NoObjectType extends FunctionType {
 
   @Override
   public boolean isSubtype(JSType that) {
-    if (JSType.isSubtypeHelper(this, that)) {
+    return isSubtype(that, ImplCache.create());
+  }
+
+  @Override
+  protected boolean isSubtype(JSType that,
+      ImplCache implicitImplCache) {
+    if (JSType.isSubtypeHelper(this, that, implicitImplCache)) {
       return true;
     } else {
       return that.isObject() && !that.isNoType() && !that.isNoResolvedType();
@@ -98,6 +104,11 @@ public class NoObjectType extends FunctionType {
   @Override
   public String getReferenceName() {
     return null;
+  }
+
+  @Override
+  public boolean hasReferenceName() {
+    return false;
   }
 
   @Override
@@ -157,7 +168,7 @@ public class NoObjectType extends FunctionType {
   }
 
   @Override
-  JSType resolveInternal(ErrorReporter t, StaticScope<JSType> scope) {
+  JSType resolveInternal(ErrorReporter t, StaticTypedScope<JSType> scope) {
     return this;
   }
 }

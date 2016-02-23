@@ -16,7 +16,6 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
 import com.google.javascript.jscomp.NodeTraversal.AbstractShallowCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
@@ -107,7 +106,7 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
         // aliased.
         "t.y=".length() - "x[p].y=".length()),
 
-    USE_ANON_FUNCTION(
+    USE_IIFE(
        // Global Overhead:
        0,
        // Per-extraction overhead:
@@ -137,7 +136,7 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
   @Override
   public void process(Node externs, Node root) {
     GatherExtractionInfo extractionInfo = new GatherExtractionInfo();
-    NodeTraversal.traverse(compiler, root, extractionInfo);
+    NodeTraversal.traverseEs6(compiler, root, extractionInfo);
     if (extractionInfo.shouldExtract()) {
       doExtraction(extractionInfo);
       compiler.reportCodeChange();
@@ -155,7 +154,7 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
       Node injectionPoint = compiler.getNodeForCodeInsertion(null);
 
       Node var = NodeUtil.newVarNode(prototypeAlias, null)
-          .copyInformationFromForTree(injectionPoint);
+          .useSourceInfoIfMissingFromForTree(injectionPoint);
 
       injectionPoint.addChildrenToFront(var);
     }
@@ -178,13 +177,13 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
       Node stmt = new Node(first.node.getType(),
          IR.assign(
               IR.name(prototypeAlias),
-              NodeUtil.newQualifiedNameNode(
-                  compiler.getCodingConvention(), className + ".prototype",
+              NodeUtil.newQName(
+                  compiler, className + ".prototype",
                   instance.parent, className + ".prototype")))
-          .copyInformationFromForTree(first.node);
+          .useSourceInfoIfMissingFromForTree(first.node);
 
       instance.parent.addChildBefore(stmt, first.node);
-    } else if (pattern == Pattern.USE_ANON_FUNCTION){
+    } else if (pattern == Pattern.USE_IIFE){
       Node block = IR.block();
       Node func = IR.function(
            IR.name(""),
@@ -192,13 +191,13 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
            block);
 
       Node call = IR.call(func,
-           NodeUtil.newQualifiedNameNode(
-               compiler.getCodingConvention(), className + ".prototype",
+           NodeUtil.newQName(
+               compiler, className + ".prototype",
                instance.parent, className + ".prototype"));
       call.putIntProp(Node.FREE_CALL, 1);
 
       Node stmt = new Node(first.node.getType(), call);
-      stmt.copyInformationFromForTree(first.node);
+      stmt.useSourceInfoIfMissingFromForTree(first.node);
       instance.parent.addChildBefore(stmt, first.node);
       for (PrototypeMemberDeclaration declar : instance.declarations) {
         block.addChildToBack(declar.node.detachFromParent());
@@ -220,8 +219,8 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
     // x.prototype.y = ...  ->  t.y = ...
     Node assignment = declar.node.getFirstChild();
     Node lhs = assignment.getFirstChild();
-    Node name = NodeUtil.newQualifiedNameNode(
-        compiler.getCodingConvention(),
+    Node name = NodeUtil.newQName(
+        compiler,
         prototypeAlias + "." + declar.memberName, declar.node,
         declar.memberName);
 
@@ -249,7 +248,7 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
    */
   private class GatherExtractionInfo extends AbstractShallowCallback {
 
-    private List<ExtractionInstance> instances = Lists.newLinkedList();
+    private List<ExtractionInstance> instances = new LinkedList<>();
     private int totalDelta = pattern.globalOverhead;
 
     @Override
@@ -291,7 +290,7 @@ class ExtractPrototypeMemberDeclarations implements CompilerPass {
   }
 
   private class ExtractionInstance {
-    LinkedList<PrototypeMemberDeclaration> declarations = Lists.newLinkedList();
+    LinkedList<PrototypeMemberDeclaration> declarations = new LinkedList<>();
     private int delta = 0;
     private final Node parent;
 

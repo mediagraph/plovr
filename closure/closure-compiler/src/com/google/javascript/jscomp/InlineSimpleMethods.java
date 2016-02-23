@@ -16,11 +16,11 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
 import com.google.javascript.jscomp.NodeTraversal.Callback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.logging.Logger;
@@ -73,7 +73,7 @@ class InlineSimpleMethods extends MethodCompilerPass {
       }
 
       Collection<Node> definitions = methodDefinitions.get(callName);
-      if (definitions == null || definitions.size() == 0) {
+      if (definitions == null || definitions.isEmpty()) {
         return;
       }
 
@@ -132,10 +132,7 @@ class InlineSimpleMethods extends MethodCompilerPass {
     }
 
     Node retVal = leftChild.getNext();
-    if (NodeUtil.getStringValue(retVal) == null) {
-      return false;
-    }
-    return true;
+    return NodeUtil.getStringValue(retVal) != null;
   }
 
   /**
@@ -206,7 +203,7 @@ class InlineSimpleMethods extends MethodCompilerPass {
    */
   private boolean allDefinitionsEquivalent(
       Collection<Node> definitions) {
-    List<Node> list = Lists.newArrayList();
+    List<Node> list = new ArrayList<>();
     list.addAll(definitions);
     Node node0 = list.get(0);
     for (int i = 1; i < list.size(); i++) {

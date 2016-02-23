@@ -42,14 +42,18 @@ package com.google.javascript.rhino.jstype;
 import static com.google.javascript.rhino.jstype.TernaryValue.FALSE;
 import static com.google.javascript.rhino.jstype.TernaryValue.UNKNOWN;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.ObjectTypeI;
 
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Object type.
@@ -79,7 +83,9 @@ import java.util.Set;
  * declared or inferred.
  *
  */
-public abstract class ObjectType extends JSType implements StaticScope<JSType> {
+public abstract class ObjectType
+    extends JSType
+    implements ObjectTypeI {
   private boolean visited;
   private JSDocInfo docInfo = null;
   private boolean unknown = true;
@@ -92,10 +98,8 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
     super(registry, templateTypeMap);
   }
 
-  @Override
   public Node getRootNode() { return null; }
 
-  @Override
   public ObjectType getParentScope() {
     return getImplicitPrototype();
   }
@@ -111,17 +115,14 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
    * Default getSlot implementation. This gets overridden by FunctionType
    * for lazily-resolved prototypes.
    */
-  @Override
   public Property getSlot(String name) {
     return getPropertyMap().getSlot(name);
   }
 
-  @Override
   public Property getOwnSlot(String name) {
     return getPropertyMap().getOwnProperty(name);
   }
 
-  @Override
   public JSType getTypeOfThis() {
     return null;
   }
@@ -187,7 +188,7 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
    * @return True iff a cycle was detected.
    */
   final boolean detectInheritanceCycle() {
-    // TODO(user): This should get moved to preventing cycles in FunctionTypeBuilder
+    // TODO(dimvar): This should get moved to preventing cycles in FunctionTypeBuilder
     // rather than removing them here after they have been created.
     // Also, this doesn't do the right thing for extended interfaces, though that is
     // masked by another bug.
@@ -217,7 +218,7 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
   public String getNormalizedReferenceName() {
     String name = getReferenceName();
     if (name != null) {
-      int pos = name.indexOf("(");
+      int pos = name.indexOf('(');
       if (pos != -1) {
         return name.substring(0, pos);
       }
@@ -267,6 +268,7 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
    * @return this object's constructor or {@code null} if it is a native
    * object (constructed natively v.s. by instantiation of a function)
    */
+  @Override
   public abstract FunctionType getConstructor();
 
   /**
@@ -311,7 +313,6 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
    */
   public final boolean defineInferredProperty(String propertyName,
       JSType type, Node propertyNode) {
-    StaticSlot<JSType> originalSlot = getSlot(propertyName);
     if (hasProperty(propertyName)) {
       if (isPropertyTypeDeclared(propertyName)) {
         // We never want to hide a declared property with an inferred property.
@@ -401,6 +402,11 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
     // by default, do nothing
   }
 
+  /** Sets the node where the property was defined. */
+  public void setPropertyNode(String propertyName, Node defSite) {
+    // by default, do nothing
+  }
+
   @Override
   public JSType findPropertyType(String propertyName) {
     return hasProperty(propertyName) ?
@@ -419,7 +425,7 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
    *         returns {@code null}.
    */
   public JSType getPropertyType(String propertyName) {
-    StaticSlot<JSType> slot = getSlot(propertyName);
+    StaticTypedSlot<JSType> slot = getSlot(propertyName);
     if (slot == null) {
       if (isNoResolvedType() || isCheckedUnknownType()) {
         return getNativeType(JSTypeNative.CHECKED_UNKNOWN_TYPE);
@@ -458,7 +464,7 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
    * Checks whether the property's type is inferred.
    */
   public boolean isPropertyTypeInferred(String propertyName) {
-    StaticSlot<JSType> slot = getSlot(propertyName);
+    StaticTypedSlot<JSType> slot = getSlot(propertyName);
     return slot == null ? false : slot.isTypeInferred();
   }
 
@@ -466,8 +472,14 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
    * Checks whether the property's type is declared.
    */
   public boolean isPropertyTypeDeclared(String propertyName) {
-    StaticSlot<JSType> slot = getSlot(propertyName);
+    StaticTypedSlot<JSType> slot = getSlot(propertyName);
     return slot == null ? false : !slot.isTypeInferred();
+  }
+
+  @Override
+  public boolean isStructuralType() {
+    FunctionType constructor = this.getConstructor();
+    return constructor != null && constructor.isStructuralInterface();
   }
 
   /**
@@ -491,11 +503,88 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
   }
 
   /**
+   * Check for structural equivalence with {@code that}.
+   * (e.g. two @record types with the same prototype properties)
+   */
+  boolean checkStructuralEquivalenceHelper(
+      ObjectType otherObject, EquivalenceMethod eqMethod, EqCache eqCache) {
+    if (this.isTemplatizedType() && this.toMaybeTemplatizedType().wrapsSameRawType(otherObject)) {
+      return this.getTemplateTypeMap().checkEquivalenceHelper(
+          otherObject.getTemplateTypeMap(), eqMethod, eqCache);
+    }
+
+    MatchStatus result = eqCache.checkCache(this, otherObject);
+    if (result != null) {
+      return result.subtypeValue();
+    }
+    Set<String> keySet = getPropertyNames();
+    Set<String> otherKeySet = otherObject.getPropertyNames();
+    if (!otherKeySet.equals(keySet)) {
+      eqCache.updateCache(this, otherObject, MatchStatus.NOT_MATCH);
+      return false;
+    }
+    for (String key : keySet) {
+      if (!otherObject.getPropertyType(key).checkEquivalenceHelper(
+              getPropertyType(key), eqMethod, eqCache)) {
+        eqCache.updateCache(this, otherObject, MatchStatus.NOT_MATCH);
+        return false;
+      }
+    }
+    eqCache.updateCache(this, otherObject, MatchStatus.MATCH);
+    return true;
+  }
+
+  private static boolean isStructuralSubtypeHelper(
+      ObjectType typeA, ObjectType typeB, ImplCache implicitImplCache) {
+
+    // typeA is a subtype of record type typeB iff:
+    // 1) typeA has all the non-optional properties declared in typeB.
+    // 2) And for each property of typeB, its type must be
+    //    a super type of the corresponding property of typeA.
+    for (String property : typeB.getPropertyNames()) {
+      JSType propB = typeB.getPropertyType(property);
+      if (!typeA.hasProperty(property)) {
+        // Currently, any type including undefined (other than ?) is considered optional.
+        if (propB.isVoidable() && !propB.isUnknownType()) {
+          continue;
+        }
+        return false;
+      }
+      JSType propA = typeA.getPropertyType(property);
+      if (!propA.isSubtype(propB, implicitImplCache)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Determine if {@code this} is a an implicit subtype of {@code superType}.
+   */
+  boolean isStructuralSubtype(ObjectType superType, ImplCache implicitImplCache) {
+    // Union types should be handled by isSubtype already
+    Preconditions.checkArgument(!this.isUnionType());
+    Preconditions.checkArgument(!superType.isUnionType());
+    Preconditions.checkArgument(superType.isStructuralType(),
+        "isStructuralSubtype should be called with structural supertype. Found %s", superType);
+
+    MatchStatus cachedResult = implicitImplCache.checkCache(this, superType);
+    if (cachedResult != null) {
+      return cachedResult.subtypeValue();
+    }
+
+    boolean result = isStructuralSubtypeHelper(this, superType, implicitImplCache);
+    implicitImplCache.updateCache(
+        this, superType, result ? MatchStatus.MATCH : MatchStatus.NOT_MATCH);
+    return result;
+  }
+
+  /**
    * Returns a list of properties defined or inferred on this type and any of
    * its supertypes.
    */
   public Set<String> getPropertyNames() {
-    Set<String> props = Sets.newTreeSet();
+    Set<String> props = new TreeSet<>();
     collectPropertyNames(props);
     return props;
   }
@@ -632,5 +721,16 @@ public abstract class ObjectType extends JSType implements StaticScope<JSType> {
    */
   public Iterable<ObjectType> getCtorExtendedInterfaces() {
     return ImmutableSet.of();
+  }
+
+  /**
+   * get the map of properties to types covered in an object type
+   * @return a Map that maps the property's name to the property's type */
+  public Map<String, JSType> getPropertyTypeMap() {
+    ImmutableMap.Builder<String, JSType> propTypeMap = ImmutableMap.builder();
+    for (String name : this.getPropertyNames()) {
+      propTypeMap.put(name, this.getPropertyType(name));
+    }
+    return propTypeMap.build();
   }
 }

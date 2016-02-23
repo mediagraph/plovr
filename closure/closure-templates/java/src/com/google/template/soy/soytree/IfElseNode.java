@@ -16,24 +16,25 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.ConditionalBlockNode;
-
 
 /**
  * Node representing the 'else' block within an 'if' statement.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class IfElseNode extends AbstractBlockCommandNode implements ConditionalBlockNode {
+public final class IfElseNode extends AbstractBlockCommandNode implements ConditionalBlockNode {
 
 
   /**
    * @param id The id for this node.
+   * @param sourceLocation The node's source location.
    */
-  public IfElseNode(int id) {
-    super(id, "else", "");
+  public IfElseNode(int id, SourceLocation sourceLocation) {
+    super(id, sourceLocation, "else", "");
   }
 
 
@@ -41,8 +42,8 @@ public class IfElseNode extends AbstractBlockCommandNode implements ConditionalB
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected IfElseNode(IfElseNode orig) {
-    super(orig);
+  private IfElseNode(IfElseNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
 
 
@@ -60,8 +61,8 @@ public class IfElseNode extends AbstractBlockCommandNode implements ConditionalB
   }
 
 
-  @Override public IfElseNode clone() {
-    return new IfElseNode(this);
+  @Override public IfElseNode copy(CopyState copyState) {
+    return new IfElseNode(this, copyState);
   }
 
 }

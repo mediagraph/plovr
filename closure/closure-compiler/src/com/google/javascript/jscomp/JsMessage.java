@@ -16,11 +16,15 @@
 
 package com.google.javascript.jscomp;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+import com.google.javascript.jscomp.parsing.parser.util.format.SimpleFormat;
 
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -42,8 +46,9 @@ import javax.annotation.Nullable;
  *     .build();
  * </pre>
  *
+ * @author anatol@google.com (Anatol Pomazau)
  */
-public class JsMessage {
+public final class JsMessage {
 
   /**
    * Message style that could be used for JS code parsing.
@@ -268,7 +273,7 @@ public class JsMessage {
 
     @Override
     public String toString() {
-      return String.format(MESSAGE_REPRESENTATION_FORMAT, name);
+      return SimpleFormat.format(MESSAGE_REPRESENTATION_FORMAT, name);
     }
 
     @Override
@@ -291,6 +296,7 @@ public class JsMessage {
    * This implementation correctly processes unnamed messages and creates a key
    * for them that looks like MSG_<fingerprint value>.
    */
+  @GwtIncompatible("java.util.regex")
   public static class Builder {
 
     private static final Pattern MSG_EXTERNAL_PATTERN =
@@ -312,8 +318,8 @@ public class JsMessage {
     private String desc;
     private boolean hidden;
 
-    private List<CharSequence> parts = Lists.newLinkedList();
-    private Set<String> placeholders = Sets.newHashSet();
+    private List<CharSequence> parts = new LinkedList<>();
+    private Set<String> placeholders = new HashSet<>();
 
     private String sourceName;
 
@@ -514,7 +520,7 @@ public class JsMessage {
       if (value == null) {
         return hash64(null, 0, 0, seed);
       }
-      return hash64(value.getBytes(), seed);
+      return hash64(value.getBytes(UTF_8), seed);
     }
 
     /**

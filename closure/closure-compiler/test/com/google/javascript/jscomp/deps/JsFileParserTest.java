@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp.deps;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.ErrorManager;
 import com.google.javascript.jscomp.PrintStreamErrorManager;
@@ -29,7 +31,7 @@ import java.util.Collections;
  *
  * @author agrieve@google.com (Andrew Grieve)
  */
-public class JsFileParserTest extends TestCase {
+public final class JsFileParserTest extends TestCase {
 
   JsFileParser parser;
   private ErrorManager errorManager;
@@ -63,7 +65,47 @@ public class JsFileParserTest extends TestCase {
 
     DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
         ImmutableList.of("yes1", "yes2"),
-        ImmutableList.of("yes3", "bar.data.SuperstarAddStarThreadActionRequestDelegate"));
+        ImmutableList.of("yes3", "bar.data.SuperstarAddStarThreadActionRequestDelegate"), false);
+
+    DependencyInfo result = parser.parseFile(SRC_PATH, CLOSURE_PATH, contents);
+
+    assertDeps(expected, result);
+  }
+
+  /**
+   * Tests:
+   *  -Correct recording of what was parsed.
+   */
+  public void testParseFile2() {
+    String contents = ""
+      + "goog.module('yes1');\n"
+      + "var yes2 = goog.require('yes2');\n"
+      + "var C = goog.require(\"a.b.C\");";
+
+    DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
+        ImmutableList.of("yes1"),
+        ImmutableList.of("yes2", "a.b.C"),
+        true);
+
+    DependencyInfo result = parser.parseFile(SRC_PATH, CLOSURE_PATH, contents);
+
+    assertDeps(expected, result);
+  }
+
+  /**
+   * Tests:
+   *  -Correct recording of what was parsed.
+   */
+  public void testParseFile3() {
+    String contents = ""
+      + "goog.module('yes1');\n"
+      + "var yes2=goog.require('yes2');\n"
+      + "var C=goog.require(\"a.b.C\");";
+
+    DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
+        ImmutableList.of("yes1"),
+        ImmutableList.of("yes2", "a.b.C"),
+        true);
 
     DependencyInfo result = parser.parseFile(SRC_PATH, CLOSURE_PATH, contents);
 
@@ -75,7 +117,7 @@ public class JsFileParserTest extends TestCase {
         + "goog.provide('no1');*/goog.provide('yes3');//goog.provide('no2');";
 
     DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
-        ImmutableList.of("yes1", "yes2", "yes3"), Collections.<String>emptyList());
+        ImmutableList.of("yes1", "yes2", "yes3"), Collections.<String>emptyList(), false);
 
     DependencyInfo result = parser.parseFile(SRC_PATH, CLOSURE_PATH, contents);
 
@@ -91,7 +133,7 @@ public class JsFileParserTest extends TestCase {
         + "goog.provide('no1');";
 
     DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
-        ImmutableList.of("yes1", "yes2"), Collections.<String>emptyList());
+        ImmutableList.of("yes1", "yes2"), Collections.<String>emptyList(), false);
     DependencyInfo result = parser.parseFile(SRC_PATH, CLOSURE_PATH, contents);
 
     assertDeps(expected, result);
@@ -103,7 +145,7 @@ public class JsFileParserTest extends TestCase {
         + "goog.provide('yes1');\n";
 
     DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
-        ImmutableList.of("yes1"), Collections.<String>emptyList());
+        ImmutableList.of("yes1"), Collections.<String>emptyList(), false);
     DependencyInfo result = parser.parseFile(SRC_PATH, CLOSURE_PATH, contents);
 
     assertDeps(expected, result);
@@ -115,7 +157,7 @@ public class JsFileParserTest extends TestCase {
         + "goog.provide('yes1');\n";
 
     DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
-        ImmutableList.of("yes1"), Collections.<String>emptyList());
+        ImmutableList.of("yes1"), Collections.<String>emptyList(), false);
     DependencyInfo result = parser.parseFile(SRC_PATH, CLOSURE_PATH, contents);
 
     assertDeps(expected, result);
@@ -128,7 +170,7 @@ public class JsFileParserTest extends TestCase {
         "var COMPILED = false;\n";
 
     DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
-        ImmutableList.of("goog"), Collections.<String>emptyList());
+        ImmutableList.of("goog"), Collections.<String>emptyList(), false);
     DependencyInfo result = parser.setIncludeGoogBase(true).parseFile(
         SRC_PATH, CLOSURE_PATH, contents);
     assertDeps(expected, result);
@@ -138,14 +180,14 @@ public class JsFileParserTest extends TestCase {
     String contents = "goog.require('bar');";
 
     DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
-        ImmutableList.<String>of(), ImmutableList.of("goog", "bar"));
+        ImmutableList.<String>of(), ImmutableList.of("goog", "bar"), false);
     DependencyInfo result = parser.setIncludeGoogBase(true).parseFile(
         SRC_PATH, CLOSURE_PATH, contents);
     assertDeps(expected, result);
   }
 
   public void testIncludeGoog3() {
-    // This guy is pretending to provide goog, but he really doesn't.
+    // This is pretending to provide goog, but it really doesn't.
     String contents = "goog.provide('x');\n" +
         "/**\n" +
         " * the first constant in base.js\n" +
@@ -153,7 +195,7 @@ public class JsFileParserTest extends TestCase {
         "var COMPILED = false;\n";
 
     DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
-        ImmutableList.of("x"), ImmutableList.of("goog"));
+        ImmutableList.of("x"), ImmutableList.of("goog"), false);
     DependencyInfo result = parser.setIncludeGoogBase(true).parseFile(
         SRC_PATH, CLOSURE_PATH, contents);
     assertDeps(expected, result);
@@ -163,7 +205,7 @@ public class JsFileParserTest extends TestCase {
     String contents = "goog.addDependency('foo', [], []);\n";
 
     DependencyInfo expected = new SimpleDependencyInfo(CLOSURE_PATH, SRC_PATH,
-        ImmutableList.<String>of(), ImmutableList.of("goog"));
+        ImmutableList.<String>of(), ImmutableList.of("goog"), false);
     DependencyInfo result = parser.setIncludeGoogBase(true).parseFile(
         SRC_PATH, CLOSURE_PATH, contents);
     assertDeps(expected, result);
@@ -171,8 +213,8 @@ public class JsFileParserTest extends TestCase {
 
   /** Asserts the deps match without errors */
   private void assertDeps(DependencyInfo expected, DependencyInfo actual) {
-    assertEquals(expected, actual);
-    assertEquals(0, errorManager.getErrorCount());
-    assertEquals(0, errorManager.getWarningCount());
+    assertThat(actual).isEqualTo(expected);
+    assertThat(errorManager.getErrorCount()).isEqualTo(0);
+    assertThat(errorManager.getWarningCount()).isEqualTo(0);
   }
 }

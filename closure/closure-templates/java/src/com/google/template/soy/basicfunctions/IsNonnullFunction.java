@@ -16,39 +16,35 @@
 
 package com.google.template.soy.basicfunctions;
 
-import static com.google.template.soy.javasrc.restricted.SoyJavaSrcFunctionUtils.toBooleanJavaExpr;
-
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
-import com.google.template.soy.data.SoyData;
+import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.restricted.BooleanData;
 import com.google.template.soy.data.restricted.NullData;
 import com.google.template.soy.data.restricted.UndefinedData;
 import com.google.template.soy.exprtree.Operator;
-import com.google.template.soy.javasrc.restricted.JavaCodeUtils;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcFunction;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsCodeUtils;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyExprUtils;
+import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuFunction;
 
 import java.util.List;
 import java.util.Set;
 
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 /**
  * Soy function that checks whether its argument is a defined nonnull value.
  *
- * @author Kai Huang
  */
 @Singleton
 @SoyPureFunction
-class IsNonnullFunction extends SoyAbstractTofuFunction
-    implements SoyJsSrcFunction, SoyJavaSrcFunction {
+class IsNonnullFunction implements SoyJavaFunction, SoyJsSrcFunction, SoyPySrcFunction {
 
 
   @Inject
@@ -59,17 +55,14 @@ class IsNonnullFunction extends SoyAbstractTofuFunction
     return "isNonnull";
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(1);
   }
 
-
-  @Override public SoyData compute(List<SoyData> args) {
-    SoyData arg = args.get(0);
+  @Override public SoyValue computeForJava(List<SoyValue> args) {
+    SoyValue arg = args.get(0);
     return BooleanData.forValue(! (arg instanceof UndefinedData || arg instanceof NullData));
   }
-
 
   @Override public JsExpr computeForJsSrc(List<JsExpr> args) {
     JsExpr arg = args.get(0);
@@ -79,11 +72,9 @@ class IsNonnullFunction extends SoyAbstractTofuFunction
         Operator.NOT_EQUAL, Lists.<JsExpr>newArrayList(arg, nullJsExpr));
   }
 
-
-  @Override public JavaExpr computeForJavaSrc(List<JavaExpr> args) {
-    JavaExpr arg = args.get(0);
-    return toBooleanJavaExpr(
-        JavaCodeUtils.genFunctionCall(JavaCodeUtils.UTILS_LIB + ".$$isNonnull", arg.getText()));
+  @Override public PyExpr computeForPySrc(List<PyExpr> args) {
+    // Note: This check could blow up if the variable was never created at all. However, this should
+    // not be possible as a variable not found in the function is assumed to be part of opt_data.
+    return PyExprUtils.genPyNotNullCheck(args.get(0));
   }
-
 }

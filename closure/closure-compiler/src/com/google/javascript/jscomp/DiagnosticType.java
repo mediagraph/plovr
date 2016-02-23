@@ -15,6 +15,8 @@
  */
 package com.google.javascript.jscomp;
 
+import com.google.common.annotations.GwtIncompatible;
+
 import java.io.Serializable;
 import java.text.MessageFormat;
 
@@ -22,7 +24,7 @@ import java.text.MessageFormat;
  * The type of a compile or analysis error.
  *
  */
-public class DiagnosticType
+public final class DiagnosticType
     implements Comparable<DiagnosticType>, Serializable {
   private static final long serialVersionUID = 1;
 
@@ -125,6 +127,7 @@ public class DiagnosticType
   }
 
   @Override
+  @GwtIncompatible("java.text.MessageFormat.toPattern()")
   public String toString() {
     return key + ": " + format.toPattern();
   }

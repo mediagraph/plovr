@@ -16,24 +16,26 @@
 
 package com.google.template.soy.basicdirectives;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.data.SanitizedContent;
-import com.google.template.soy.data.SoyData;
 import com.google.template.soy.data.UnsafeSanitizedContentOrdainer;
+import com.google.template.soy.data.restricted.IntegerData;
 import com.google.template.soy.jssrc.restricted.JsExpr;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyStringExpr;
 import com.google.template.soy.shared.AbstractSoyPrintDirectiveTestCase;
 
 /**
  * Unit tests for TextDirective.
  *
- * @author Garrett Boyer
  */
 public class TextDirectiveTest extends AbstractSoyPrintDirectiveTestCase {
 
-
   public void testApplyForTofu() {
-
     TextDirective textDirective = new TextDirective();
+
     assertTofuOutput("", "", textDirective);
     assertTofuOutput("abcd", "abcd", textDirective);
     assertTofuOutput(
@@ -42,18 +44,25 @@ public class TextDirectiveTest extends AbstractSoyPrintDirectiveTestCase {
         UnsafeSanitizedContentOrdainer.ordainAsSafe(
             "<div>Test</div>", SanitizedContent.ContentKind.HTML),
         textDirective);
-    assertTofuOutput(SoyData.createFromExistingData(123), SoyData.createFromExistingData(123),
-        textDirective);
+    assertTofuOutput(IntegerData.forValue(123), IntegerData.forValue(123), textDirective);
   }
-
 
   public void testApplyForJsSrc() {
-
     TextDirective textDirective = new TextDirective();
     JsExpr jsExpr = new JsExpr("whatever", Integer.MAX_VALUE);
-    assertEquals(
-        "'' + whatever",
-        textDirective.applyForJsSrc(jsExpr, ImmutableList.<JsExpr>of()).getText());
+    assertThat(textDirective.applyForJsSrc(jsExpr, ImmutableList.<JsExpr>of()).getText())
+        .isEqualTo("'' + whatever");
   }
 
+  public void testApplyForPySrc() {
+    TextDirective textDirective = new TextDirective();
+
+    PyExpr pyExpr = new PyExpr("whatever", Integer.MAX_VALUE);
+    assertThat(textDirective.applyForPySrc(pyExpr, ImmutableList.<PyExpr>of()).getText())
+        .isEqualTo("str(whatever)");
+
+    PyExpr stringExpr = new PyStringExpr("'string'", Integer.MAX_VALUE);
+    assertThat(textDirective.applyForPySrc(stringExpr, ImmutableList.<PyExpr>of()).getText())
+        .isEqualTo("'string'");
+  }
 }

@@ -16,26 +16,27 @@
 
 package com.google.javascript.jscomp.parsing;
 
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.parsing.Config.LanguageMode;
+import com.google.javascript.jscomp.parsing.parser.Parser;
+import com.google.javascript.jscomp.parsing.parser.Parser.Config.Mode;
+import com.google.javascript.jscomp.parsing.parser.SourceFile;
+import com.google.javascript.jscomp.parsing.parser.trees.Comment;
+import com.google.javascript.jscomp.parsing.parser.trees.ProgramTree;
+import com.google.javascript.jscomp.parsing.parser.util.SourcePosition;
+import com.google.javascript.rhino.ErrorReporter;
 import com.google.javascript.rhino.Node;
-import com.google.javascript.rhino.head.CompilerEnvirons;
-import com.google.javascript.rhino.head.Context;
-import com.google.javascript.rhino.head.ErrorReporter;
-import com.google.javascript.rhino.head.EvaluatorException;
-import com.google.javascript.rhino.head.Parser;
-import com.google.javascript.rhino.head.ast.AstRoot;
-import com.google.javascript.rhino.jstype.StaticSourceFile;
+import com.google.javascript.rhino.StaticSourceFile;
 
-import java.io.IOException;
 import java.util.HashSet;
+import java.util.List;
 import java.util.ResourceBundle;
 import java.util.Set;
-import java.util.logging.Logger;
 
 /** parser runner */
-public class ParserRunner {
+public final class ParserRunner {
 
   private static final String CONFIG_RESOURCE =
       "com.google.javascript.jscomp.parsing.ParserConfig";
@@ -50,24 +51,26 @@ public class ParserRunner {
 
   public static Config createConfig(boolean isIdeMode,
                                     LanguageMode languageMode,
-                                    boolean acceptConstKeyword) {
-    return createConfig(isIdeMode, languageMode, acceptConstKeyword, null);
+                                    Set<String> extraAnnotationNames) {
+    return createConfig(
+        isIdeMode, isIdeMode, false, languageMode, extraAnnotationNames);
   }
 
   public static Config createConfig(boolean isIdeMode,
+                                    boolean parseJsDocDocumentation,
+                                    boolean preserveJsDocWhitespace,
                                     LanguageMode languageMode,
-                                    boolean acceptConstKeyword,
                                     Set<String> extraAnnotationNames) {
     initResourceConfig();
     Set<String> effectiveAnnotationNames;
     if (extraAnnotationNames == null) {
       effectiveAnnotationNames = annotationNames;
     } else {
-      effectiveAnnotationNames = new HashSet<String>(annotationNames);
+      effectiveAnnotationNames = new HashSet<>(annotationNames);
       effectiveAnnotationNames.addAll(extraAnnotationNames);
     }
     return new Config(effectiveAnnotationNames, suppressionNames,
-        isIdeMode, languageMode, acceptConstKeyword);
+        isIdeMode, parseJsDocDocumentation, preserveJsDocWhitespace, languageMode);
   }
 
   public static Set<String> getReservedVars() {
@@ -87,75 +90,99 @@ public class ParserRunner {
   }
 
   private static Set<String> extractList(String configProp) {
-    String[] names = configProp.split(",");
-    Set<String> trimmedNames = Sets.newHashSet();
-    for (String name : names) {
-      trimmedNames.add(name.trim());
-    }
-    return ImmutableSet.copyOf(trimmedNames);
+    return ImmutableSet.copyOf(Splitter.on(',').trimResults().split(configProp));
   }
 
-  /**
-   * Parses the JavaScript text given by a reader.
-   *
-   * @param sourceString Source code from the file.
-   * @param errorReporter An error.
-   * @param logger A logger.
-   * @return The AST of the given text.
-   * @throws IOException
-   */
-  public static ParseResult parse(StaticSourceFile sourceFile,
-                                  String sourceString,
-                                  Config config,
-                                  ErrorReporter errorReporter,
-                                  Logger logger) throws IOException {
-    Context cx = Context.enter();
-    cx.setErrorReporter(errorReporter);
-    cx.setLanguageVersion(Context.VERSION_1_5);
-    CompilerEnvirons compilerEnv = new CompilerEnvirons();
-    compilerEnv.initFromContext(cx);
-    compilerEnv.setRecordingComments(true);
-    compilerEnv.setRecordingLocalJsDocComments(true);
-
-    // ES5 specifically allows trailing commas
-    compilerEnv.setWarnTrailingComma(
-        config.languageMode == LanguageMode.ECMASCRIPT3);
-
-    compilerEnv.setReservedKeywordAsIdentifier(true);
-
-    compilerEnv.setAllowMemberExprAsFunctionName(false);
-    compilerEnv.setIdeMode(config.isIdeMode);
-    compilerEnv.setRecoverFromErrors(config.isIdeMode);
-
-    Parser p = new Parser(compilerEnv, errorReporter);
-    AstRoot astRoot = null;
-    try {
-      astRoot = p.parse(sourceString, sourceFile.getName(), 1);
-    } catch (EvaluatorException e) {
-      logger.info(
-          "Error parsing " + sourceFile.getName() + ": " + e.getMessage());
-    } finally {
-      Context.exit();
-    }
+  public static ParseResult parse(
+      StaticSourceFile sourceFile,
+      String sourceString,
+      Config config,
+      ErrorReporter errorReporter) {
+    // TODO(johnlenz): unify "SourceFile", "Es6ErrorReporter" and "Config"
+    SourceFile file = new SourceFile(sourceFile.getName(), sourceString);
+    Es6ErrorReporter es6ErrorReporter =
+        new Es6ErrorReporter(errorReporter, config.isIdeMode);
+    com.google.javascript.jscomp.parsing.parser.Parser.Config es6config =
+        new com.google.javascript.jscomp.parsing.parser.Parser.Config(mode(
+            config.languageMode));
+    Parser p = new Parser(es6config, es6ErrorReporter, file);
+    ProgramTree tree = p.parseProgram();
     Node root = null;
-    if (astRoot != null) {
+    List<Comment> comments = ImmutableList.of();
+    if (tree != null && (!es6ErrorReporter.hadError() || config.isIdeMode)) {
       root = IRFactory.transformTree(
-          astRoot, sourceFile, sourceString, config, errorReporter);
+          tree, sourceFile, sourceString, config, errorReporter);
       root.setIsSyntheticBlock(true);
+
+      if (config.isIdeMode) {
+        comments = p.getComments();
+      }
     }
-    return new ParseResult(root, astRoot);
+    return new ParseResult(root, comments);
+  }
+
+  private static class Es6ErrorReporter
+      extends com.google.javascript.jscomp.parsing.parser.util.ErrorReporter {
+    private ErrorReporter reporter;
+    private boolean errorSeen = false;
+    private final boolean reportAllErrors;
+
+    Es6ErrorReporter(
+        ErrorReporter reporter,
+        boolean reportAllErrors) {
+      this.reporter = reporter;
+      this.reportAllErrors = reportAllErrors;
+    }
+
+    @Override
+    protected void reportError(SourcePosition location, String message) {
+      // In normal usage, only the first parse error should be reported, but
+      // sometimes it is useful to keep going.
+      if (reportAllErrors || !errorSeen) {
+        errorSeen = true;
+        this.reporter.error(
+            message, location.source.name,
+            location.line + 1, location.column);
+      }
+    }
+
+    @Override
+    protected void reportWarning(SourcePosition location, String message) {
+      this.reporter.warning(
+          message, location.source.name,
+          location.line + 1, location.column);
+    }
+  }
+
+  private static Mode mode(LanguageMode mode) {
+    switch (mode) {
+      case ECMASCRIPT3:
+        return Mode.ES3;
+      case ECMASCRIPT5:
+        return Mode.ES5;
+      case ECMASCRIPT5_STRICT:
+        return Mode.ES5_STRICT;
+      case ECMASCRIPT6:
+        return Mode.ES6;
+      case ECMASCRIPT6_STRICT:
+        return Mode.ES6_STRICT;
+      case ECMASCRIPT6_TYPED:
+        return Mode.ES6_TYPED;
+      default:
+        throw new IllegalStateException("unexpected language mode: " + mode);
+    }
   }
 
   /**
-   * Holds results of parsing. Includes both ast formats.
+   * Holds results of parsing.
    */
   public static class ParseResult {
     public final Node ast;
-    public final AstRoot oldAst;
+    public final List<Comment> comments;
 
-    public ParseResult(Node ast, AstRoot oldAst) {
+    public ParseResult(Node ast, List<Comment> comments) {
       this.ast = ast;
-      this.oldAst = oldAst;
+      this.comments = comments;
     }
   }
 }

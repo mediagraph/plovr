@@ -62,7 +62,7 @@ class CheckRegExp extends AbstractPostOrderCallback implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, root, this);
+    NodeTraversal.traverseEs6(compiler, root, this);
   }
 
   @Override
@@ -93,9 +93,7 @@ class CheckRegExp extends AbstractPostOrderCallback implements CompilerPass {
           ? n.getLastChild().getString() : "";
       try {
         RegExpTree.parseRegExp(pattern, flags);
-      } catch (IllegalArgumentException ex) {
-        t.report(n, MALFORMED_REGEXP, ex.getMessage());
-      } catch (IndexOutOfBoundsException ex) {
+      } catch (IllegalArgumentException | IndexOutOfBoundsException ex) {
         t.report(n, MALFORMED_REGEXP, ex.getMessage());
       }
     }

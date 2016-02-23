@@ -16,22 +16,21 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.javascript.jscomp.CheckLevel;
+import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 
 /**
  * Tests for {@link CheckMissingReturn}.
  *
  */
-public class CheckMissingReturnTest extends CompilerTestCase {
+public final class CheckMissingReturnTest extends CompilerTestCase {
 
   public CheckMissingReturnTest() {
-    enableTypeCheck(CheckLevel.OFF);
+    enableTypeCheck();
   }
 
   @Override
   protected CompilerPass getProcessor(final Compiler compiler) {
-    return new CombinedCompilerPass(compiler,
-        new CheckMissingReturn(compiler, CheckLevel.ERROR));
+    return new CombinedCompilerPass(compiler, new CheckMissingReturn(compiler));
   }
 
   public void testMissingReturn() {
@@ -65,12 +64,12 @@ public class CheckMissingReturnTest extends CompilerTestCase {
     // Returning a union that includes void or undefined.
     testNotMissing("number|undefined", "var x;");
     testNotMissing("number|void", "var x;");
-    testNotMissing("(number,void)", "var x;");
-    testNotMissing("(number,undefined)", "var x;");
     testNotMissing("*", "var x;");
 
     // Test try catch finally.
     testNotMissing("try { return foo() } catch (e) { } finally { }");
+    testNotMissing("try {throw e;} catch (e) { return foo() } finally { }");
+    testNotMissing("try {} catch (e) {} finally {return foo()};");
 
     // Nested function.
     testNotMissing(
@@ -206,17 +205,65 @@ public class CheckMissingReturnTest extends CompilerTestCase {
     testSame(constructorWithReturn);
   }
 
+  public void testClosureAsserts() {
+    String closureDefs =
+        "/** @const */ var goog = {};\n" +
+        "goog.asserts = {};\n" +
+        "goog.asserts.fail = function(x) {};";
+
+    testNotMissing(closureDefs + "goog.asserts.fail('');");
+
+    testNotMissing(closureDefs
+        + "switch (x) { case 1: return 1; default: goog.asserts.fail(''); }");
+  }
+
+  public void testInfiniteLoops() {
+    testNotMissing("while (true) { x = y; if (x === 0) { return 1; } }");
+    testNotMissing("for (;true;) { x = y; if (x === 0) { return 1; } }");
+    testNotMissing("for (;;) { x = y; if (x === 0) { return 1; } }");
+  }
+
   private static String createFunction(String returnType, String body) {
     return "/** @return {" + returnType + "} */ function foo() {" + body + "}";
   }
 
-  private void testMissing(String returnType, String body) {
+  private static String createShorthandFunctionInObjLit(
+      String returnType, String body) {
+    return LINE_JOINER.join(
+        "var obj = {",
+        "  /** @return {" + returnType + "} */",
+        "  foo() {", body, "}",
+        "}");
+  }
+
+  private void testMissingInTraditionalFunction(String returnType, String body) {
     String js = createFunction(returnType, body);
-    test(js, js, CheckMissingReturn.MISSING_RETURN_STATEMENT);
+    testWarning(js, CheckMissingReturn.MISSING_RETURN_STATEMENT);
+  }
+
+  private void testNotMissingInTraditionalFunction(String returnType, String body) {
+    testSame(createFunction(returnType, body));
+  }
+
+  private void testMissingInShorthandFunction(String returnType, String body) {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT6);
+    String js = createShorthandFunctionInObjLit(returnType, body);
+    testWarning(js, CheckMissingReturn.MISSING_RETURN_STATEMENT);
+  }
+
+  private void testNotMissingInShorthandFunction(String returnType, String body) {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT6);
+    testSame(createShorthandFunctionInObjLit(returnType, body));
+  }
+
+  private void testMissing(String returnType, String body) {
+    testMissingInTraditionalFunction(returnType, body);
+    testMissingInShorthandFunction(returnType, body);
   }
 
   private void testNotMissing(String returnType, String body) {
-    testSame(createFunction(returnType, body));
+    testNotMissingInTraditionalFunction(returnType, body);
+    testNotMissingInShorthandFunction(returnType, body);
   }
 
   /** Creates function with return type {number} */

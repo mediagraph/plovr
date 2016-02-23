@@ -17,6 +17,9 @@
 package com.google.template.soy.data.restricted;
 
 import com.google.common.base.Preconditions;
+import com.google.template.soy.data.internal.RenderableThunk;
+
+import java.io.IOException;
 
 import javax.annotation.concurrent.Immutable;
 
@@ -26,29 +29,15 @@ import javax.annotation.concurrent.Immutable;
  *
  * <p> Important: This class may only be used in implementing plugins (e.g. functions, directives).
  *
- * @author Kai Huang
  */
 @Immutable
-public class StringData extends PrimitiveData {
+public abstract class StringData extends PrimitiveData implements SoyString {
 
 
   /** Static instance of StringData with value "". */
-  public static final StringData EMPTY_STRING = new StringData("");
+  public static final StringData EMPTY_STRING = new ConstantString("");
 
-
-  /** The string value. */
-  private final String value;
-
-
-  /**
-   * @param value The string value.
-   * @deprecated Use {@link StringData#EMPTY_STRING} or {@link StringData#forValue}.
-   */
-  @Deprecated
-  public StringData(String value) {
-    Preconditions.checkNotNull(value);
-    this.value = value;
-  }
+  private StringData() {}
 
 
   /**
@@ -57,23 +46,28 @@ public class StringData extends PrimitiveData {
    * @return A StringData instance with the given value.
    */
   public static StringData forValue(String value) {
-    return (value.length() == 0) ? EMPTY_STRING : new StringData(value);
+    return (value.length() == 0) ? EMPTY_STRING : new ConstantString(value);
+  }
+
+  /**
+   * Returns a StringData instance for the given {@link RenderableThunk}.
+   */
+  public static StringData forThunk(RenderableThunk thunk) {
+    return new LazyString(thunk);
   }
 
 
   /** Returns the string value. */
-  public String getValue() {
-    return value;
-  }
+  public abstract String getValue();
 
 
   @Override public String stringValue() {
-    return value;
+    return getValue();
   }
 
 
   @Override public String toString() {
-    return value;
+    return getValue();
   }
 
 
@@ -82,19 +76,55 @@ public class StringData extends PrimitiveData {
    *
    * <p> The empty string is falsy.
    */
+  @Deprecated
   @Override public boolean toBoolean() {
-    return value.length() > 0;
+    return getValue().length() > 0;
   }
 
 
+  @SuppressWarnings("EqualsWhichDoesntCheckParameterClass")
   @Override public boolean equals(Object other) {
-    return other != null && other.getClass() == StringData.class &&
-           ((StringData) other).getValue().equals(value);
+    return other != null && getValue().equals(other.toString());
   }
 
 
   @Override public int hashCode() {
-    return value.hashCode();
+    return getValue().hashCode();
   }
 
+
+  private static final class ConstantString extends StringData {
+    final String content;
+
+    ConstantString(String content) {
+      this.content = Preconditions.checkNotNull(content);
+    }
+
+    @Override public void render(Appendable appendable) throws IOException {
+      appendable.append(content);
+    }
+
+    @Override public String getValue() {
+      return content;
+    }
+  }
+
+  private static final class LazyString extends StringData {
+    // N.B. This is nearly identical to SanitizedContent.LazyContent.  When changing this you
+    // probably need to change that also.
+
+    final RenderableThunk thunk;
+
+    LazyString(RenderableThunk thunk) {
+      this.thunk = thunk;
+    }
+
+    @Override public void render(Appendable appendable) throws IOException {
+      thunk.render(appendable);
+    }
+
+    @Override public String getValue() {
+      return thunk.renderAsString();
+    }
+  }
 }

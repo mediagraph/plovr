@@ -23,17 +23,18 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
-import com.google.javascript.rhino.jstype.JSType;
-import com.google.javascript.rhino.jstype.JSTypeRegistry;
+import com.google.javascript.rhino.TypeI;
+import com.google.javascript.rhino.TypeIRegistry;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -60,62 +61,48 @@ class ReplaceStrings extends AbstractPostOrderCallback
   private static final String REPLACE_ALL_MARKER = "*";
 
   private final AbstractCompiler compiler;
-  private final JSTypeRegistry registry;
+  private final TypeIRegistry registry;
 
   //
-  private final Map<String, Config> functions = Maps.newHashMap();
+  private final Map<String, Config> functions = new HashMap<>();
   private final Multimap<String, String> methods = HashMultimap.create();
-  private final NameGenerator nameGenerator;
-  private final Map<String, Result> results = Maps.newLinkedHashMap();
+  private final DefaultNameGenerator nameGenerator;
+  private final Map<String, Result> results = new LinkedHashMap<>();
 
   /**
    * Describes a function to look for a which parameters to replace.
    */
-  private class Config {
+  private static class Config {
     // TODO(johnlenz): Support name "groups" so that unrelated strings can
     // reuse strings.  For example, event-id can reuse the names used for logger
     // classes.
     final String name;
-    final int parameter;
+    final List<Integer> parameters;
     static final int REPLACE_ALL_VALUE = 0;
 
-    Config(String name, int parameter) {
+    Config(String name, List<Integer> replacementParameters) {
       this.name = name;
-      this.parameter = parameter;
+      this.parameters = replacementParameters;
+    }
+
+    public boolean isReplaceAll() {
+      return parameters.size() == 1 && parameters.contains(REPLACE_ALL_VALUE);
     }
   }
 
   /**
    * Describes a replacement that occurred.
    */
-  class Result {
+  static class Result {
     // The original message with non-static content replaced with
     // {@code placeholderToken}.
     public final String original;
     public final String replacement;
-    public final List<Location> replacementLocations = Lists.newLinkedList();
+    public boolean didReplacement = false;
 
     Result(String original, String replacement) {
       this.original = original;
       this.replacement = replacement;
-    }
-
-    void addLocation(Node n) {
-      replacementLocations.add(new Location(
-          n.getSourceFileName(),
-          n.getLineno(), n.getCharno()));
-    }
-  }
-
-  /** Represent a source location where a replacement occurred. */
-  class Location {
-    public final String sourceFile;
-    public final int line;
-    public final int column;
-    Location(String sourceFile, int line, int column) {
-      this.sourceFile = sourceFile;
-      this.line = line;
-      this.column = column;
     }
   }
 
@@ -139,7 +126,7 @@ class ReplaceStrings extends AbstractPostOrderCallback
     this.compiler = compiler;
     this.placeholderToken = placeholderToken.isEmpty()
         ? DEFAULT_PLACEHOLDER_TOKEN : placeholderToken;
-    this.registry = compiler.getTypeRegistry();
+    this.registry = compiler.getTypeIRegistry();
 
     Iterable<String> reservedNames = blacklisted;
     if (previousMappings != null) {
@@ -171,7 +158,7 @@ class ReplaceStrings extends AbstractPostOrderCallback
     public boolean apply(Result result) {
       // The list of locations may be empty if the map
       // was pre-populated from a previous map.
-      return !result.replacementLocations.isEmpty();
+      return result.didReplacement;
     }
   };
 
@@ -194,7 +181,7 @@ class ReplaceStrings extends AbstractPostOrderCallback
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, root, this);
+    NodeTraversal.traverseEs6(compiler, root, this);
   }
 
   @Override
@@ -221,11 +208,18 @@ class ReplaceStrings extends AbstractPostOrderCallback
           Node rhs = calledFn.getLastChild();
           if (rhs.isName() || rhs.isString()) {
             String methodName = rhs.getString();
-            Collection<String> classes = methods.get(methodName);
+            String originalMethodName =
+                (String) rhs.getParent().getProp(Node.ORIGINALNAME_PROP);
+            Collection<String> classes;
+            if (originalMethodName != null) {
+              classes = methods.get(originalMethodName);
+            } else {
+              classes = methods.get(methodName);
+            }
             if (classes != null) {
               Node lhs = calledFn.getFirstChild();
-              if (lhs.getJSType() != null) {
-                JSType type = lhs.getJSType().restrictByNotNullOrUndefined();
+              if (lhs.getTypeI() != null) {
+                TypeI type = lhs.getTypeI().restrictByNotNullOrUndefined();
                 Config config = findMatchingClass(type, classes);
                 if (config != null) {
                   doSubstitutions(t, config, n);
@@ -257,13 +251,13 @@ class ReplaceStrings extends AbstractPostOrderCallback
    * if no match was found.
    */
   private Config findMatchingClass(
-      JSType callClassType, Collection<String> declarationNames) {
-    if (!callClassType.isNoObjectType() && !callClassType.isUnknownType()) {
+      TypeI callClassType, Collection<String> declarationNames) {
+    if (!callClassType.isBottom() && !callClassType.isUnknownType()) {
       for (String declarationName : declarationNames) {
         String className = getClassFromDeclarationName(declarationName);
-        JSType methodClassType = registry.getType(className);
+        TypeI methodClassType = registry.getType(className);
         if (methodClassType != null
-            && callClassType.isSubtype(methodClassType)) {
+            && callClassType.isSubtypeOf(methodClassType)) {
           return functions.get(declarationName);
         }
       }
@@ -278,11 +272,13 @@ class ReplaceStrings extends AbstractPostOrderCallback
     Preconditions.checkState(
         n.isNew() || n.isCall());
 
-    if (config.parameter != Config.REPLACE_ALL_VALUE) {
+    if (!config.isReplaceAll()) {
       // Note: the first child is the function, but the parameter id is 1 based.
-      Node arg = n.getChildAtIndex(config.parameter);
-      if (arg != null) {
-        replaceExpression(t, arg, n);
+      for (int parameter : config.parameters) {
+        Node arg = n.getChildAtIndex(parameter);
+        if (arg != null) {
+          replaceExpression(t, arg, n);
+        }
       }
     } else {
       // Replace all parameters.
@@ -322,8 +318,8 @@ class ReplaceStrings extends AbstractPostOrderCallback
         break;
       case Token.NAME:
         // If the referenced variable is a constant, use its value.
-        Scope.Var var = t.getScope().getVar(expr.getString());
-        if (var != null && var.isConst()) {
+        Var var = t.getScope().getVar(expr.getString());
+        if (var != null && var.isInferredConst()) {
           Node value = var.getInitialValue();
           if (value != null && value.isString()) {
             key = value.getString();
@@ -341,7 +337,7 @@ class ReplaceStrings extends AbstractPostOrderCallback
 
     Preconditions.checkNotNull(key);
     Preconditions.checkNotNull(replacementString);
-    recordReplacement(expr, key);
+    recordReplacement(key);
 
     parent.replaceChild(expr, replacement);
     compiler.reportCodeChange();
@@ -366,11 +362,11 @@ class ReplaceStrings extends AbstractPostOrderCallback
   /**
    * Record the location the replacement was made.
    */
-  private void recordReplacement(Node n, String key) {
+  private void recordReplacement(String key) {
     Result result = results.get(key);
     Preconditions.checkState(result != null);
 
-    result.addLocation(n);
+    result.didReplacement = true;
   }
 
   /**
@@ -407,7 +403,7 @@ class ReplaceStrings extends AbstractPostOrderCallback
   /**
    * From a provide name extract the method name.
    */
-  private String getMethodFromDeclarationName(String fullDeclarationName) {
+  private static String getMethodFromDeclarationName(String fullDeclarationName) {
     String[] parts = fullDeclarationName.split("\\.prototype\\.");
     Preconditions.checkState(parts.length == 1 || parts.length == 2);
     if (parts.length == 2) {
@@ -419,7 +415,7 @@ class ReplaceStrings extends AbstractPostOrderCallback
   /**
    * From a provide name extract the class name.
    */
-  private String getClassFromDeclarationName(String fullDeclarationName) {
+  private static String getClassFromDeclarationName(String fullDeclarationName) {
     String[] parts = fullDeclarationName.split("\\.prototype\\.");
     Preconditions.checkState(parts.length == 1 || parts.length == 2);
     if (parts.length == 2) {
@@ -465,35 +461,37 @@ class ReplaceStrings extends AbstractPostOrderCallback
     String params = function.substring(first + 1, last);
 
     int paramCount = 0;
-    int replacementParameter = -1;
+    List<Integer> replacementParameters = new ArrayList<>();
     String[] parts = params.split(",");
     for (String param : parts) {
       paramCount++;
       if (param.equals(REPLACE_ALL_MARKER)) {
         Preconditions.checkState(paramCount == 1 && parts.length == 1);
-        replacementParameter = Config.REPLACE_ALL_VALUE;
+        replacementParameters.add(Config.REPLACE_ALL_VALUE);
       } else if (param.equals(REPLACE_ONE_MARKER)) {
         // TODO(johnlenz): Support multiple.
-        Preconditions.checkState(replacementParameter == -1);
-        replacementParameter = paramCount;
+        Preconditions.checkState(!replacementParameters.contains(
+            Config.REPLACE_ALL_VALUE));
+        replacementParameters.add(paramCount);
       } else {
         // TODO(johnlenz): report an error.
         Preconditions.checkState(param.isEmpty(), "Unknown marker", param);
       }
     }
 
-    Preconditions.checkState(replacementParameter != -1);
-    return new Config(name, replacementParameter);
+    Preconditions.checkState(!replacementParameters.isEmpty());
+    return new Config(name, replacementParameters);
   }
 
   /**
    * Use a name generate to create names so the names overlap with the names
    * used for variable and properties.
    */
-  private static NameGenerator createNameGenerator(Iterable<String> reserved) {
+  private static DefaultNameGenerator createNameGenerator(
+        Iterable<String> reserved) {
     final String namePrefix = "";
     final char[] reservedChars = new char[0];
-    return new NameGenerator(
+    return new DefaultNameGenerator(
         ImmutableSet.copyOf(reserved), namePrefix, reservedChars);
   }
 }

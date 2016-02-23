@@ -54,17 +54,20 @@ class ExpressionDecomposer {
   private final AbstractCompiler compiler;
   private final Supplier<String> safeNameIdSupplier;
   private final Set<String> knownConstants;
+  private final Scope scope;
 
-  public ExpressionDecomposer(
+  ExpressionDecomposer(
       AbstractCompiler compiler,
       Supplier<String> safeNameIdSupplier,
-      Set<String> constNames) {
+      Set<String> constNames,
+      Scope scope) {
     Preconditions.checkNotNull(compiler);
     Preconditions.checkNotNull(safeNameIdSupplier);
     Preconditions.checkNotNull(constNames);
     this.compiler = compiler;
     this.safeNameIdSupplier = safeNameIdSupplier;
     this.knownConstants = constNames;
+    this.scope = scope;
   }
 
   // An arbitrary limit to prevent catch infinite recursion.
@@ -140,7 +143,7 @@ class ExpressionDecomposer {
    * The following terms are used:
    *    expressionRoot: The top-level node before which the any extracted
    *                    expressions should be placed before.
-   *    nonconditionalExpr: The node that will be extracted either expres.
+   *    nonconditionalExpr: The node that will be extracted either express.
    *
    */
   private void exposeExpression(Node expressionRoot, Node subExpression) {
@@ -241,7 +244,7 @@ class ExpressionDecomposer {
   /**
    * @return Whether the node may represent an external method.
    */
-  private boolean maybeExternMethod(Node node) {
+  private static boolean maybeExternMethod(Node node) {
     // TODO(johnlenz): Provide some mechanism for determining this.
     return true;
   }
@@ -382,11 +385,11 @@ class ExpressionDecomposer {
     } else {
       ifNode = IR.ifNode(cond, trueExpr);
     }
-    ifNode.copyInformationFrom(expr);
+    ifNode.useSourceInfoIfMissingFrom(expr);
 
     if (needResult) {
       Node tempVarNode = NodeUtil.newVarNode(tempName, null)
-          .copyInformationFromForTree(expr);
+          .useSourceInfoIfMissingFromForTree(expr);
       Node injectionPointParent = injectionPoint.getParent();
       injectionPointParent.addChildBefore(tempVarNode, injectionPoint);
       injectionPointParent.addChildAfter(ifNode, tempVarNode);
@@ -398,8 +401,8 @@ class ExpressionDecomposer {
       // Only conditionals that are the direct child of an expression statement
       // don't need results, for those simply replace the expression statement.
       Preconditions.checkArgument(parent.isExprResult());
-      Node gramps = parent.getParent();
-      gramps.replaceChild(parent, ifNode);
+      Node grandparent = parent.getParent();
+      grandparent.replaceChild(parent, ifNode);
     }
 
     return ifNode;
@@ -425,9 +428,9 @@ class ExpressionDecomposer {
     }
   }
 
-  private boolean isConstantName(Node n, Set<String> knownConstants) {
+  private boolean isConstantNameNode(Node n, Set<String> knownConstants) {
     // Non-constant names values may have been changed.
-    return n.isName() && (NodeUtil.isConstantName(n)
+    return n.isName() && (NodeUtil.isConstantVar(n, scope)
         || knownConstants.contains(n.getString()));
   }
 
@@ -454,7 +457,7 @@ class ExpressionDecomposer {
     //    t1.foo = t1.foo + 2;
     if (isLhsOfAssignOp && NodeUtil.isGet(expr)) {
       for (Node n : expr.children()) {
-        if (!n.isString() && !isConstantName(n, knownConstants)) {
+        if (!n.isString() && !isConstantNameNode(n, knownConstants)) {
           Node extractedNode = extractExpression(n, injectionPoint);
           if (firstExtractedNode == null) {
             firstExtractedNode = extractedNode;
@@ -475,7 +478,7 @@ class ExpressionDecomposer {
       Preconditions.checkState(expr.isName() || NodeUtil.isGet(expr));
       // Transform "x += 2" into "x = temp + 2"
       Node opNode = new Node(NodeUtil.getOpFromAssignmentOp(parent))
-          .copyInformationFrom(parent);
+          .useSourceInfoIfMissingFrom(parent);
 
       Node rightOperand = parent.getLastChild();
 
@@ -650,8 +653,8 @@ class ExpressionDecomposer {
   }
 
   /**
-   * @return The statement containing the expression. null if subExpression
-   *     is not contain by in by a Node where inlining is known to be possible.
+   * @return The statement containing the expression or null if the subExpression
+   *     is not contain in a Node where inlining is known to be possible.
    *     For example, a WHILE node condition expression.
    */
   static Node findExpressionRoot(Node subExpression) {
@@ -667,10 +670,15 @@ class ExpressionDecomposer {
         case Token.IF:
         case Token.SWITCH:
         case Token.RETURN:
+        case Token.THROW:
         case Token.VAR:
           Preconditions.checkState(child == parent.getFirstChild());
           return parent;
         // Any of these indicate an unsupported expression:
+        case Token.FOR:
+          if (!NodeUtil.isForIn(parent) && child == parent.getFirstChild()) {
+            return parent;
+          }
         case Token.SCRIPT:
         case Token.BLOCK:
         case Token.LABEL:
@@ -883,7 +891,7 @@ class ExpressionDecomposer {
       // expression tree can be affected by any side-effects.
 
       // This is a superset of "NodeUtil.mayHaveSideEffects".
-      return NodeUtil.canBeSideEffected(n, this.knownConstants);
+      return NodeUtil.canBeSideEffected(n, this.knownConstants, scope);
     } else {
       // The function called doesn't have side-effects but check to see if there
       // are side-effects that that may affect it.

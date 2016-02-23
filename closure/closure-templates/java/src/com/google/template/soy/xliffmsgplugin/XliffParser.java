@@ -38,13 +38,11 @@ import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
-
 /**
  * Static function for parsing the content of a translated XLIFF file and creating a SoyMsgBundle.
  *
  * <p> XLIFF specification: http://docs.oasis-open.org/xliff/xliff-core/xliff-core.html
  *
- * @author Kai Huang
  */
 class XliffParser {
 
@@ -174,7 +172,7 @@ class XliffParser {
         // Placeholder in message: Save the preceding raw text (if any) and then save the
         // placeholder name.
         if (currRawTextPart != null) {
-          currMsgParts.add(new SoyMsgRawTextPart(currRawTextPart));
+          currMsgParts.add(SoyMsgRawTextPart.of(currRawTextPart));
           currRawTextPart = null;
         }
         currMsgParts.add(new SoyMsgPlaceholderPart(atts.getValue("id")));
@@ -188,11 +186,11 @@ class XliffParser {
         // End 'target': Save the preceding raw text (if any). Then create a SoyMsg object from the
         // collected message data and add it to msgs list.
         if (currRawTextPart != null) {
-          currMsgParts.add(new SoyMsgRawTextPart(currRawTextPart));
+          currMsgParts.add(SoyMsgRawTextPart.of(currRawTextPart));
           currRawTextPart = null;
         }
         isInMsg = false;
-        if (currMsgParts.size() > 0) {
+        if (!currMsgParts.isEmpty()) {
           msgs.add(new SoyMsg(
               currMsgId, targetLocaleString, null, null, false, null, null, currMsgParts));
         }

@@ -18,25 +18,25 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Sets;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.TypeIRegistry;
 import com.google.javascript.rhino.jstype.FunctionType;
 import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.JSTypeNative;
-import com.google.javascript.rhino.jstype.JSTypeRegistry;
 import com.google.javascript.rhino.jstype.ObjectType;
 
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * A code generator that outputs type annotations for functions and
  * constructors.
  */
 class TypedCodeGenerator extends CodeGenerator {
-  private final JSTypeRegistry registry;
+  private final TypeIRegistry registry;
   TypedCodeGenerator(
-      CodeConsumer consumer, CompilerOptions options, JSTypeRegistry registry) {
+      CodeConsumer consumer, CompilerOptions options, TypeIRegistry registry) {
     super(consumer, options);
     Preconditions.checkNotNull(registry);
     this.registry = registry;
@@ -93,8 +93,8 @@ class TypedCodeGenerator extends CodeGenerator {
    * @param fnNode A node for a function for which to generate a type annotation
    */
   private String getFunctionAnnotation(Node fnNode) {
-    Preconditions.checkState(fnNode.isFunction());
     JSType type = fnNode.getJSType();
+    Preconditions.checkState(fnNode.isFunction() || type.isFunctionType());
 
     if (type == null || type.isUnknownType()) {
       return "";
@@ -103,7 +103,7 @@ class TypedCodeGenerator extends CodeGenerator {
     FunctionType funType = type.toMaybeFunctionType();
 
     if (JSType.isEquivalent(
-        type, registry.getNativeType(JSTypeNative.FUNCTION_INSTANCE_TYPE))) {
+        type, (JSType) registry.getNativeType(JSTypeNative.FUNCTION_INSTANCE_TYPE))) {
       return "/** @type {!Function} */\n";
     }
 
@@ -170,7 +170,7 @@ class TypedCodeGenerator extends CodeGenerator {
       }
 
       // Avoid duplicates, add implemented type to a set first
-      Set<String> interfaces = Sets.newTreeSet();
+      Set<String> interfaces = new TreeSet<>();
       for (ObjectType interfaze : funType.getImplementedInterfaces()) {
         interfaces.add(interfaze.toAnnotationString());
       }
@@ -189,20 +189,15 @@ class TypedCodeGenerator extends CodeGenerator {
 
     if (!funType.getTemplateTypeMap().getTemplateKeys().isEmpty()) {
       sb.append(" * @template ");
-      sb.append(Joiner.on(",").join(
-          funType.getTemplateTypeMap().getTemplateKeys()));
+      Joiner.on(",").appendTo(sb, funType.getTemplateTypeMap().getTemplateKeys());
       sb.append("\n");
-    }
-
-    if (fnNode != null && fnNode.getBooleanProp(Node.IS_DISPATCHER)) {
-      sb.append(" * @javadispatch\n");
     }
 
     sb.append(" */\n");
     return sb.toString();
   }
 
-  private void appendAnnotation(StringBuilder sb, String name, String type) {
+  private static void appendAnnotation(StringBuilder sb, String name, String type) {
     sb.append("@").append(name).append(" {").append(type).append("}");
   }
 
@@ -231,7 +226,7 @@ class TypedCodeGenerator extends CodeGenerator {
   private JSType restrictByUndefined(JSType type) {
     if (type.isUnionType()) {
       return type.toMaybeUnionType().getRestrictedUnion(
-          registry.getNativeType(JSTypeNative.VOID_TYPE));
+          (JSType) registry.getNativeType(JSTypeNative.VOID_TYPE));
     }
     return type;
   }

@@ -35,7 +35,7 @@ import com.google.javascript.rhino.Token;
  * @see ObjectPropertyStringPostprocess
  *
  */
-public class ObjectPropertyStringPreprocess implements CompilerPass {
+public final class ObjectPropertyStringPreprocess implements CompilerPass {
   static final String OBJECT_PROPERTY_STRING =
       "goog.testing.ObjectPropertyString";
 
@@ -68,10 +68,10 @@ public class ObjectPropertyStringPreprocess implements CompilerPass {
     addExternDeclaration(externs,
         IR.var(
             IR.name(EXTERN_OBJECT_PROPERTY_STRING)));
-    NodeTraversal.traverse(compiler, root, new Callback());
+    NodeTraversal.traverseEs6(compiler, root, new Callback());
   }
 
-  private void addExternDeclaration(Node externs, Node declarationStmt) {
+  private static void addExternDeclaration(Node externs, Node declarationStmt) {
     Node script = externs.getLastChild();
     if (script == null || !script.isScript()) {
       script = IR.script();
@@ -83,9 +83,9 @@ public class ObjectPropertyStringPreprocess implements CompilerPass {
   private class Callback extends AbstractPostOrderCallback {
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
-      if (OBJECT_PROPERTY_STRING.equals(n.getQualifiedName())) {
+      if (n.matchesQualifiedName(OBJECT_PROPERTY_STRING)) {
         Node newName = IR.name(EXTERN_OBJECT_PROPERTY_STRING);
-        newName.copyInformationFrom(n);
+        newName.useSourceInfoIfMissingFrom(n);
         parent.replaceChild(n, newName);
         compiler.reportCodeChange();
         return;
@@ -100,8 +100,7 @@ public class ObjectPropertyStringPreprocess implements CompilerPass {
 
       Node objectName = n.getFirstChild();
 
-      if (!EXTERN_OBJECT_PROPERTY_STRING.equals(
-              objectName.getQualifiedName())) {
+      if (!objectName.matchesQualifiedName(EXTERN_OBJECT_PROPERTY_STRING)) {
         return;
       }
 
@@ -127,13 +126,11 @@ public class ObjectPropertyStringPreprocess implements CompilerPass {
         return;
       }
 
-      Node newFirstArgument = NodeUtil.newQualifiedNameNode(
-          compiler.getCodingConvention(),
+      Node newFirstArgument = NodeUtil.newQName(compiler,
           compiler.getCodingConvention().getGlobalObject())
               .srcrefTree(firstArgument);
 
-      Node newSecondArgument = NodeUtil.newQualifiedNameNode(
-          compiler.getCodingConvention(),
+      Node newSecondArgument = NodeUtil.newQName(compiler,
           firstArgument.getQualifiedName() + "." +
           firstArgument.getNext().getString())
               .srcrefTree(secondArgument);

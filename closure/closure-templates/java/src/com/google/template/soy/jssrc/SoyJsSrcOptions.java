@@ -22,27 +22,14 @@ import com.google.common.base.Preconditions;
 /**
  * Compilation options for the JS Src output target (backend).
  *
- * @author Kai Huang
  */
-public class SoyJsSrcOptions implements Cloneable {
-
-
-  /**
-   * The two supported code styles.
-   */
-  public static enum CodeStyle {
-    STRINGBUILDER, CONCAT;
-  }
-
+public final class SoyJsSrcOptions implements Cloneable {
 
   /** Whether to allow deprecated syntax (semi backwards compatible mode). */
   private boolean shouldAllowDeprecatedSyntax;
 
   /** Whether to enable use of injected data. */
   private boolean isUsingIjData;
-
-  /** The output variable code style to use. */
-  private CodeStyle codeStyle;
 
   /** Whether we should generate JSDoc with type info for the Closure Compiler. */
   private boolean shouldGenerateJsdoc;
@@ -58,6 +45,9 @@ public class SoyJsSrcOptions implements Cloneable {
 
   /** Whether we should generate code to declare the top level namespace. */
   private boolean shouldDeclareTopLevelNamespaces;
+
+  /** Whether we should generate code to declare goog.modules. */
+  private boolean shouldGenerateGoogModules;
 
   /** Whether we should generate Closure Library message definitions (i.e. goog.getMsg). */
   private boolean shouldGenerateGoogMsgDefs;
@@ -84,29 +74,49 @@ public class SoyJsSrcOptions implements Cloneable {
   public SoyJsSrcOptions() {
     shouldAllowDeprecatedSyntax = false;
     isUsingIjData = false;
-    codeStyle = CodeStyle.CONCAT;
     shouldGenerateJsdoc = false;
     shouldProvideRequireSoyNamespaces = false;
     shouldProvideRequireJsFunctions = false;
     shouldProvideBothSoyNamespacesAndJsFunctions = false;
     shouldDeclareTopLevelNamespaces = true;
     shouldGenerateGoogMsgDefs = false;
+    shouldGenerateGoogModules = false;
     googMsgsAreExternal = false;
     bidiGlobalDir = 0;
     useGoogIsRtlForBidiGlobalDir = false;
   }
 
+  private SoyJsSrcOptions(SoyJsSrcOptions orig) {
+    this.shouldAllowDeprecatedSyntax = orig.shouldAllowDeprecatedSyntax;
+    this.isUsingIjData = orig.isUsingIjData;
+    this.shouldGenerateJsdoc = orig.shouldGenerateJsdoc;
+    this.shouldProvideRequireSoyNamespaces = orig.shouldProvideRequireSoyNamespaces;
+    this.shouldProvideRequireJsFunctions = orig.shouldProvideRequireJsFunctions;
+    this.shouldProvideBothSoyNamespacesAndJsFunctions =
+        orig.shouldProvideBothSoyNamespacesAndJsFunctions;
+    this.shouldDeclareTopLevelNamespaces = orig.shouldDeclareTopLevelNamespaces;
+    this.shouldGenerateGoogModules = orig.shouldGenerateGoogModules;
+    this.shouldGenerateGoogMsgDefs = orig.shouldGenerateGoogMsgDefs;
+    this.googMsgsAreExternal = orig.googMsgsAreExternal;
+    this.bidiGlobalDir = orig.bidiGlobalDir;
+    this.useGoogIsRtlForBidiGlobalDir = orig.useGoogIsRtlForBidiGlobalDir;
+  }
 
   /**
    * Sets whether to allow deprecated syntax (semi backwards compatible mode).
    * @param shouldAllowDeprecatedSyntax The value to set.
    */
+  // TODO SOON: Deprecate. (Use setDeclaredSyntaxVersionName() on SoyFileSet or SoyGeneralOptions.)
   public void setShouldAllowDeprecatedSyntax(boolean shouldAllowDeprecatedSyntax) {
     this.shouldAllowDeprecatedSyntax = shouldAllowDeprecatedSyntax;
   }
 
 
-  /** Returns whether we're set to allow deprecated syntax (semi backwards compatible mode). */
+  /**
+   * Returns whether we're set to allow deprecated syntax (semi backwards compatible mode).
+   * @deprecated Use {@code SoyGeneralOptions.getDeclaredSyntaxVersion()}.
+   */
+  @Deprecated
   public boolean shouldAllowDeprecatedSyntax() {
     return shouldAllowDeprecatedSyntax;
   }
@@ -124,21 +134,6 @@ public class SoyJsSrcOptions implements Cloneable {
   /** Returns whether use of injected data is currently enabled. */
   public boolean isUsingIjData() {
     return isUsingIjData;
-  }
-
-
-  /**
-   * Sets the output variable code style to use.
-   * @param codeStyle The code style to set.
-   */
-  public void setCodeStyle(CodeStyle codeStyle) {
-    this.codeStyle = codeStyle;
-  }
-
-
-  /** Returns the currently set code style. */
-  public CodeStyle getCodeStyle() {
-    return codeStyle;
   }
 
 
@@ -163,6 +158,7 @@ public class SoyJsSrcOptions implements Cloneable {
    */
   public void setShouldProvideRequireSoyNamespaces(
       boolean shouldProvideRequireSoyNamespaces) {
+    // TODO(b/24275162) Replace these variables with a single Enum
     this.shouldProvideRequireSoyNamespaces = shouldProvideRequireSoyNamespaces;
     Preconditions.checkState(
         !(this.shouldProvideRequireSoyNamespaces && this.shouldProvideRequireJsFunctions),
@@ -187,6 +183,7 @@ public class SoyJsSrcOptions implements Cloneable {
    */
   public void setShouldProvideRequireJsFunctions(
       boolean shouldProvideRequireJsFunctions) {
+    // TODO(b/24275162) Replace these variables with a single Enum
     this.shouldProvideRequireJsFunctions = shouldProvideRequireJsFunctions;
     Preconditions.checkState(
         !(this.shouldProvideRequireSoyNamespaces && this.shouldProvideRequireJsFunctions),
@@ -211,6 +208,7 @@ public class SoyJsSrcOptions implements Cloneable {
    */
   public void setShouldProvideBothSoyNamespacesAndJsFunctions(
       boolean shouldProvideBothSoyNamespacesAndJsFunctions) {
+    // TODO(b/24275162) Replace these variables with a single Enum
     this.shouldProvideBothSoyNamespacesAndJsFunctions =
         shouldProvideBothSoyNamespacesAndJsFunctions;
     if (shouldProvideBothSoyNamespacesAndJsFunctions) {
@@ -234,6 +232,7 @@ public class SoyJsSrcOptions implements Cloneable {
    */
   public void setShouldDeclareTopLevelNamespaces(
       boolean shouldDeclareTopLevelNamespaces) {
+    // TODO(b/24275162) Replace these variables with a single Enum
     this.shouldDeclareTopLevelNamespaces = shouldDeclareTopLevelNamespaces;
     Preconditions.checkState(
         !(!this.shouldDeclareTopLevelNamespaces && this.shouldProvideRequireSoyNamespaces),
@@ -249,6 +248,33 @@ public class SoyJsSrcOptions implements Cloneable {
   /** Returns whether we should attempt to declare the top level namespace. */
   public boolean shouldDeclareTopLevelNamespaces() {
     return shouldDeclareTopLevelNamespaces;
+  }
+
+
+  /**
+   * Sets whether goog.modules should be generated.
+   * @param shouldGenerateGoogModules The value to set.
+   */
+  public void setShouldGenerateGoogModules(boolean shouldGenerateGoogModules) {
+    // TODO(b/24275162) Replace these variables with a single Enum
+    this.shouldGenerateGoogModules = shouldGenerateGoogModules;
+    if (shouldGenerateGoogModules) {
+      Preconditions.checkState(
+          !shouldDeclareTopLevelNamespaces
+              && !shouldProvideRequireSoyNamespaces
+              && !shouldProvideRequireJsFunctions
+              && !shouldProvideBothSoyNamespacesAndJsFunctions,
+          "If generating goog.modules, shouldDeclareTopLevelNamespaces, "
+              + "shouldProvideRequireSoyNamespaces, shouldProvideRequireJsFunctions and "
+              + "shouldProvideBothSoyNamespacesAndJsFunctions should not be enabled.");
+
+    }
+  }
+
+
+  /** Returns whether goog.modules should be generated. */
+  public boolean shouldGenerateGoogModules() {
+    return shouldGenerateGoogModules;
   }
 
 
@@ -340,10 +366,13 @@ public class SoyJsSrcOptions implements Cloneable {
         !useGoogIsRtlForBidiGlobalDir || shouldGenerateGoogMsgDefs,
         "Do not specify useGoogIsRtlForBidiGlobalDir without shouldGenerateGoogMsgDefs.");
     Preconditions.checkState(
-        !useGoogIsRtlForBidiGlobalDir ||
-        shouldProvideRequireSoyNamespaces || shouldProvideRequireJsFunctions,
-        "Do not specify useGoogIsRtlForBidiGlobalDir without either" +
-        " shouldProvideRequireSoyNamespaces or shouldProvideRequireJsFunctions.");
+        !useGoogIsRtlForBidiGlobalDir
+        || shouldProvideRequireSoyNamespaces
+        || shouldProvideRequireJsFunctions
+        || shouldGenerateGoogModules,
+        "Do not specify useGoogIsRtlForBidiGlobalDir without one of"
+        + " shouldProvideRequireSoyNamespaces, shouldProvideRequireJsFunctions or "
+        + " shouldGenerateGoogModules.");
     Preconditions.checkState(
         !useGoogIsRtlForBidiGlobalDir || bidiGlobalDir == 0,
         "Must not specify both bidiGlobalDir and useGoogIsRtlForBidiGlobalDir.");
@@ -360,12 +389,7 @@ public class SoyJsSrcOptions implements Cloneable {
   }
 
 
-  @Override public SoyJsSrcOptions clone() {
-    try {
-      return (SoyJsSrcOptions) super.clone();
-    } catch (CloneNotSupportedException cnse) {
-      throw new RuntimeException("Cloneable interface removed from SoyJsSrcOptions.");
-    }
+  @Override public final SoyJsSrcOptions clone() {
+    return new SoyJsSrcOptions(this);
   }
-
 }

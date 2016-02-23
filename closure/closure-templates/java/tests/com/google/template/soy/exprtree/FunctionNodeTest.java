@@ -16,23 +16,73 @@
 
 package com.google.template.soy.exprtree;
 
+import static com.google.common.truth.Truth.assertThat;
+
+import com.google.common.collect.ImmutableSet;
+import com.google.template.soy.SoyFileSetParserBuilder;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.shared.restricted.SoyFunction;
+import com.google.template.soy.soytree.SoyFileSetNode;
+import com.google.template.soy.soytree.SoytreeUtils;
+
 import junit.framework.TestCase;
+
+import java.util.List;
+import java.util.Set;
 
 
 /**
  * Unit tests for FunctionNode.
  *
- * @author Kai Huang
  */
-public class FunctionNodeTest extends TestCase {
-
+public final class FunctionNodeTest extends TestCase {
 
   public void testToSourceString() {
-
-    FunctionNode fn = new FunctionNode("round");
-    fn.addChild(new FloatNode(3.14159));
-    fn.addChild(new IntegerNode(2));
+    FunctionNode fn = new FunctionNode("round", SourceLocation.UNKNOWN);
+    fn.addChild(new FloatNode(3.14159, SourceLocation.UNKNOWN));
+    fn.addChild(new IntegerNode(2, SourceLocation.UNKNOWN));
     assertEquals("round(3.14159, 2)", fn.toSourceString());
   }
 
+  /**
+   * Tests that {@link com.google.template.soy.passes.ResolveFunctionsVisitor}
+   * recurses into {@link FunctionNode}s that are descendants of other FunctionNodes.
+   * (This omission caused cl/101255365 to be rolled back.)
+   */
+  public void testResolveFunctionsVisitor() {
+    SoyFunction foo = new SoyFunction() {
+      @Override
+      public String getName() {
+        return "foo";
+      }
+
+      @Override
+      public Set<Integer> getValidArgsSizes() {
+        return ImmutableSet.of(1);
+      }
+    };
+
+    SoyFunction bar = new SoyFunction() {
+      @Override
+      public String getName() {
+        return "bar";
+      }
+
+      @Override
+      public Set<Integer> getValidArgsSizes() {
+        return ImmutableSet.of(1);
+      }
+    };
+
+    SoyFileSetNode root =
+        SoyFileSetParserBuilder.forTemplateContents("<a class=\"{foo(bar(1))}\"")
+            .addSoyFunction(foo)
+            .addSoyFunction(bar)
+            .parse()
+            .fileSet();
+    List<FunctionNode> functionNodes = SoytreeUtils.getAllNodesOfType(root, FunctionNode.class);
+    assertThat(functionNodes).hasSize(2);
+    assertThat(functionNodes.get(0).getSoyFunction()).isSameAs(foo);
+    assertThat(functionNodes.get(1).getSoyFunction()).isSameAs(bar);
+  }
 }

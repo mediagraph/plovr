@@ -18,8 +18,6 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.javascript.jscomp.DefinitionsRemover.AssignmentDefinition;
 import com.google.javascript.jscomp.DefinitionsRemover.Definition;
@@ -32,6 +30,8 @@ import com.google.javascript.rhino.jstype.JSTypeNative;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
@@ -67,7 +67,7 @@ class NameReferenceGraph extends
       referenceMap = HashMultimap.create();
 
   // Given a qualified name, provides the Name object.
-  private Map<String, Name> nameMap = Maps.newHashMap();
+  private Map<String, Name> nameMap = new HashMap<>();
 
   // The following are some implicit nodes of the graph.
 
@@ -90,8 +90,7 @@ class NameReferenceGraph extends
     // Initialize builtins.
     unknown = new Name("{UNKNOWN}", true);
     unknown.isAliased = true;
-    unknown.type = compiler.getTypeRegistry().getNativeType(
-        JSTypeNative.NO_TYPE);
+    unknown.type = compiler.getTypeIRegistry().getNativeType(JSTypeNative.NO_TYPE);
     this.createNode(unknown);
 
     main = new Name("{Global Main}", true);
@@ -120,10 +119,8 @@ class NameReferenceGraph extends
   public List<Name> getReferencesAt(Node site) {
     Preconditions.checkArgument(
         site.isGetProp() || site.isName());
-    List<Name> result = new ArrayList<Name>();
-    for (Name target : referenceMap.get(site)) {
-      result.add(target);
-    }
+    List<Name> result = new ArrayList<>();
+    result.addAll(referenceMap.get(site));
     return result;
   }
 
@@ -134,7 +131,7 @@ class NameReferenceGraph extends
       return null;
     }
 
-    List<Definition> result = Lists.newArrayList();
+    List<Definition> result = new ArrayList<>();
     for (Name nameRef : nameRefs) {
       List<Definition> decls = nameRef.getDeclarations();
       if (!decls.isEmpty()) {
@@ -175,7 +172,7 @@ class NameReferenceGraph extends
     private JSType type;
 
     // A list (re)declarations
-    private List<Definition> declarations = Lists.newLinkedList();
+    private List<Definition> declarations = new LinkedList<>();
 
     final boolean isExtern;
 
@@ -199,8 +196,7 @@ class NameReferenceGraph extends
       int lastDot = qName.lastIndexOf('.');
       String name = (lastDot == -1) ? qName : qName.substring(lastDot + 1);
       this.isExported = compiler.getCodingConvention().isExported(name);
-      this.type = compiler.getTypeRegistry().getNativeType(
-          JSTypeNative.UNKNOWN_TYPE);
+      this.type = compiler.getTypeIRegistry().getNativeType(JSTypeNative.UNKNOWN_TYPE);
     }
 
     public JSType getType() {
@@ -223,23 +219,12 @@ class NameReferenceGraph extends
       declarations.add(new NamedFunctionDefinition(node, isExtern));
     }
 
-    public boolean isExtern() {
-      return isExtern;
-    }
-
     public void markExported() {
       this.isExported = true;
     }
 
     public boolean isExported() {
       return isExported;
-    }
-
-    /** Removes all of the declarations of this name. */
-    public final void remove() {
-      for (Definition declaration : getDeclarations()) {
-        declaration.remove();
-      }
     }
 
     /**
@@ -253,10 +238,6 @@ class NameReferenceGraph extends
 
     public void setAliased(boolean isAliased) {
       this.isAliased = isAliased;
-    }
-
-    public boolean hasSideEffect() {
-      return isCallable();
     }
 
     public String getQualifiedName() {
@@ -276,10 +257,6 @@ class NameReferenceGraph extends
       }
     }
 
-    public boolean isCallable() {
-      return type.canBeCalled();
-    }
-
     public boolean exposedToCallOrApply() {
       return exposedToCallOrApply;
     }
@@ -297,57 +274,6 @@ class NameReferenceGraph extends
     public int hashCode() {
       return qName.hashCode();
     }
-
-    /**
-     * Return true if it's safe to change the signature of the function
-     * references by this name. It is safe to change the signature if the Name
-     * is:
-     * <ul>
-     * <li>callable</li>
-     * <li>not an extern</li>
-     * <li>not been aliased</li>
-     * <li>not been exported</li>
-     * <li>Referred by call or apply functions</li>
-     * <li>The function uses the arguments property</li>
-     * </ul>
-     *
-     * @return true if it's safe to change the signature of the name.
-     */
-    public boolean canChangeSignature() {
-      // Ignore anything that is extern as they should not be changed.
-      // Also skip over any non-function names. Finally if a function has been
-      // alias, we don't know all of its callers and should not optimize.
-      //
-      // Also, if the function is called using .call or .apply, we don't try to
-      // optimize those call because the name graph does not give us enough
-      // information on the parameters.
-
-      // TODO(user) We'll be able to remove the check for call or apply once
-      // the name graph handles those call. The issue for now is that those
-      // calls aren't edges in the graph, so we don't have enough information to
-      // know if it's safe to change the method's signature.
-      return !(isExtern() ||
-          !isCallable() ||
-          isAliased() ||
-          isExported() ||
-          exposedToCallOrApply() ||
-          nameUsesArgumentsProperty());
-    }
-
-    /**
-     * Returns true if the the arguments property is used in any of the function
-     * definition.
-     * Ex. function foo(a,b,c) {return arguments.size;};
-     * @return True is arguments is present in one of the definitions.
-     */
-    private boolean nameUsesArgumentsProperty() {
-      for (Definition definition : getDeclarations()) {
-        if (NodeUtil.isVarArgsFunction(definition.getRValue())) {
-          return true;
-        }
-      }
-      return false;
-    }
   }
 
   /**
@@ -358,39 +284,8 @@ class NameReferenceGraph extends
     // The node that references the name.
     public final Node site;
 
-    // Parent pointer.
-    public final Node parent;
-
-    private JSModule module = null;
-
-    // A reference is unknown because we don't know the object's type.
-    // If A.x->B.y in the name graph and the edge is unknown. It implies
-    // A.x() reference to someObject.y and B.y MAY be the site.
-    private boolean isUnknown = false;
-
-    public Reference(Node site, Node parent) {
+    public Reference(Node site) {
       this.site = site;
-      this.parent = parent;
-    }
-
-    public boolean isUnknown() {
-      return isUnknown;
-    }
-
-    public void setUnknown(boolean isUnknown) {
-      this.isUnknown = isUnknown;
-    }
-
-    public JSModule getModule() {
-      return module;
-    }
-
-    public void setModule(JSModule module) {
-      this.module = module;
-    }
-
-    boolean isCall() {
-      return site.isCall();
     }
 
     /**

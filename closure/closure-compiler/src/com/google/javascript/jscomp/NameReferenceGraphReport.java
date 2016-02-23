@@ -17,7 +17,7 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
+import com.google.common.collect.Iterables;
 import com.google.javascript.jscomp.NameReferenceGraph.Name;
 import com.google.javascript.jscomp.NameReferenceGraph.Reference;
 import com.google.javascript.jscomp.graph.DiGraph.DiGraphEdge;
@@ -25,6 +25,7 @@ import com.google.javascript.jscomp.graph.DiGraph.DiGraphNode;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.jstype.JSType;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -70,8 +71,8 @@ final class NameReferenceGraphReport {
    */
   public String getHtmlReport() {
     StringBuilder builder = new StringBuilder();
-    List<DiGraphNode<Name, Reference>> nodes = Lists.newArrayList(
-        graph.getDirectedGraphNodes());
+    List<DiGraphNode<Name, Reference>> nodes = new ArrayList<>();
+    Iterables.addAll(nodes, graph.getDirectedGraphNodes());
 
     generateHtmlReportHeader(builder);
 
@@ -103,7 +104,7 @@ final class NameReferenceGraphReport {
       if (!outEdges.isEmpty() || !inEdges.isEmpty()) {
         builder.append("<ul>");
 
-        if (outEdges.size() > 0) {
+        if (!outEdges.isEmpty()) {
           builder.append("<li>REFERS TO:<br>\n");
           builder.append("<ul>");
           for (DiGraphEdge<Name, Reference> edge : outEdges) {
@@ -113,7 +114,7 @@ final class NameReferenceGraphReport {
           builder.append("</ul>\n");
         }
 
-        if (inEdges.size() > 0) {
+        if (!inEdges.isEmpty()) {
           builder.append("<li>REFERENCED BY:<br>\n");
           builder.append("<ul>");
           for (DiGraphEdge<Name, Reference> edge : inEdges) {
@@ -136,7 +137,7 @@ final class NameReferenceGraphReport {
    * @return String containing name of source file, or empty string if name
    *     cannot be identified.
    */
-  private String getSourceFile(Node node) {
+  private static String getSourceFile(Node node) {
     String filename = node.getSourceFileName();
     if (filename == null) {
       return "";
@@ -170,7 +171,7 @@ final class NameReferenceGraphReport {
     List<DefinitionsRemover.Definition> defs =
         declarationNode.getValue().getDeclarations();
 
-    if (defs.size() == 0) {
+    if (defs.isEmpty()) {
        builder.append("<br>No definitions found<br>");
     } else {
       // Otherwise, provide a list of definitions in a dotted list.
@@ -194,7 +195,7 @@ final class NameReferenceGraphReport {
    *
    * @param builder contents of the report to be generated
    */
-  private void generateHtmlReportHeader(StringBuilder builder) {
+  private static void generateHtmlReportHeader(StringBuilder builder) {
     builder.append("<!DOCTYPE html>\n" +
         "<html>" +
         "<head>" +
@@ -212,7 +213,7 @@ final class NameReferenceGraphReport {
   /**
    * Generate the HTML footer for the report style.
    */
-  private void generateHtmlReportFooter(StringBuilder builder) {
+  private static void generateHtmlReportFooter(StringBuilder builder) {
     builder.append("</body></html>");
   }
 
@@ -253,8 +254,8 @@ final class NameReferenceGraphReport {
    * @param lineNumber  line where the object to view is located
    * @param columnNumber  column where the object to highlight is located.
    */
-  private void generateSourceReferenceLink(StringBuilder builder,
-    String sourceFile, int lineNumber, int columnNumber) {
+  private static void generateSourceReferenceLink(StringBuilder builder,
+      String sourceFile, int lineNumber, int columnNumber) {
     assert(sourceFile != null);
 
     builder.append("(");
@@ -274,14 +275,13 @@ final class NameReferenceGraphReport {
    * @param builder contents of the report to be generated.
    * @param defType type to describe
    */
-  private void generateType(StringBuilder builder, JSType defType) {
+  private static void generateType(StringBuilder builder, JSType defType) {
     if (defType == null) {
       builder.append(" (type: null) ");
     } else if (defType.isUnknownType()) {
       builder.append(" (type: unknown) ");
     } else {
-      builder.append(" (type: " +
-          defType.toString() + ") ");
+      builder.append(" (type: " + defType + ") ");
     }
   }
 

@@ -22,7 +22,7 @@ import com.google.javascript.rhino.Node;
  * Unit tests for {@link CoalesceVariableNames}
  *
  */
-public class CoalesceVariableNamesTest extends CompilerTestCase {
+public final class CoalesceVariableNamesTest extends CompilerTestCase {
   // The spacing in this file is not exactly standard but it greatly helps
   // picking out which variable names are merged.
 
@@ -35,7 +35,6 @@ public class CoalesceVariableNamesTest extends CompilerTestCase {
 
   @Override
   public void setUp() {
-    super.enableLineNumberCheck(true);
     usePseudoName = false;
   }
 

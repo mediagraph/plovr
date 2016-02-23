@@ -16,15 +16,16 @@
 
 package com.google.template.soy;
 
-import com.google.common.base.Charsets;
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.io.Files;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
-import com.google.template.soy.base.BaseUtils;
-import com.google.template.soy.base.SoySyntaxException;
+import com.google.template.soy.MainClassUtils.Main;
+import com.google.template.soy.base.internal.BaseUtils;
 
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.CmdLineParser;
@@ -35,14 +36,12 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-
 /**
  * Executable for generating Java classes containing Soy parse info.
  *
  * <p> The command-line arguments should contain command-line flags and the list of paths to the
  * Soy files.
  *
- * @author Kai Huang
  */
 public final class SoyParseInfoGenerator {
 
@@ -72,6 +71,11 @@ public final class SoyParseInfoGenerator {
                   " analysis/checking, but will not generate code for dep files.",
           handler = MainClassUtils.StringListOptionHandler.class)
   private List<String> deps = Lists.newArrayList();
+
+  @Option(name = "--indirectDeps",
+          usage = "Soy files required by deps, but which may not be used by srcs.",
+          handler = MainClassUtils.StringListOptionHandler.class)
+  private List<String> indirectDeps = Lists.newArrayList();
 
   @Option(name = "--allowExternalCalls",
           usage = "Whether to allow external calls. New projects should set this to false, and" +
@@ -110,19 +114,26 @@ public final class SoyParseInfoGenerator {
   /**
    * Generates Java classes containing Soy parse info.
    *
+   * <p>If syntax errors are encountered, no output is generated and the process terminates with a
+   * non-zero exit status. On successful parse, the process terminates with a zero exit status.
+   *
    * @param args Should contain command-line flags and the list of paths to the Soy files.
    * @throws IOException If there are problems reading the input files or writing the output file.
-   * @throws SoySyntaxException If a syntax error is detected.
    */
-  public static void main(String[] args) throws IOException {
-    (new SoyParseInfoGenerator()).execMain(args);
+  public static void main(final String[] args) throws IOException {
+    MainClassUtils.run(new Main() {
+      @Override
+      public CompilationResult main() throws IOException {
+        return new SoyParseInfoGenerator().execMain(args);
+      }
+    });
   }
 
 
   private SoyParseInfoGenerator() {}
 
 
-  private void execMain(String[] args) throws IOException, SoySyntaxException {
+  private CompilationResult execMain(String[] args) throws IOException {
 
     final CmdLineParser cmdLineParser = MainClassUtils.parseFlags(this, args, USAGE_PREFIX);
 
@@ -153,18 +164,21 @@ public final class SoyParseInfoGenerator {
     // TODO: This does not seem like the right place to remove duplicates.
     MainClassUtils.addSoyFilesToBuilder(
         sfsBuilder, inputPrefix, ImmutableSet.copyOf(srcs), ImmutableSet.copyOf(arguments),
-        ImmutableSet.copyOf(deps), exitWithErrorFn);
+        ImmutableSet.copyOf(deps), ImmutableSet.copyOf(indirectDeps), exitWithErrorFn);
     sfsBuilder.setAllowExternalCalls(allowExternalCalls);
     SoyFileSet sfs = sfsBuilder.build();
 
-    Map<String, String> generatedFiles =
-        sfs.generateParseInfo(javaPackage, javaClassNameSource);
+    SoyFileSet.ParseInfo parseInfo = sfs.generateParseInfo(javaPackage, javaClassNameSource);
 
-    for (Map.Entry<String, String> entry : generatedFiles.entrySet()) {
-      File outputFile = new File(outputDirectory, entry.getKey());
-      BaseUtils.ensureDirsExistInPath(outputFile.getPath());
-      Files.write(entry.getValue(), outputFile, Charsets.UTF_8);
+    if (parseInfo.result.isSuccess()) {
+      for (Map.Entry<String, String> entry : parseInfo.generatedFiles.entrySet()) {
+        File outputFile = new File(outputDirectory, entry.getKey());
+        BaseUtils.ensureDirsExistInPath(outputFile.getPath());
+        Files.write(entry.getValue(), outputFile, UTF_8);
+      }
     }
+
+    return parseInfo.result;
   }
 
 }

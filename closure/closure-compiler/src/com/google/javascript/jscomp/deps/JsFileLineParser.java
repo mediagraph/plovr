@@ -16,7 +16,7 @@
 
 package com.google.javascript.jscomp.deps;
 
-import com.google.common.collect.Lists;
+import com.google.common.annotations.GwtIncompatible;
 import com.google.javascript.jscomp.CheckLevel;
 import com.google.javascript.jscomp.DiagnosticType;
 import com.google.javascript.jscomp.ErrorManager;
@@ -25,6 +25,7 @@ import com.google.javascript.jscomp.JSError;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.Reader;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,11 +36,12 @@ import java.util.regex.Pattern;
  *
  * @author agrieve@google.com (Andrew Grieve)
  */
+@GwtIncompatible("java.io")
 public abstract class JsFileLineParser {
 
   static final DiagnosticType PARSE_WARNING = DiagnosticType.warning(
       "DEPS_PARSE_WARNING", "{0}\n{1}");
-  static final DiagnosticType PARSE_ERROR = DiagnosticType.error(
+  public static final DiagnosticType PARSE_ERROR = DiagnosticType.error(
       "DEPS_PARSE_ERROR", "{0}\n{1}");
 
   boolean shortcutMode = false;
@@ -227,7 +229,7 @@ public abstract class JsFileLineParser {
    */
   List<String> parseJsStringArray(String input)
       throws ParseException {
-    List<String> results = Lists.newArrayList();
+    List<String> results = new ArrayList<>();
     int indexStart = input.indexOf('[');
     int indexEnd = input.lastIndexOf(']');
     if ((indexStart == -1) || (indexEnd == -1)) {
@@ -257,5 +259,14 @@ public abstract class JsFileLineParser {
       }
     }
     return results;
+  }
+
+  boolean parseJsBoolean(String jsBoolean) throws ParseException {
+    if (jsBoolean.equals("true")) {
+      return true;
+    } else if (jsBoolean.equals("false")) {
+      return false;
+    }
+    throw new ParseException("Syntax error in JS String literal", true /* fatal */);
   }
 }

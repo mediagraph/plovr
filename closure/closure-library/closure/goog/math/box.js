@@ -19,6 +19,7 @@
 
 goog.provide('goog.math.Box');
 
+goog.require('goog.asserts');
 goog.require('goog.math.Coordinate');
 
 
@@ -27,10 +28,14 @@ goog.require('goog.math.Coordinate');
  * Class for representing a box. A box is specified as a top, right, bottom,
  * and left. A box is useful for representing margins and padding.
  *
+ * This class assumes 'screen coordinates': larger Y coordinates are further
+ * from the top of the screen.
+ *
  * @param {number} top Top.
  * @param {number} right Right.
  * @param {number} bottom Bottom.
  * @param {number} left Left.
+ * @struct
  * @constructor
  */
 goog.math.Box = function(top, right, bottom, left) {
@@ -70,13 +75,25 @@ goog.math.Box.boundingBox = function(var_args) {
   var box = new goog.math.Box(arguments[0].y, arguments[0].x,
                               arguments[0].y, arguments[0].x);
   for (var i = 1; i < arguments.length; i++) {
-    var coord = arguments[i];
-    box.top = Math.min(box.top, coord.y);
-    box.right = Math.max(box.right, coord.x);
-    box.bottom = Math.max(box.bottom, coord.y);
-    box.left = Math.min(box.left, coord.x);
+    box.expandToIncludeCoordinate(arguments[i]);
   }
   return box;
+};
+
+
+/**
+ * @return {number} width The width of this Box.
+ */
+goog.math.Box.prototype.getWidth = function() {
+  return this.right - this.left;
+};
+
+
+/**
+ * @return {number} height The height of this Box.
+ */
+goog.math.Box.prototype.getHeight = function() {
+  return this.bottom - this.top;
 };
 
 
@@ -130,10 +147,10 @@ goog.math.Box.prototype.expand = function(top, opt_right, opt_bottom,
     this.bottom += top.bottom;
     this.left -= top.left;
   } else {
-    this.top -= top;
-    this.right += opt_right;
-    this.bottom += opt_bottom;
-    this.left -= opt_left;
+    this.top -= /** @type {number} */ (top);
+    this.right += Number(opt_right);
+    this.bottom += Number(opt_bottom);
+    this.left -= Number(opt_left);
   }
 
   return this;
@@ -152,6 +169,19 @@ goog.math.Box.prototype.expandToInclude = function(box) {
   this.top = Math.min(this.top, box.top);
   this.right = Math.max(this.right, box.right);
   this.bottom = Math.max(this.bottom, box.bottom);
+};
+
+
+/**
+ * Expand this box to include the coordinate.
+ * @param {!goog.math.Coordinate} coord The coordinate to be included
+ *     inside the box.
+ */
+goog.math.Box.prototype.expandToIncludeCoordinate = function(coord) {
+  this.top = Math.min(this.top, coord.y);
+  this.right = Math.max(this.right, coord.x);
+  this.bottom = Math.max(this.bottom, coord.y);
+  this.left = Math.min(this.left, coord.x);
 };
 
 
@@ -339,6 +369,7 @@ goog.math.Box.prototype.translate = function(tx, opt_ty) {
     this.top += tx.y;
     this.bottom += tx.y;
   } else {
+    goog.asserts.assertNumber(tx);
     this.left += tx;
     this.right += tx;
     if (goog.isNumber(opt_ty)) {

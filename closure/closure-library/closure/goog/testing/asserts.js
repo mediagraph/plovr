@@ -13,6 +13,7 @@
 // limitations under the License.
 goog.provide('goog.testing.JsUnitException');
 goog.provide('goog.testing.asserts');
+goog.provide('goog.testing.asserts.ArrayLike');
 
 goog.require('goog.testing.stacktrace');
 
@@ -28,11 +29,26 @@ goog.testing.asserts.ArrayLike;
 var DOUBLE_EQUALITY_PREDICATE = function(var1, var2) {
   return var1 == var2;
 };
-var JSUNIT_UNDEFINED_VALUE;
+var JSUNIT_UNDEFINED_VALUE = void 0;
 var TO_STRING_EQUALITY_PREDICATE = function(var1, var2) {
   return var1.toString() === var2.toString();
 };
 
+
+/** @typedef {function(?, ?):boolean} */
+var PredicateFunctionType;
+
+
+/**
+ * @const {{
+ *   String : PredicateFunctionType,
+ *   Number : PredicateFunctionType,
+ *   Boolean : PredicateFunctionType,
+ *   Date : PredicateFunctionType,
+ *   RegExp : PredicateFunctionType,
+ *   Function : PredicateFunctionType
+ * }}
+ */
 var PRIMITIVE_EQUALITY_PREDICATES = {
   'String': DOUBLE_EQUALITY_PREDICATE,
   'Number': DOUBLE_EQUALITY_PREDICATE,
@@ -61,7 +77,7 @@ goog.testing.asserts.numberRoughEqualityPredicate_ = function(
 
 
 /**
- * @type {Object.<string, function(*, *, number): boolean>}
+ * @type {Object<string, function(*, *, number): boolean>}
  * @private
  */
 goog.testing.asserts.primitiveRoughEqualityPredicates_ = {
@@ -168,6 +184,13 @@ var _validateArguments = function(expectedNumberOfNonCommentArgs, args) {
       args.length == expectedNumberOfNonCommentArgs + 1 &&
       goog.isString(args[0]);
   _assert(null, valid, 'Incorrect arguments passed to assert function');
+};
+
+var _getCurrentTestCase = function() {
+  // We can't call goog.testing.TestCase.getActiveTestCase because there would
+  // be a dependency cycle; this effectively does the same thing.
+  var testRunner = goog.global['G_testRunner'];
+  return testRunner ? testRunner.testCase : null;
 };
 
 var _assert = function(comment, booleanValue, failureMessage) {
@@ -310,25 +333,40 @@ var assertNotThrows = function(a, opt_b) {
  *     in a JsUnitException (usually contains a call to an assert).
  * @param {string=} opt_expectedMessage Failure message expected to be given
  *     with the exception.
+ * @return {!goog.testing.JsUnitException} The error thrown by the function.
+ * @throws {goog.testing.JsUnitException} If the function did not throw a
+ *     JsUnitException.
  */
 var assertThrowsJsUnitException = function(callback, opt_expectedMessage) {
-  var failed = false;
   try {
     goog.testing.asserts.callWithoutLogging(callback);
-  } catch (ex) {
-    if (!ex.isJsUnitException) {
+  } catch (e) {
+    var testCase = _getCurrentTestCase();
+    if (testCase) {
+      testCase.invalidateAssertionException(e);
+    } else {
+      goog.global.console.error(
+          'Failed to remove expected exception: no test case is installed.');
+    }
+
+    if (!e.isJsUnitException) {
       fail('Expected a JsUnitException');
     }
+
     if (typeof opt_expectedMessage != 'undefined' &&
-        ex.message != opt_expectedMessage) {
+        e.message != opt_expectedMessage) {
       fail('Expected message [' + opt_expectedMessage + '] but got [' +
-          ex.message + ']');
+          e.message + ']');
     }
-    failed = true;
+
+    return e;
   }
-  if (!failed) {
-    fail('Expected a failure: ' + opt_expectedMessage);
+
+  var msg = 'Expected a failure';
+  if (typeof opt_expectedMessage != 'undefined') {
+    msg += ': ' + opt_expectedMessage;
   }
+  throw new goog.testing.JsUnitException(msg);
 };
 
 
@@ -544,7 +582,7 @@ goog.testing.asserts.findDifferences = function(expected, actual,
   // To avoid infinite recursion when the two parameters are self-referential
   // along the same path of properties, keep track of the object pairs already
   // seen in this call subtree, and abort when a cycle is detected.
-  function innerAssert(var1, var2, path) {
+  function innerAssertWithCycleCheck(var1, var2, path) {
     // This is used for testing, so we can afford to be slow (but more
     // accurate). So we just check whether var1 is in seen1. If we
     // found var1 in index i, we simply need to check whether var2 is
@@ -554,7 +592,7 @@ goog.testing.asserts.findDifferences = function(expected, actual,
     //
     // This is based on the fact that values at index i in seen1 and
     // seen2 will be checked for equality eventually (when
-    // innerAssert_(seen1[i], seen2[i], path) finishes).
+    // innerAssertImplementation(seen1[i], seen2[i], path) finishes).
     for (var i = 0; i < seen1.length; ++i) {
       var match1 = seen1[i] === var1;
       var match2 = seen2[i] === var2;
@@ -569,7 +607,7 @@ goog.testing.asserts.findDifferences = function(expected, actual,
 
     seen1.push(var1);
     seen2.push(var2);
-    innerAssert_(var1, var2, path);
+    innerAssertImplementation(var1, var2, path);
     seen1.pop();
     seen2.pop();
   }
@@ -591,7 +629,7 @@ goog.testing.asserts.findDifferences = function(expected, actual,
    * @suppress {missingProperties} The map_ property is unknown to the compiler
    *     unless goog.structs.Map is loaded.
    */
-  function innerAssert_(var1, var2, path) {
+  function innerAssertImplementation(var1, var2, path) {
     if (var1 === var2) {
       return;
     }
@@ -628,8 +666,8 @@ goog.testing.asserts.findDifferences = function(expected, actual,
             }
 
             if (prop in var2) {
-              innerAssert(var1[prop], var2[prop],
-                          childPath.replace('%s', prop));
+              innerAssertWithCycleCheck(var1[prop], var2[prop],
+                  childPath.replace('%s', prop));
             } else {
               failures.push('property ' + prop +
                             ' not present in actual ' + (path || typeOfVar2));
@@ -663,8 +701,8 @@ goog.testing.asserts.findDifferences = function(expected, actual,
           // populated with 'undefined'.
           if (isArray) {
             for (prop = 0; prop < var1.length; prop++) {
-              innerAssert(var1[prop], var2[prop],
-                          childPath.replace('%s', String(prop)));
+              innerAssertWithCycleCheck(var1[prop], var2[prop],
+                  childPath.replace('%s', String(prop)));
             }
           }
         } else {
@@ -679,7 +717,8 @@ goog.testing.asserts.findDifferences = function(expected, actual,
           } else if (var1.map_) {
             // assume goog.structs.Map or goog.structs.Set, where comparing
             // their private map_ field is sufficient
-            innerAssert(var1.map_, var2.map_, childPath.replace('%s', 'map_'));
+            innerAssertWithCycleCheck(var1.map_, var2.map_,
+                childPath.replace('%s', 'map_'));
           } else {
             // else die, so user knows we can't do anything
             failures.push('unable to check ' + (path || typeOfVar1) +
@@ -694,7 +733,7 @@ goog.testing.asserts.findDifferences = function(expected, actual,
     }
   }
 
-  innerAssert(expected, actual, '');
+  innerAssertWithCycleCheck(expected, actual, '');
   return failures.length == 0 ? null :
       goog.testing.asserts.getDefaultErrorMsg_(expected, actual) +
           '\n   ' + failures.join('\n   ');
@@ -943,7 +982,7 @@ var assertEvaluatesToFalse = function(a, opt_b) {
  * comparisons erroneously fail:
  * <pre>
  * assertHTMLEquals('<a href="x" target="y">', '<a target="y" href="x">');
- * assertHTMLEquals('<div classname="a b">', '<div classname="b a">');
+ * assertHTMLEquals('<div class="a b">', '<div class="b a">');
  * assertHTMLEquals('<input disabled>', '<input disabled="disabled">');
  * </pre>
  *
@@ -1040,10 +1079,12 @@ var assertRoughlyEquals = function(a, b, c, opt_d) {
 
 
 /**
- * Checks if the given element is the member of the given container.
- * @param {*} a Failure message (3 arguments) or the contained element
+ * Checks if the test value is a member of the given container.  Uses
+ * container.indexOf as the underlying function, so this works for strings
+ * and arrays.
+ * @param {*} a Failure message (3 arguments) or the test value
  *     (2 arguments).
- * @param {*} b The contained element (3 arguments) or the container
+ * @param {*} b The test value (3 arguments) or the container
  *     (2 arguments).
  * @param {*=} opt_c The container.
  */
@@ -1076,9 +1117,30 @@ var assertNotContains = function(a, b, opt_c) {
 
 
 /**
+ * Checks if the given string matches the given regular expression.
+ * @param {*} a Failure message (3 arguments) or the expected regular
+ *     expression as a string or RegExp (2 arguments).
+ * @param {*} b The regular expression (3 arguments) or the string to test
+ *     (2 arguments).
+ * @param {*=} opt_c The string to test.
+ */
+var assertRegExp = function(a, b, opt_c) {
+  _validateArguments(2, arguments);
+  var regexp = nonCommentArg(1, 2, arguments);
+  var string = nonCommentArg(2, 2, arguments);
+  if (typeof(regexp) == 'string') {
+    regexp = new RegExp(regexp);
+  }
+  _assert(commentArg(2, arguments),
+      regexp.test(string),
+      'Expected \'' + string + '\' to match RegExp ' + regexp.toString());
+};
+
+
+/**
  * Converts an array like object to array or clones it if it's already array.
  * @param {goog.testing.asserts.ArrayLike} arrayLike The collection.
- * @return {!Array} Copy of the collection as array.
+ * @return {!Array<?>} Copy of the collection as array.
  * @private
  */
 goog.testing.asserts.toArray_ = function(arrayLike) {
@@ -1153,17 +1215,23 @@ var standardizeCSSValue = function(propertyName, value) {
 
 
 /**
- * Raises a JsUnit exception with the given comment.
+ * Raises a JsUnit exception with the given comment. If the exception is
+ * unexpectedly caught during a unit test, it will be rethrown so that it is
+ * seen by the test framework.
  * @param {string} comment A summary for the exception.
  * @param {string=} opt_message A description of the exception.
  */
 goog.testing.asserts.raiseException = function(comment, opt_message) {
-  if (goog.global['CLOSURE_INSPECTOR___'] &&
-      goog.global['CLOSURE_INSPECTOR___']['supportsJSUnit']) {
-    goog.global['CLOSURE_INSPECTOR___']['jsUnitFailure'](comment, opt_message);
-  }
+  var e = new goog.testing.JsUnitException(comment, opt_message);
 
-  throw new goog.testing.JsUnitException(comment, opt_message);
+  var testCase = _getCurrentTestCase();
+  if (testCase) {
+    testCase.raiseAssertionException(e);
+  } else {
+    goog.global.console.error(
+        'Failed to save thrown exception: no test case is installed.');
+    throw e;
+  }
 };
 
 
@@ -1184,6 +1252,7 @@ goog.testing.asserts.isArrayIndexProp_ = function(prop) {
  * @param {?string=} opt_message A description of the exception.
  * @constructor
  * @extends {Error}
+ * @final
  */
 goog.testing.JsUnitException = function(comment, opt_message) {
   this.isJsUnitException = true;
@@ -1215,6 +1284,7 @@ goog.exportSymbol('fail', fail);
 goog.exportSymbol('assert', assert);
 goog.exportSymbol('assertThrows', assertThrows);
 goog.exportSymbol('assertNotThrows', assertNotThrows);
+goog.exportSymbol('assertThrowsJsUnitException', assertThrowsJsUnitException);
 goog.exportSymbol('assertTrue', assertTrue);
 goog.exportSymbol('assertFalse', assertFalse);
 goog.exportSymbol('assertEquals', assertEquals);
@@ -1241,3 +1311,4 @@ goog.exportSymbol('assertHashEquals', assertHashEquals);
 goog.exportSymbol('assertRoughlyEquals', assertRoughlyEquals);
 goog.exportSymbol('assertContains', assertContains);
 goog.exportSymbol('assertNotContains', assertNotContains);
+goog.exportSymbol('assertRegExp', assertRegExp);

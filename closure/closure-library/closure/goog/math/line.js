@@ -32,7 +32,9 @@ goog.require('goog.math.Coordinate');
  * @param {number} y0 Y coordinate of the start point.
  * @param {number} x1 X coordinate of the end point.
  * @param {number} y1 Y coordinate of the end point.
+ * @struct
  * @constructor
+ * @final
  */
 goog.math.Line = function(x0, y0, x1, y1) {
   /**
@@ -125,7 +127,7 @@ goog.math.Line.prototype.getClosestLinearInterpolation_ = function(x, opt_y) {
   var xChange = this.x1 - x0;
   var yChange = this.y1 - y0;
 
-  return ((x - x0) * xChange + (y - y0) * yChange) /
+  return ((Number(x) - x0) * xChange + (Number(y) - y0) * yChange) /
       this.getSegmentLengthSquared();
 };
 

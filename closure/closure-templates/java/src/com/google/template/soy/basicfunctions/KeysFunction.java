@@ -16,25 +16,25 @@
 
 package com.google.template.soy.basicfunctions;
 
-import static com.google.template.soy.javasrc.restricted.SoyJavaSrcFunctionUtils.toIntegerJavaExpr;
-
 import com.google.common.collect.ImmutableSet;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
-import com.google.template.soy.data.SoyData;
-import com.google.template.soy.data.SoyListData;
-import com.google.template.soy.data.SoyMapData;
-import com.google.template.soy.javasrc.restricted.JavaCodeUtils;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcFunction;
+import com.google.common.collect.Iterables;
+import com.google.template.soy.data.SoyMap;
+import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.internal.ListImpl;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyListExpr;
+import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuFunction;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 /**
  * Soy function that gets the keys in a map.
@@ -45,12 +45,10 @@ import java.util.Set;
  * <p> This enables iteration over the keys in a map, e.g.
  *     {foreach $key in keys($myMap)} ... {/foreach}
  *
- * @author Kai Huang
  */
 @Singleton
 @SoyPureFunction
-class KeysFunction extends SoyAbstractTofuFunction implements SoyJsSrcFunction, SoyJavaSrcFunction {
-
+public final class KeysFunction implements SoyJavaFunction, SoyJsSrcFunction, SoyPySrcFunction {
 
   @Inject
   KeysFunction() {}
@@ -60,21 +58,25 @@ class KeysFunction extends SoyAbstractTofuFunction implements SoyJsSrcFunction, 
     return "keys";
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(1);
   }
 
+  @Override public SoyValue computeForJava(List<SoyValue> args) {
+    SoyValue arg = args.get(0);
 
-  @Override public SoyData compute(List<SoyData> args) {
-    SoyData arg = args.get(0);
-
-    if (! (arg instanceof SoyMapData)) {
-      throw new IllegalArgumentException("Argument to keys() function is not SoyMapData.");
+    if (! (arg instanceof SoyMap)) {
+      throw new IllegalArgumentException("Argument to keys() function is not SoyMap.");
     }
-    return new SoyListData(((SoyMapData) arg).getKeys());
+    return ListImpl.forProviderList(keys((SoyMap) arg));
   }
 
+  /** Returns a list of all the keys in the given map. */
+  public static List<SoyValue> keys(SoyMap map) {
+    List<SoyValue> list = new ArrayList<>(map.getItemCnt());
+    Iterables.addAll(list, map.getItemKeys());
+    return list;
+  }
 
   @Override public JsExpr computeForJsSrc(List<JsExpr> args) {
     JsExpr arg = args.get(0);
@@ -82,13 +84,9 @@ class KeysFunction extends SoyAbstractTofuFunction implements SoyJsSrcFunction, 
     return new JsExpr("soy.$$getMapKeys(" + arg.getText() + ")", Integer.MAX_VALUE);
   }
 
+  @Override public PyExpr computeForPySrc(List<PyExpr> args) {
+    PyExpr arg = args.get(0);
 
-  @Override public JavaExpr computeForJavaSrc(List<JavaExpr> args) {
-    JavaExpr arg = args.get(0);
-
-    return toIntegerJavaExpr(
-        JavaCodeUtils.genNewListData(
-            "(" + JavaCodeUtils.genMaybeCast(arg, SoyMapData.class) + ").getKeys()"));
+    return new PyListExpr("(" + arg.getText() + ").keys()", Integer.MAX_VALUE);
   }
-
 }

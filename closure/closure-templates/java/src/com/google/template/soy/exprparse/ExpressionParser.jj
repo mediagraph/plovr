@@ -39,30 +39,28 @@ PARSER_BEGIN(ExpressionParser)
 package com.google.template.soy.exprparse;
 
 import com.google.common.base.CharMatcher;
-import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.error.SoyError;
 import com.google.template.soy.exprtree.BooleanNode;
-import com.google.template.soy.exprtree.DataRefAccessExprNode;
-import com.google.template.soy.exprtree.DataRefAccessIndexNode;
-import com.google.template.soy.exprtree.DataRefAccessKeyNode;
-import com.google.template.soy.exprtree.DataRefNode;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprNode.OperatorNode;
 import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
-import com.google.template.soy.exprtree.ExprRootNode;
+import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FloatNode;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.IntegerNode;
+import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.Operator;
-import com.google.template.soy.exprtree.OperatorNodes;
-import com.google.template.soy.exprtree.OperatorNodes.ConditionalOpNode;
-import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarNode;
+import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.internal.base.UnescapeUtils;
 
 import java.io.StringReader;
@@ -164,83 +162,138 @@ import java.util.List;
  *       Examples:   isFirst($item)   foo()   myFunction(2, 'aa')
  * </pre>
  *
- * @author Kai Huang
  */
-public class ExpressionParser {
+public final class ExpressionParser {
 
+  public static final SoyError INVALID_EXPRESSION_LIST
+      = SoyError.of("Invalid expression list");
+  private static final SoyError INVALID_PARAM_NAME_IJ
+      = SoyError.of("Invalid param name ''ij'' (''ij'' is for injected data ref).");
+  public static final SoyError INVALID_VAR_NAME
+      = SoyError.of("Invalid var name ''{0}''");
+  private static final SoyError INVALID_VAR_NAME_IJ
+      = SoyError.of("Invalid var name ''ij'' (''ij'' is for injected data ref).");
+
+  private static final SoyError SINGLE_IDENTIFIER_KEY_IN_MAP_LITERAL
+      = SoyError.of("Disallowed single-identifier key \"{0}\" in map literal "
+          + "(please surround with single quotes for string or parentheses for global).");
+
+  private static final SoyError PARSE_ERROR = SoyError.of("{0}");
+
+  private String input;
+  private SourceLocation parentSourceLocation;
+  private ErrorReporter errorReporter;
 
   /**
    * Constructor that takes a string input.
    * @param input The input to parse.
+   * @param parentSourceLocation the source location associated with the input.
+   * @param errorReporter For reporting syntax errors.
    */
-  public ExpressionParser(String input) {
+  public ExpressionParser(
+      String input, SourceLocation parentSourceLocation, ErrorReporter errorReporter) {
     this(new StringReader(input));
+    this.input = input;
+    this.parentSourceLocation = parentSourceLocation;
+    this.errorReporter = errorReporter;
   }
 
 
   /**
-   * Attempts to parse the input as a comma-separated list of one or more expressions.
-   * @throws TokenMgrError When the input has a token error.
-   * @throws ParseException When the input has a parse error.
+   * Parses the input as a comma-separated list of expressions.
+   *
+   * <p>Maintains the following invariant: an empty list is returned if and only if
+   * an error is reported to the parser's {@link ErrorReporter}.
    */
-  public List<ExprRootNode<?>> parseExpressionList() throws TokenMgrError, ParseException {
-    return ExprListInput();
+  public List<ExprNode> parseExpressionList() {
+    try {
+      return ExprListInput();
+    } catch (TokenMgrError e) {
+      errorReporter.report(parentSourceLocation, INVALID_EXPRESSION_LIST);
+      return ImmutableList.of();
+    } catch (ParseException e) {
+      errorReporter.report(parentSourceLocation, INVALID_EXPRESSION_LIST);
+      return ImmutableList.of();
+    }
   }
 
 
   /**
-   * Attempts to parse the input as an expression.
-   * @throws TokenMgrError When the input has a token error.
-   * @throws ParseException When the input has a parse error.
+   * Parses the input as an expression.
+   *
+   * <p>Maintains the following invariant: an error node is returned if and only if an error
+   * is reported to the parser's {@link ErrorReporter}.
    */
-  public ExprRootNode<?> parseExpression() throws TokenMgrError, ParseException {
-    return ExprInput();
+  public ExprNode parseExpression() {
+    try {
+      return ExprInput();
+    } catch (ParseException e) {
+      errorReporter.report(parentSourceLocation, PARSE_ERROR, e.getMessage());
+      return VarRefNode.ERROR;
+    } catch (TokenMgrError e) {
+      errorReporter.report(parentSourceLocation, PARSE_ERROR, e.getMessage());
+      return VarRefNode.ERROR;
+    }
   }
 
 
   /**
-   * Attempts to parse the input as a variable name.
-   * @throws TokenMgrError When the input has a token error.
-   * @throws ParseException When the input has a parse error.
+   * Parses the input as a variable name.
+   *
+   * <p>Maintains the following invariant: an error node is returned if and only if an error
+   * is reported to the parser's {@link ErrorReporter}.
    */
-  public ExprRootNode<VarNode> parseVariable() throws TokenMgrError, ParseException {
-    return VarInput();
+  public VarNode parseVariable() {
+    try {
+      return VarInput();
+    } catch (ParseException e) {
+      errorReporter.report(parentSourceLocation, INVALID_VAR_NAME, input);
+      return VarNode.ERROR;
+    } catch (TokenMgrError e) {
+      errorReporter.report(parentSourceLocation, PARSE_ERROR, e.getMessage());
+      return VarNode.ERROR;
+    }
   }
-
 
   /**
-   * Attempts to parse the input as a data reference.
-   * @throws TokenMgrError When the input has a token error.
-   * @throws ParseException When the input has a parse error.
+   * Parses the input as a global.
+   * <p>Maintains the following invariant: an error node is returned if and only if am error
+   * is reported to the parser's {@link ErrorReporter}.
    */
-  public ExprRootNode<DataRefNode> parseDataReference() throws TokenMgrError, ParseException {
-    return DataRefInput();
+  public GlobalNode parseGlobal() {
+    try {
+      return GlobalInput();
+    } catch (ParseException e) {
+      errorReporter.report(parentSourceLocation, PARSE_ERROR, e.getMessage());
+      return GlobalNode.ERROR;
+    } catch (TokenMgrError e) {
+      errorReporter.report(parentSourceLocation, PARSE_ERROR, e.getMessage());
+      return GlobalNode.ERROR;
+    }
   }
-
-
-  /**
-   * Attempts to parse the input as a global.
-   * @throws TokenMgrError When the input has a token error.
-   * @throws ParseException When the input has a parse error.
-   */
-  public ExprRootNode<GlobalNode> parseGlobal() throws TokenMgrError, ParseException {
-    return GlobalInput();
-  }
-
 
   /**
    * Private helper to create an operator node.
    */
-  private static final OperatorNode createOperatorNode(String op, int numOperands) {
-
-    try {
-      return Operator.of(op, numOperands).getNodeClass().getConstructor().newInstance();
-    } catch (Exception e) {
-      Throwables.propagate(e);
-      return null;  // make compiler happy
+  private static final OperatorNode createOperatorNode(
+      String op, int prec, ExprNode ...children) {
+    Operator operator = Operator.of(op, children.length);
+    if (operator.getPrecedence() != prec) {
+      throw new IllegalArgumentException("invalid precedence " + prec + " for operator " + op);
     }
+    return operator.createNode(children);
   }
 
+  private SourceLocation createSrcLoc(Token token) {
+    // TODO(brndn): The Math.max fiddling is required because some callers instantiate
+    // the expression parser with SourceLocation.UNKNOWN (for example, ExprParseUtils).
+    return new SourceLocation(
+        parentSourceLocation.getFilePath(),
+        Math.max(1, parentSourceLocation.getLineNumber()),
+        Math.max(1, parentSourceLocation.getBeginColumn() + token.beginColumn),
+        Math.max(1, parentSourceLocation.getLineNumber()),
+        Math.max(1, parentSourceLocation.getBeginColumn() + token.endColumn));
+  }
 }
 
 PARSER_END(ExpressionParser)
@@ -287,16 +340,14 @@ TOKEN:
 // Operators.
 TOKEN:
 {
-  < UNARY_OR_BINARY_OP: "-" >
-|
-  < ONLY_UNARY_OP: "not" >
-|
-  < ONLY_BINARY_OP:
-        "*" | "/" | "%" | "+"
-      | "<" | ">" | "<=" | ">=" | "==" | "!="
-      | "and" | "or"
-      // Note: The null-coalescing binary operator "?:" is parsed separately in PrecExpr1().
-  >
+  < UNARY_OP: "not" >
+// Note: The null-coalescing binary operator "?:" is parsed separately in PrecExpr1().
+| < PRECEDENCE_2_OP: "or" >
+| < PRECEDENCE_3_OP: "and" >
+| < PRECEDENCE_4_OP: "==" | "!=" >
+| < PRECEDENCE_5_OP: "<" | ">" | "<=" | ">=" >
+| < PRECEDENCE_6_OP: "+">
+| < PRECEDENCE_7_OP: "*" | "/" | "%" >
 }
 
 
@@ -311,12 +362,6 @@ TOKEN:
   { matchedToken.image = CharMatcher.WHITESPACE.removeFrom(image.toString()); }
 |
   < QUESTION_DOT_IDENT: "?." (<WS>)* <IDENT> >
-  { matchedToken.image = CharMatcher.WHITESPACE.removeFrom(image.toString()); }
-|
-  < DOT_INDEX: "." (<WS>)* <DEC_DIGITS> >
-  { matchedToken.image = CharMatcher.WHITESPACE.removeFrom(image.toString()); }
-|
-  < QUESTION_DOT_INDEX: "?." (<WS>)* <DEC_DIGITS> >
   { matchedToken.image = CharMatcher.WHITESPACE.removeFrom(image.toString()); }
 }
 
@@ -345,61 +390,29 @@ private PrimitiveNode Primitive() :
 
   (
     <NULL>
-    { primitive = new NullNode(); }
+    { primitive = new NullNode(SourceLocation.UNKNOWN /* TODO(brndn) */); }
   |
     b = <BOOLEAN>
-    { primitive = new BooleanNode(b.image.equals("true")); }
+    { primitive = new BooleanNode(b.image.equals("true"), createSrcLoc(b)); }
   |
     i = <INTEGER>
     { if (i.image.startsWith("0x")) {
-        primitive = new IntegerNode(Integer.parseInt(i.image.substring(2), 16));
+        primitive = new IntegerNode(Integer.parseInt(i.image.substring(2), 16), createSrcLoc(i));
       } else {
-        primitive = new IntegerNode(Integer.parseInt(i.image, 10));
+        primitive = new IntegerNode(Integer.parseInt(i.image, 10), createSrcLoc(i));
       }
     }
   |
     f = <FLOAT>
-    { primitive = new FloatNode(Double.parseDouble(f.image)); }
+    { primitive = new FloatNode(Double.parseDouble(f.image), createSrcLoc(f)); }
   |
     str = <STRING>
     { String strNoQuotes = str.image.substring(1, str.image.length() - 1);
-      primitive = new StringNode(UnescapeUtils.unescapeJs(strNoQuotes));
+      primitive = new StringNode(UnescapeUtils.unescapeJs(strNoQuotes), createSrcLoc(str));
     }
   )
 
   { return primitive; }
-}
-
-
-/**
- * UnaryOp -> OnlyUnaryOp | UnaryOrBinaryOp
- */
-private String UnaryOp() :
-{
-  Token unaryOp;
-}
-{
-  (
-    unaryOp = <ONLY_UNARY_OP>
-  | unaryOp = <UNARY_OR_BINARY_OP>
-  )
-  { return unaryOp.image; }
-}
-
-
-/**
- * BinaryOp -> OnlyBinaryOp | UnaryOrBinaryOp
- */
-private String BinaryOp() :
-{
-  Token binaryOp;
-}
-{
-  (
-    binaryOp = <ONLY_BINARY_OP>
-  | binaryOp = <UNARY_OR_BINARY_OP>
-  )
-  { return binaryOp.image; }
 }
 
 
@@ -413,15 +426,15 @@ private String BinaryOp() :
  *
  * ExprListInput -> ExprList EOF
  */
-private List<ExprRootNode<?>> ExprListInput() :
+private List<ExprNode> ExprListInput() :
 {
   List<ExprNode> exprList;
 }
 {
   exprList = ExprList()
-  { List<ExprRootNode<?>> rootedExprList = Lists.newArrayList();
+  { List<ExprNode> rootedExprList = Lists.newArrayList();
     for (ExprNode expr : exprList) {
-      rootedExprList.add(new ExprRootNode<ExprNode>(expr));
+      rootedExprList.add(expr);
     }
   }
   <EOF>
@@ -434,14 +447,14 @@ private List<ExprRootNode<?>> ExprListInput() :
  *
  * ExprInput -> Expr EOF
  */
-private ExprRootNode<?> ExprInput() :
+private ExprNode ExprInput() :
 {
   ExprNode expr;
 }
 {
   expr = Expr()
   <EOF>
-  { return new ExprRootNode<ExprNode>(expr); }
+  { return expr; }
 }
 
 
@@ -450,30 +463,14 @@ private ExprRootNode<?> ExprInput() :
  *
  * VarInput -> Var EOF
  */
-private ExprRootNode<VarNode> VarInput() :
+private VarNode VarInput() :
 {
   VarNode var;
 }
 {
   var = Var()
   <EOF>
-  { return new ExprRootNode<VarNode>(var); }
-}
-
-
-/**
- * Matches the whole input if it is a data reference.
- *
- * DataRefInput -> DataRef EOF
- */
-private ExprRootNode<DataRefNode> DataRefInput():
-{
-  DataRefNode dataRef;
-}
-{
-  dataRef = DataRef()
-  <EOF>
-  { return new ExprRootNode<DataRefNode>(dataRef); }
+  { return var; }
 }
 
 
@@ -482,14 +479,14 @@ private ExprRootNode<DataRefNode> DataRefInput():
  *
  * GlobalInput -> Global EOF
  */
-private ExprRootNode<GlobalNode> GlobalInput():
+private GlobalNode GlobalInput():
 {
   GlobalNode global;
 }
 {
   global = Global()
   <EOF>
-  { return new ExprRootNode<GlobalNode>(global); }
+  { return global; }
 }
 
 
@@ -530,6 +527,24 @@ private ExprNode Expr() :
   { return expr; }
 }
 
+// For implementing operators with multiple precedence levels we implement the 'classic solution'
+// as documented here: http://www.engr.mun.ca/~theo/Misc/exp_parsing.htm#classic
+//
+// Previously we used the 'precedence climbing' algorithm described there which has the benefits
+// of being shorter, but our implementation relied on semantic lookahead and was overly tied
+// to the com.google.template.soy.exprtree.Operator enum which made it overly difficult to
+// model things other than 'Operator's (like '.', '?.' and '['..']' operators).  Instead we
+// 'hardcode' the precedence in the structure of the following calls.
+//
+// All of the rules below implement a simple rule that looks like:
+// PrecExprN -> PrecExprN+1 ( OPERATOR_N PrecExprN+1 )*
+//
+// which covers all the left associative operators
+//
+// There are a few exceptions, namely the ternary and unary operators (which are right
+// associative). In particular unary negation introduces some difficulty, because there is
+// the potential for ambiguity (in the tokenizer only) with minus.  This is resolved by
+// handling those cases separately.
 
 /**
  * Matches expressions with precedence levels 1 and higher.
@@ -546,78 +561,44 @@ private ExprNode PrecExpr1() :
 {
   { ExprNode expr; }
 
-  expr = PrecExpr(2)
+  expr = PrecExpr2()
 
+  // These operators are right associative, the right recursion on PrecExpr1
+  // accomplishes this
   [
-    (
-      "?:"
-      expr1 = PrecExpr1()
+    "?:"
+    expr1 = PrecExpr1()
 
-      { NullCoalescingOpNode nullCoal = new OperatorNodes.NullCoalescingOpNode();
-        nullCoal.addChild(expr);
-        nullCoal.addChild(expr1);
-        expr = nullCoal;
-      }
-    |
-      "?"
-      expr1 = PrecExpr1()
-      ":"
-      expr2 = PrecExpr1()
+    { expr = Operator.NULL_COALESCING.createNode(expr, expr1); }
+  |
+    "?"
+    expr1 = PrecExpr1()
+    ":"
+    expr2 = PrecExpr1()
 
-      { ConditionalOpNode cond = new OperatorNodes.ConditionalOpNode();
-        cond.addChild(expr);
-        cond.addChild(expr1);
-        cond.addChild(expr2);
-        expr = cond;
-      }
-    )
+    { expr = Operator.CONDITIONAL.createNode(expr, expr1, expr2); }
   ]
 
   { return expr; }
 }
 
-
 /**
- * For handling binary operators, we use the Precedence Climbing algorithm described in:
- *   http://www.engr.mun.ca/~theo/Misc/exp_parsing.htm
- * While the performance gain may not be important, the code also becomes much shorter.
- *
- * PrecExpr(minPrec) matches expressions with precedence level minPrec and higher (but no lower
- * levels). In our parsing algorithm, this rule will only be called with minPrec in 2-8.
- *
- * PrecExpr(p) -> Primary ( b=BinaryOp PrecExpr(prec(b)+1) )*
- *
- * The BinaryOp will only match if its precedence level is at least p (this is done via semantic
- * lookahead). Note that the calculation "prec(b)+1" for the minPrec of the right PrecExpr is only
- * correct for binary operators that associate left-to-right. Fortunately, all of our supported
- * binary operators associate left-to-right. If we ever add a binary operator that associates
- * right-to-left (e.g. '^' for exponentiation), then we'll have to change the computation for the
- * minPrec of the right PrecExpr.
+ * Matches expressions with precedence levels 2 and higher.
  */
-private ExprNode PrecExpr(int minPrec) :
+private ExprNode PrecExpr2() :
 {
-  String binaryOp;
-  ExprNode rightOperand;
+  ExprNode rightHand;
+  Token op;
 }
 {
   { ExprNode expr; }
 
-  expr = Primary()
-
+  expr = PrecExpr3()
   (
-    // First, use syntactic lookahead to check next token is a binary op.
-    // Second, use semantic lookahead to check its precedence is at least minPrec.
-    LOOKAHEAD( BinaryOp(),
-               { Operator.of(getToken(1).image, 2).getPrecedence() >= minPrec } )
+    op = <PRECEDENCE_2_OP>
+    rightHand = PrecExpr3()
 
-    binaryOp = BinaryOp()
-    rightOperand = PrecExpr(Operator.of(binaryOp, 2).getPrecedence() + 1)
-
-    { OperatorNode opNode = createOperatorNode(binaryOp, 2);
-      opNode.addChild(expr);  // expr is the current left operand
-      opNode.addChild(rightOperand);
-      expr = opNode;
-    }
+    { expr = createOperatorNode(op.image, 2, expr, rightHand); }
   )*
 
   { return expr; }
@@ -625,14 +606,194 @@ private ExprNode PrecExpr(int minPrec) :
 
 
 /**
+ * Matches expressions with precedence levels 3 and higher.
+ */
+private ExprNode PrecExpr3() :
+{
+  ExprNode rightHand;
+  Token op;
+}
+{
+  { ExprNode expr; }
+
+  expr = PrecExpr4()
+  (
+    op = <PRECEDENCE_3_OP>
+    rightHand = PrecExpr4()
+
+    { expr = createOperatorNode(op.image, 3, expr, rightHand); }
+  )*
+
+  { return expr; }
+}
+
+
+/**
+ * Matches expressions with precedence levels 4 and higher.
+ */
+private ExprNode PrecExpr4() :
+{
+  ExprNode rightHand;
+  Token op;
+}
+{
+  { ExprNode expr; }
+
+  expr = PrecExpr5()
+  (
+    op = <PRECEDENCE_4_OP>
+    rightHand = PrecExpr5()
+
+    { expr = createOperatorNode(op.image, 4, expr, rightHand); }
+  )*
+
+  { return expr; }
+}
+
+/**
+ * Matches expressions with precedence levels 5 and higher.
+ */
+private ExprNode PrecExpr5() :
+{
+  ExprNode rightHand;
+  Token op;
+}
+{
+  { ExprNode expr; }
+
+  expr = PrecExpr6()
+  (
+    op = <PRECEDENCE_5_OP>
+    rightHand = PrecExpr6()
+
+    { expr = createOperatorNode(op.image, 5, expr, rightHand); }
+  )*
+
+  { return expr; }
+}
+
+/**
+ * Matches expressions with precedence levels 6 and higher.
+ */
+private ExprNode PrecExpr6() :
+{
+  ExprNode rightHand;
+  Token op;
+}
+{
+  { ExprNode expr; }
+
+  expr = PrecExpr7()
+  (
+    op = <PRECEDENCE_6_OP>
+    rightHand = PrecExpr7()
+
+    { expr = createOperatorNode(op.image, 6, expr, rightHand); }
+
+  // "-" has to be handled specially due to ambiguity with unary negation
+  | "-"
+    rightHand = PrecExpr7()
+
+    { expr = Operator.MINUS.createNode(expr, rightHand); }
+  )*
+
+  { return expr; }
+}
+
+/**
+ * Matches expressions with precedence levels 7 and higher.
+ */
+private ExprNode PrecExpr7() :
+{
+  ExprNode rightHand;
+  Token op;
+}
+{
+  { ExprNode expr; }
+
+  expr = PrecExpr8()
+  (
+    op = <PRECEDENCE_7_OP>
+    rightHand = PrecExpr8()
+
+    { expr = createOperatorNode(op.image, 7, expr, rightHand); }
+  )*
+
+  { return expr; }
+}
+
+
+/**
+ * Matches expressions with precedence levels 8 and higher.
+ *
+ * <p>This level has our right associative unary operators '-' and 'not' as well as data access
+ */
+private ExprNode PrecExpr8() :
+{
+  Token unaryOp;
+}
+{
+  { ExprNode expr; }
+  (
+   expr = PrecExpr9()
+   |
+   unaryOp = <UNARY_OP>
+   expr = PrecExpr8()
+   {
+    expr = createOperatorNode(unaryOp.image, 8, expr);
+   }
+
+   // "-" has to be handled specially due to ambiguity with unary negation
+   | "-"
+    expr = PrecExpr8()
+    {
+      expr = Operator.NEGATIVE.createNode(expr);
+    }
+  )
+  { return expr; }
+}
+
+/**
+ * Matches expressions with precedence levels 9 and higher.
+ *
+ * <p>This level has our data access 'operators'
+ */
+private ExprNode PrecExpr9() :
+{
+  Token tok;
+  ExprNode keyExpr;
+  Token op;
+}
+{
+    { ExprNode expr; }
+    expr = Primary()
+    (
+       tok = <DOT_IDENT>
+       { expr = new FieldAccessNode(expr, tok.image.substring(1), false) /* null safe */; }
+     |
+       tok = <QUESTION_DOT_IDENT>
+       { expr = new FieldAccessNode(expr, tok.image.substring(2), true /* null safe */); }
+     |
+       "["
+        keyExpr = Expr()
+       "]"
+       { expr = new ItemAccessNode(expr, keyExpr, false /* null safe */); }
+     |
+       "?["
+        keyExpr = Expr()
+       "]"
+       { expr = new ItemAccessNode(expr, keyExpr, true /* null safe */); }
+    )*
+
+  { return expr; }
+}
+
+/**
  * Primary ->   "(" Expr ")"
- *            | u=UnaryOp PrecExpr(prec(u))
  *            | FunctionCall | DataRef | Global | ListLiteral | MapLiteral | Primitive
  */
 private ExprNode Primary() :
 {
-  String unaryOp;
-  ExprNode operand;
 }
 {
   { ExprNode primary; }
@@ -641,13 +802,6 @@ private ExprNode Primary() :
     "("
     primary = Expr()
     ")"
-  |
-    unaryOp = UnaryOp()
-    operand = PrecExpr(Operator.of(unaryOp, 1).getPrecedence())
-    { OperatorNode opNode = createOperatorNode(unaryOp, 1);
-      opNode.addChild(operand);
-      primary = opNode;
-    }
   |
     LOOKAHEAD( <IDENT> "(" )
     primary = FunctionCall()
@@ -682,71 +836,37 @@ private VarNode Var():
   dollarIdent = <DOLLAR_IDENT>
   { String identStr = dollarIdent.image.substring(1);
     if (identStr.equals("ij")) {
-      throw new ParseException("Invalid var name 'ij' ('ij' is for injected data ref).");
+      errorReporter.report(createSrcLoc(dollarIdent), INVALID_VAR_NAME_IJ);
     }
-    return new VarNode(identStr);
+    return new VarNode(identStr, createSrcLoc(dollarIdent));
   }
 }
 
 
 /**
  * DataRef ->  ( "$ij." Ident | "$ij?." Ident | DollarIdent )
- *             (   DotIdent | QuestionDotIdent | DotIndex | QuestionDotIndex
- *               | "[" Expr "]" | "?[" Expr "]" )*
  */
-private DataRefNode DataRef() :
+private ExprNode DataRef() :
 {
-  Token ident, dollarIdent, dotIdent, questionDotIdent, dotIndex, questionDotIndex;
+  Token ident;
+  VarNode varNode;
   ExprNode expr;
 }
 {
-  { DataRefNode dataRef; }
+  { ExprNode dataRef; }
 
   (
     "$ij."
     ident = <IDENT>
-    { dataRef = new DataRefNode(true, false, ident.image); }
+    { dataRef = new VarRefNode(ident.image, createSrcLoc(ident), true, false, null); }
   |
     "$ij?."
     ident = <IDENT>
-    { dataRef = new DataRefNode(true, true, ident.image); }
+    { dataRef = new VarRefNode(ident.image, createSrcLoc(ident), true, true, null); }
   |
-    dollarIdent = <DOLLAR_IDENT>
-    { String identStr = dollarIdent.image.substring(1);
-      if (identStr.equals("ij")) {
-        throw new ParseException("Invalid param name 'ij' ('ij' is for injected data ref).");
-      }
-      dataRef = new DataRefNode(false, false, identStr);
-    }
+    varNode = Var()
+    { dataRef = new VarRefNode(varNode.getName(), varNode.getSourceLocation(), false, false, null); }
   )
-
-  (
-    dotIdent = <DOT_IDENT>
-    { dataRef.addChild(new DataRefAccessKeyNode(false, dotIdent.image.substring(1))); }
-  |
-    questionDotIdent = <QUESTION_DOT_IDENT>
-    { dataRef.addChild(new DataRefAccessKeyNode(true, questionDotIdent.image.substring(2))); }
-  |
-    dotIndex = <DOT_INDEX>
-    { dataRef.addChild(
-          new DataRefAccessIndexNode(false, Integer.parseInt(dotIndex.image.substring(1))));
-    }
-  |
-    questionDotIndex = <QUESTION_DOT_INDEX>
-    { dataRef.addChild(
-          new DataRefAccessIndexNode(true, Integer.parseInt(questionDotIndex.image.substring(2))));
-    }
-  |
-    "["
-    expr = Expr()
-    "]"
-    { dataRef.addChild(new DataRefAccessExprNode(false, expr)); }
-  |
-    "?["
-    expr = Expr()
-    "]"
-    { dataRef.addChild(new DataRefAccessExprNode(true, expr)); }
-  )*
 
   { return dataRef; }
 }
@@ -757,20 +877,37 @@ private DataRefNode DataRef() :
  */
 private GlobalNode Global() :
 {
-  Token ident, dotIdent;
+  Token ident;
+  SourceLocation loc;
 }
 {
   {  StringBuilder globalNameSb = new StringBuilder(); }
 
   ident = <IDENT>
-  { globalNameSb.append(ident.image); }
+  {
+    loc = createSrcLoc(ident);
+    globalNameSb.append(ident.image);
+  }
 
   (
-    dotIdent = <DOT_IDENT>
-    { globalNameSb.append(dotIdent.image); }
+    // Resolve ambiguity with data access, by preferring extending the global to creating a
+    // FieldAccessNode with a global as the base expression.
+    // It used to be the case that globals were unambiguous with data access due to the fact that
+    // data access could only use varrefs (and other data access) as a base expression,  but
+    // since now data access can use any Primary as a base expression it is ambiguous (since
+    // Global() is a primary).  The LOOKAHEAD resolves the ambiguity, but another possibly better
+    // option is just to model globals as a sequence of field accesses with a global as the base
+    // expression.  This would require the global substituion phase to be more complex, but
+    // probably makes more sense.
+    LOOKAHEAD(2)
+    ident = <DOT_IDENT>
+    {
+      loc = loc.extend(createSrcLoc(ident));
+      globalNameSb.append(ident.image);
+    }
   )*
 
-  { return new GlobalNode(globalNameSb.toString()); }
+  { return new GlobalNode(globalNameSb.toString(), loc); }
 }
 
 
@@ -791,7 +928,7 @@ private FunctionNode FunctionCall() :
   ]
   ")"
 
-  { FunctionNode fnNode = new FunctionNode(ident.image);
+  { FunctionNode fnNode = new FunctionNode(ident.image, createSrcLoc(ident));
     if (exprList != null) {
       fnNode.addChildren(exprList);
     }
@@ -830,7 +967,7 @@ private ListLiteralNode ListLiteral() :
   ]
   "]"
 
-  { return new ListLiteralNode(items); }
+  { return new ListLiteralNode(items, SourceLocation.UNKNOWN /* TODO(brndn) */); }
 }
 
 
@@ -844,6 +981,7 @@ private MapLiteralNode MapLiteral() :
 {
   Token ident;
   ExprNode keyExpr, valueExpr;
+  SourceLocation begin, end;
 }
 {
   { List<ExprNode> alternatingKeysAndValues = Lists.newArrayList(); }
@@ -855,9 +993,9 @@ private MapLiteralNode MapLiteral() :
     [
       LOOKAHEAD( <IDENT> ":" )
       ident = <IDENT>
-      { throw new ParseException(
-            "Disallowed single-identifier key \"" + ident.image + "\" in map literal" +
-            " (please surround with single quotes for string or parentheses for global).");
+      {
+        errorReporter.report(
+            createSrcLoc(ident), SINGLE_IDENTIFIER_KEY_IN_MAP_LITERAL, ident.image);
       }
     ]
     keyExpr = Expr()
@@ -874,9 +1012,9 @@ private MapLiteralNode MapLiteral() :
       [
         LOOKAHEAD( <IDENT> ":" )
         ident = <IDENT>
-        { throw new ParseException(
-              "Disallowed single-identifier key \"" + ident.image + "\" in map literal" +
-              " (please surround with single quotes for string or parentheses for global).");
+        {
+          errorReporter.report(
+              createSrcLoc(ident), SINGLE_IDENTIFIER_KEY_IN_MAP_LITERAL, ident.image);
         }
       ]
       keyExpr = Expr()
@@ -892,5 +1030,5 @@ private MapLiteralNode MapLiteral() :
   )
   "]"
 
-  { return new MapLiteralNode(alternatingKeysAndValues); }
+  { return new MapLiteralNode(alternatingKeysAndValues, SourceLocation.UNKNOWN /* TODO(brndn) */); }
 }

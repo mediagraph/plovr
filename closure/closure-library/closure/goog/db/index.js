@@ -36,6 +36,7 @@ goog.require('goog.debug');
  *
  * @param {!IDBIndex} index Underlying IDBIndex object.
  * @constructor
+ * @final
  */
 goog.db.Index = function(index) {
   /**
@@ -216,7 +217,7 @@ goog.db.Index.prototype.getAllKeys = function(opt_key) {
  * Example usage:
  *
  * <code>
- *  var cursor = index.openCursor(goog.db.Range.bound('a', 'c'));
+ *  var cursor = index.openCursor(goog.db.KeyRange.bound('a', 'c'));
  *
  *  var key = goog.events.listen(
  *      cursor, goog.db.Cursor.EventType.NEW_DATA,

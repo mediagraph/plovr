@@ -16,9 +16,12 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.truth.Truth.assertThat;
 
 import com.google.common.base.Joiner;
-import com.google.common.collect.Lists;
+import com.google.common.collect.ImmutableList;
+import com.google.javascript.jscomp.testing.BlackHoleErrorManager;
+
 import junit.framework.TestCase;
 
 import java.util.List;
@@ -27,7 +30,8 @@ import java.util.List;
  * Tests for {@link ExternExportsPass}.
  *
  */
-public class ExternExportsPassTest extends TestCase {
+
+public final class ExternExportsPassTest extends TestCase {
 
   private boolean runCheckTypes = true;
 
@@ -44,7 +48,6 @@ public class ExternExportsPassTest extends TestCase {
   @Override
   public void setUp() throws Exception {
     super.setUp();
-
     setRunCheckTypes(true);
   }
 
@@ -428,19 +431,19 @@ public class ExternExportsPassTest extends TestCase {
 
     Result libraryCompileResult = compileAndExportExterns(librarySource);
 
-    assertEquals(0, libraryCompileResult.warnings.length);
-    assertEquals(0, libraryCompileResult.errors.length);
+    assertThat(libraryCompileResult.warnings).isEmpty();
+    assertThat(libraryCompileResult.errors).isEmpty();
 
     String generatedExterns = libraryCompileResult.externExport;
 
     Result clientCompileResult = compileAndExportExterns(clientSource,
         generatedExterns);
 
-    assertEquals(0, clientCompileResult.warnings.length);
-    assertEquals(0, clientCompileResult.errors.length);
+    assertThat(clientCompileResult.warnings).isEmpty();
+    assertThat(clientCompileResult.errors).isEmpty();
   }
 
-  public void testWarnOnExportFunctionWithUnknownReturnType() {
+  public void testDontWarnOnExportFunctionWithUnknownReturnType() {
     String librarySource =
       "var InternalName = function() {" +
       "  return 6;" +
@@ -449,8 +452,8 @@ public class ExternExportsPassTest extends TestCase {
 
       Result libraryCompileResult = compileAndExportExterns(librarySource);
 
-      assertEquals(1, libraryCompileResult.warnings.length);
-      assertEquals(0, libraryCompileResult.errors.length);
+      assertThat(libraryCompileResult.warnings).isEmpty();
+      assertThat(libraryCompileResult.errors).isEmpty();
   }
 
   public void testDontWarnOnExportConstructorWithUnknownReturnType() {
@@ -464,8 +467,8 @@ public class ExternExportsPassTest extends TestCase {
 
       Result libraryCompileResult = compileAndExportExterns(librarySource);
 
-      assertEquals(0, libraryCompileResult.warnings.length);
-      assertEquals(0, libraryCompileResult.errors.length);
+      assertThat(libraryCompileResult.warnings).isEmpty();
+      assertThat(libraryCompileResult.errors).isEmpty();
   }
 
   public void testTypedef() {
@@ -504,6 +507,65 @@ public class ExternExportsPassTest extends TestCase {
                     " * @constructor\n" +
                     " */\n" +
                     "var foobar = function() {\n};\n");
+  }
+
+  public void testExportLocalPropertyInConstructor() throws Exception {
+    compileAndCheck(
+        "/** @constructor */function F() { /** @export */ this.x = 5;}"
+        + "goog.exportSymbol('F', F);",
+        "/**\n"
+        + " * @constructor\n"
+        + " */\n"
+        + "var F = function() {\n};\n"
+        + "F.prototype.x;\n");
+  }
+
+  public void testExportLocalPropertyInConstructor2() throws Exception {
+    compileAndCheck(
+        "/** @constructor */function F() { /** @export */ this.x = 5;}"
+        + "goog.exportSymbol('F', F);"
+        + "goog.exportProperty(F.prototype, 'x', F.prototype.x);",
+        "/**\n"
+        + " * @constructor\n"
+        + " */\n"
+        + "var F = function() {\n};\n"
+        + "F.prototype.x;\n");
+  }
+
+  public void testExportLocalPropertyInConstructor3() throws Exception {
+    compileAndCheck(
+        "/** @constructor */function F() { /** @export */ this.x;}"
+        + "goog.exportSymbol('F', F);",
+        "/**\n"
+        + " * @constructor\n"
+        + " */\n"
+        + "var F = function() {\n};\n"
+        + "F.prototype.x;\n");
+  }
+
+  public void testExportLocalPropertyInConstructor4() throws Exception {
+    compileAndCheck(
+        "/** @constructor */function F() { /** @export */ this.x = function(/** string */ x){};}"
+        + "goog.exportSymbol('F', F);",
+        "/**\n"
+        + " * @constructor\n"
+        + " */\n"
+        + "var F = function() {\n};\n"
+        + "/**\n"
+        + " * @param {string} x\n"
+        + " * @return {undefined}\n"
+        + " */\n"
+        + "F.prototype.x = function(x) {\n};\n");
+  }
+
+  public void testExportLocalPropertyNotInConstructor() throws Exception {
+    compileAndCheck(
+        "function f() { /** @export */ this.x = 5;}"
+        + "goog.exportSymbol('f', f);",
+        "/**\n"
+        + " * @return {undefined}\n"
+        + " */\n"
+        + "var f = function() {\n};\n");
   }
 
   public void testExportParamWithSymbolDefinedInFunction() throws Exception {
@@ -565,7 +627,7 @@ public class ExternExportsPassTest extends TestCase {
     assertEquals(expected, result.externExport);
   }
 
-  public void testWarnOnExportFunctionWithUnknownParameterTypes() {
+  public void testDontWarnOnExportFunctionWithUnknownParameterTypes() {
     /* This source is missing types for the b and c parameters */
     String librarySource =
       "/**\n" +
@@ -579,8 +641,8 @@ public class ExternExportsPassTest extends TestCase {
 
       Result libraryCompileResult = compileAndExportExterns(librarySource);
 
-      assertEquals(2, libraryCompileResult.warnings.length);
-      assertEquals(0, libraryCompileResult.errors.length);
+      assertThat(libraryCompileResult.warnings).isEmpty();
+      assertThat(libraryCompileResult.errors).isEmpty();
   }
 
   private Result compileAndExportExterns(String js) {
@@ -597,26 +659,27 @@ public class ExternExportsPassTest extends TestCase {
    */
   private Result compileAndExportExterns(String js, String externs) {
     Compiler compiler = new Compiler();
+    BlackHoleErrorManager.silence(compiler);
     CompilerOptions options = new CompilerOptions();
     options.externExportsPath = "externs.js";
+    options.declaredGlobalExternsOnWindow = false;
 
     // Turn off IDE mode.
-    options.ideMode = false;
+    options.setIdeMode(false);
 
     /* Check types so we can make sure our exported externs have
      * type information.
      */
-    options.checkSymbols = true;
-    options.checkTypes = runCheckTypes;
+    options.setCheckSymbols(true);
+    options.setCheckTypes(runCheckTypes);
 
-    List<SourceFile> inputs = Lists.newArrayList(
-      SourceFile.fromCode("testcode",
-                            "var goog = {};" +
-                            "goog.exportSymbol = function(a, b) {}; " +
-                            "goog.exportProperty = function(a, b, c) {}; " +
-                            js));
+    List<SourceFile> inputs = ImmutableList.of(SourceFile.fromCode(
+        "testcode",
+        "var goog = {};"
+        + "goog.exportSymbol = function(a, b) {}; "
+        + "goog.exportProperty = function(a, b, c) {}; " + js));
 
-    List<SourceFile> externFiles = Lists.newArrayList(
+    List<SourceFile> externFiles = ImmutableList.of(
         SourceFile.fromCode("externs", externs));
 
     Result result = compiler.compile(externFiles, inputs, options);

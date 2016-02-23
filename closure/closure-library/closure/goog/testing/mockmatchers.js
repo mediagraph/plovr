@@ -33,6 +33,7 @@ goog.provide('goog.testing.mockmatchers.TypeOf');
 
 goog.require('goog.array');
 goog.require('goog.dom');
+goog.require('goog.testing.TestCase');
 goog.require('goog.testing.asserts');
 
 
@@ -102,6 +103,7 @@ goog.testing.mockmatchers.ArgumentMatcher.prototype.matches =
  * @param {Function} ctor The class that will be used for verification.
  * @constructor
  * @extends {goog.testing.mockmatchers.ArgumentMatcher}
+ * @final
  */
 goog.testing.mockmatchers.InstanceOf = function(ctor) {
   goog.testing.mockmatchers.ArgumentMatcher.call(this,
@@ -123,6 +125,7 @@ goog.inherits(goog.testing.mockmatchers.InstanceOf,
  * @param {string} type The type that a given argument must have.
  * @constructor
  * @extends {goog.testing.mockmatchers.ArgumentMatcher}
+ * @final
  */
 goog.testing.mockmatchers.TypeOf = function(type) {
   goog.testing.mockmatchers.ArgumentMatcher.call(this,
@@ -140,6 +143,7 @@ goog.inherits(goog.testing.mockmatchers.TypeOf,
  * @param {RegExp} regexp The regular expression that the argument must match.
  * @constructor
  * @extends {goog.testing.mockmatchers.ArgumentMatcher}
+ * @final
  */
 goog.testing.mockmatchers.RegexpMatch = function(regexp) {
   goog.testing.mockmatchers.ArgumentMatcher.call(this,
@@ -158,6 +162,7 @@ goog.inherits(goog.testing.mockmatchers.RegexpMatch,
  * For example: mockFunction('username', 'password', IgnoreArgument);
  * @constructor
  * @extends {goog.testing.mockmatchers.ArgumentMatcher}
+ * @final
  */
 goog.testing.mockmatchers.IgnoreArgument = function() {
   goog.testing.mockmatchers.ArgumentMatcher.call(this,
@@ -202,6 +207,9 @@ goog.testing.mockmatchers.ObjectEquals.prototype.matches =
     if (opt_expectation) {
       opt_expectation.addErrorMessage(e.message);
     }
+    // The mock will report the error when validated, so ignore the caught
+    // assertion exception.
+    goog.testing.TestCase.invalidateAssertionException(e);
     return false;
   }
 };
@@ -220,6 +228,7 @@ goog.testing.mockmatchers.ObjectEquals.prototype.matches =
  *      an error message for when a match fails.
  * @constructor
  * @extends {goog.testing.mockmatchers.ArgumentMatcher}
+ * @final
  */
 goog.testing.mockmatchers.SaveArgument = function(opt_matcher, opt_matchName) {
   goog.testing.mockmatchers.ArgumentMatcher.call(
@@ -354,9 +363,9 @@ goog.testing.mockmatchers.isNodeLike =
  * expectations.  The expectations array can be a mix of ArgumentMatcher
  * implementations and values.  True will be returned if values are identical or
  * if a matcher returns a positive result.
- * @param {Array} expectedArr An array of expectations which can be either
+ * @param {Array<?>} expectedArr An array of expectations which can be either
  *     values to check for equality or ArgumentMatchers.
- * @param {Array} arr The array to match.
+ * @param {Array<?>} arr The array to match.
  * @param {goog.testing.MockExpectation?=} opt_expectation The expectation
  *     for this match.
  * @return {boolean} Whether or not the given array matches the expectations.

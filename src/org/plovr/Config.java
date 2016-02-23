@@ -1,25 +1,5 @@
 package org.plovr;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.nio.charset.Charset;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.logging.Logger;
-import java.util.regex.Pattern;
-
-import javax.annotation.Nullable;
-
-import org.plovr.util.Pair;
-import org.plovr.webdriver.WebDriverFactory;
-
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Charsets;
 import com.google.common.base.Function;
@@ -37,12 +17,14 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
+import com.google.common.css.JobDescription;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import com.google.javascript.jscomp.CheckLevel;
 import com.google.javascript.jscomp.ClosureCodingConvention;
 import com.google.javascript.jscomp.CompilationLevel;
+import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.jscomp.CompilerPass;
 import com.google.javascript.jscomp.CustomPassExecutionTime;
 import com.google.javascript.jscomp.DiagnosticGroup;
@@ -52,6 +34,28 @@ import com.google.javascript.jscomp.StrictWarningsGuard;
 import com.google.javascript.jscomp.VariableMap;
 import com.google.javascript.jscomp.WarningLevel;
 import com.google.template.soy.xliffmsgplugin.XliffMsgPluginModule;
+
+import org.plovr.util.Pair;
+import org.plovr.webdriver.WebDriverFactory;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.charset.Charset;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Logger;
+import java.util.regex.Pattern;
+
+import javax.annotation.Nullable;
 
 
 public final class Config implements Comparable<Config> {
@@ -124,6 +128,8 @@ public final class Config implements Comparable<Config> {
 
   private final ListMultimap<CustomPassExecutionTime, CompilerPassFactory> customPasses;
 
+  private final List<WarningsGuardFactory> customWarningsGuards;
+
   private final File documentationOutputDirectory;
 
   private final Set<String> stripNameSuffixes;
@@ -135,6 +141,12 @@ public final class Config implements Comparable<Config> {
   private final boolean ambiguateProperties;
 
   private final boolean disambiguateProperties;
+
+  private final LanguageMode languageIn;
+
+  private final LanguageMode languageOut;
+
+  private final boolean newTypeInference;
 
   @Nullable
   private final JsonObject experimentalCompilerOptions;
@@ -148,6 +160,10 @@ public final class Config implements Comparable<Config> {
   private final File propertyMapInputFile;
 
   private final File propertyMapOutputFile;
+
+  private final String sourceMapBaseUrl;
+
+  private final String sourceMapOutputName;
 
   private List<FileWithLastModified> configFileInheritanceChain =
       Lists.newArrayList();
@@ -164,7 +180,11 @@ public final class Config implements Comparable<Config> {
 
   private final File cssOutputFile;
 
+  private final JobDescription.OutputFormat cssOutputFormat;
+
   private final PrintStream errorStream;
+
+  private final List<LocationMapping> locationMappings;
 
   /**
    * @param id Unique identifier for the configuration. This is used as an
@@ -196,12 +216,16 @@ public final class Config implements Comparable<Config> {
       boolean treatWarningsAsErrors,
       Map<String, JsonPrimitive> defines,
       ListMultimap<CustomPassExecutionTime, CompilerPassFactory> customPasses,
+      List<WarningsGuardFactory> customWarningsGuards,
       File documentationOutputDirectory,
       Set<String> stripNameSuffixes,
       Set<String> stripTypePrefixes,
       Set<String> idGenerators,
       boolean ambiguateProperties,
       boolean disambiguateProperties,
+      LanguageMode languageIn,
+      LanguageMode languageOut,
+      boolean newTypeInference,
       JsonObject experimentalCompilerOptions,
       List<FileWithLastModified> configFileInheritanceChain,
       String globalScopeName,
@@ -209,13 +233,17 @@ public final class Config implements Comparable<Config> {
       File variableMapOutputFile,
       File propertyMapInputFile,
       File propertyMapOutputFile,
+      String sourceMapBaseUrl,
+      String sourceMapOutputName,
       List<File> cssInputs,
       Set<String> cssDefines,
       List<String> allowedUnrecognizedProperties,
       List<String> allowedNonStandardCssFunctions,
       String gssFunctionMapProviderClassName,
       File cssOutputFile,
-      PrintStream errorStream) {
+      JobDescription.OutputFormat cssOutputFormat,
+      PrintStream errorStream,
+      List<LocationMapping> locationMappings) {
     Preconditions.checkNotNull(defines);
 
     this.id = id;
@@ -240,6 +268,7 @@ public final class Config implements Comparable<Config> {
     this.exportTestFunctions = exportTestFunctions;
     this.treatWarningsAsErrors = treatWarningsAsErrors;
     this.customPasses = customPasses;
+    this.customWarningsGuards = customWarningsGuards;
     this.documentationOutputDirectory = documentationOutputDirectory;
     this.defines = ImmutableMap.copyOf(defines);
     this.stripNameSuffixes = ImmutableSet.copyOf(stripNameSuffixes);
@@ -247,6 +276,9 @@ public final class Config implements Comparable<Config> {
     this.idGenerators = ImmutableSet.copyOf(idGenerators);
     this.ambiguateProperties = ambiguateProperties;
     this.disambiguateProperties = disambiguateProperties;
+    this.languageIn = languageIn;
+    this.languageOut = languageOut;
+    this.newTypeInference = newTypeInference;
     this.experimentalCompilerOptions = experimentalCompilerOptions;
     this.configFileInheritanceChain = ImmutableList.copyOf(configFileInheritanceChain);
     this.globalScopeName = globalScopeName;
@@ -254,6 +286,8 @@ public final class Config implements Comparable<Config> {
     this.variableMapOutputFile = variableMapOutputFile;
     this.propertyMapInputFile = propertyMapInputFile;
     this.propertyMapOutputFile = propertyMapOutputFile;
+    this.sourceMapBaseUrl = sourceMapBaseUrl;
+    this.sourceMapOutputName = sourceMapOutputName;
     this.cssInputs = ImmutableList.copyOf(cssInputs);
     this.cssDefines = ImmutableSet.copyOf(cssDefines);
     this.allowedUnrecognizedProperties = ImmutableList.copyOf(
@@ -262,7 +296,9 @@ public final class Config implements Comparable<Config> {
         allowedNonStandardCssFunctions);
     this.gssFunctionMapProviderClassName = gssFunctionMapProviderClassName;
     this.cssOutputFile = cssOutputFile;
+    this.cssOutputFormat = cssOutputFormat;
     this.errorStream = Preconditions.checkNotNull(errorStream);
+    this.locationMappings = locationMappings;
   }
 
   public static Builder builder(File relativePathBase, File configFile,
@@ -335,6 +371,53 @@ public final class Config implements Comparable<Config> {
     return outputWrapper;
   }
 
+  /**
+   * @return A complete output wrapper, including the wrapper for global re-scoping.
+   */
+  public String getOutputAndGlobalScopeWrapper(boolean isRootModule, String moduleName, String sourceUrl) {
+    String outputWrapper = getOutputWrapper();
+    String outputWrapperMarker = getOutputWrapperMarker();
+    if (Strings.isNullOrEmpty(outputWrapper)) {
+      outputWrapper = outputWrapperMarker;
+    }
+
+    boolean hasGlobalScopeName =
+        !Strings.isNullOrEmpty(getGlobalScopeName()) &&
+        getCompilationMode() != CompilationMode.WHITESPACE;
+
+    if (hasGlobalScopeName) {
+      // Initialize the global scope if not initialized yet.
+      String globalScopeNameWrapper = "";
+      if (isRootModule) {
+        globalScopeNameWrapper += "var " + getGlobalScopeName() + "={};";
+      }
+      globalScopeNameWrapper +=
+          "(function(" + GLOBAL_SCOPE_NAME + "){\n" +
+          outputWrapperMarker +
+          "}).call(this, " + getGlobalScopeName() + ");";
+      outputWrapper = outputWrapper.replace(outputWrapperMarker, globalScopeNameWrapper);
+    }
+
+    // http://code.google.com/p/closure-library/issues/detail?id=196
+    // http://blog.getfirebug.com/2009/08/11/give-your-eval-a-name-with-sourceurl/
+    // non-root modules are loaded with eval, give it a sourceURL for better debugging
+    if (!isRootModule && !Strings.isNullOrEmpty(sourceUrl)) {
+      outputWrapper += "\n//# sourceURL=" + sourceUrl;
+    }
+
+    String sourceMapFileName = getSourceMapOutputName().replace("%s", moduleName);
+    if (!Strings.isNullOrEmpty(getSourceMapBaseUrl())) {
+      try {
+        outputWrapper += "\n//# sourceMappingURL=" +
+            new URI(getSourceMapBaseUrl()).resolve(sourceMapFileName).toString();
+      } catch (URISyntaxException e) {
+        // ignore
+      }
+    }
+
+    return outputWrapper;
+  }
+
   public Charset getOutputCharset() {
     return outputCharset;
   }
@@ -401,6 +484,11 @@ public final class Config implements Comparable<Config> {
   }
 
   @VisibleForTesting
+  List<WarningsGuardFactory> getCustomWarningsGuards() {
+    return customWarningsGuards;
+  }
+
+  @VisibleForTesting
   Map<String, JsonPrimitive> getDefines() {
     return defines;
   }
@@ -435,6 +523,21 @@ public final class Config implements Comparable<Config> {
     return propertyMapOutputFile;
   }
 
+  public String getSourceMapBaseUrl() {
+    return sourceMapBaseUrl;
+  }
+
+  public String getSourceMapOutputName() {
+    if (Strings.isNullOrEmpty(sourceMapOutputName)) {
+      if (hasModules()) {
+        return getId() + "_%s.map";
+      } else {
+        return getId() + ".map";
+      }
+    }
+    return sourceMapOutputName;
+  }
+
   public File getTestTemplate() {
     return testTemplate;
   }
@@ -467,6 +570,10 @@ public final class Config implements Comparable<Config> {
     return cssOutputFile;
   }
 
+  public JobDescription.OutputFormat getCssOutputFormat() {
+    return cssOutputFormat;
+  }
+
   public PrintStream getErrorStream() {
     return errorStream;
   }
@@ -494,6 +601,10 @@ public final class Config implements Comparable<Config> {
       }
     }
     return null;
+  }
+
+  LanguageMode getLanguageIn() {
+    return languageIn;
   }
 
   public PlovrCompilerOptions getCompilerOptions(
@@ -545,6 +656,18 @@ public final class Config implements Comparable<Config> {
     options.setIdGenerators(idGenerators);
     options.ambiguateProperties = ambiguateProperties;
     options.disambiguateProperties = disambiguateProperties;
+    if (languageIn != null) {
+      options.setLanguageIn(languageIn);
+    }
+    if (languageOut != null) {
+      options.setLanguageOut(languageOut);
+    }
+    options.setNewTypeInference(newTypeInference);
+
+    // Instantiate custom warnings guards.
+    for (WarningsGuardFactory factory : customWarningsGuards) {
+      options.addWarningsGuard(factory.createWarningsGuard());
+    }
 
     // Instantiate the custom compiler passes and register any DiagnosticGroups
     // from those passes.
@@ -567,15 +690,16 @@ public final class Config implements Comparable<Config> {
     if (moduleConfig != null) {
       options.crossModuleCodeMotion = true;
       options.crossModuleMethodMotion = true;
-      if (!Strings.isNullOrEmpty(globalScopeName)) {
-        Preconditions.checkState(
-            options.collapseAnonymousFunctions == true ||
-            level != CompilationLevel.ADVANCED_OPTIMIZATIONS,
-            "For reasons unknown, setting this to false ends up " +
-            "with a fairly larger final output, even though we just go " +
-            "and re-anonymize the functions a few steps later.");
-        options.renamePrefixNamespace = GLOBAL_SCOPE_NAME;
-      }
+    }
+
+    if (!Strings.isNullOrEmpty(globalScopeName)) {
+      Preconditions.checkState(
+          options.collapseAnonymousFunctions == true ||
+          level != CompilationLevel.ADVANCED_OPTIMIZATIONS,
+          "For reasons unknown, setting this to false ends up " +
+          "with a fairly larger final output, even though we just go " +
+          "and re-anonymize the functions a few steps later.");
+      options.renamePrefixNamespace = GLOBAL_SCOPE_NAME;
     }
 
     // Now that custom passes have registered with the PlovrDiagnosticGroups,
@@ -632,10 +756,6 @@ public final class Config implements Comparable<Config> {
     options.setExternExports(true);
 
     // Add location mapping for paths in source map.
-    // TODO: Allow an option for generating the "sourceRoot" member in source
-    // maps. See http://code.google.com/p/closure-compiler/issues/detail?id=770
-    List<LocationMapping> locationMappings = Arrays.asList(
-        new LocationMapping("", "/input/" + getId() + "/"));
     options.setSourceMapLocationMappings(locationMappings);
 
     if (getTreatWarningsAsErrors()) {
@@ -655,10 +775,10 @@ public final class Config implements Comparable<Config> {
   private static Multimap<CustomPassExecutionTime, CompilerPass> getCustomPasses(
       PlovrCompilerOptions options) {
     Multimap<CustomPassExecutionTime, CompilerPass> customPasses =
-        options.customPasses;
+        options.getCustomPasses();
     if (customPasses == null) {
       customPasses = ArrayListMultimap.create();
-      options.customPasses = customPasses;
+      options.setCustomPasses(customPasses);
     }
     return customPasses;
   }
@@ -863,6 +983,8 @@ public final class Config implements Comparable<Config> {
 
     private ListMultimap<CustomPassExecutionTime, CompilerPassFactory> customPasses = ImmutableListMultimap.of();
 
+    private ImmutableList.Builder<WarningsGuardFactory> customWarningsGuards = ImmutableList.builder();
+
     private File documentationOutputDirectory = null;
 
     private boolean customExternsOnly = false;
@@ -903,6 +1025,12 @@ public final class Config implements Comparable<Config> {
 
     private boolean disambiguateProperties;
 
+    private LanguageMode languageIn;
+
+    private LanguageMode languageOut;
+
+    private boolean newTypeInference;
+
     private JsonObject experimentalCompilerOptions;
 
     private String globalScopeName;
@@ -914,6 +1042,10 @@ public final class Config implements Comparable<Config> {
     private File propertyMapInputFile;
 
     private File propertyMapOutputFile;
+
+    private String sourceMapBaseUrl;
+
+    private String sourceMapOutputName;
 
     private final Map<String, JsonPrimitive> defines;
 
@@ -931,7 +1063,11 @@ public final class Config implements Comparable<Config> {
 
     private File cssOutputFile = null;
 
+    private JobDescription.OutputFormat cssOutputFormat = JobDescription.OutputFormat.PRETTY_PRINTED;
+
     private PrintStream errorStream = System.err;
+
+    private List<LocationMapping> locationMappings = Lists.newArrayList();
 
     /**
      * Pattern to validate a config id. A config id may not contain funny
@@ -977,6 +1113,8 @@ public final class Config implements Comparable<Config> {
           : null;
       this.soyUseInjectedData = config.soyUseInjectedData;
       this.customPasses = config.customPasses;
+      this.customWarningsGuards = new ImmutableList.Builder<WarningsGuardFactory>()
+        .addAll(config.customWarningsGuards);
       this.documentationOutputDirectory = config.documentationOutputDirectory;
       this.compilationMode = config.compilationMode;
       this.warningLevel = config.warningLevel;
@@ -995,12 +1133,17 @@ public final class Config implements Comparable<Config> {
       this.idGenerators = config.idGenerators;
       this.ambiguateProperties = config.ambiguateProperties;
       this.disambiguateProperties = config.disambiguateProperties;
+      this.languageIn = config.languageIn;
+      this.languageOut = config.languageOut;
+      this.newTypeInference = config.newTypeInference;
       this.experimentalCompilerOptions = config.experimentalCompilerOptions;
       this.globalScopeName = config.globalScopeName;
       this.variableMapInputFile = config.variableMapInputFile;
       this.variableMapOutputFile = config.variableMapOutputFile;
       this.propertyMapInputFile = config.propertyMapInputFile;
       this.propertyMapOutputFile = config.propertyMapOutputFile;
+      this.sourceMapBaseUrl = config.sourceMapBaseUrl;
+      this.sourceMapOutputName = config.sourceMapOutputName;
       this.defines = Maps.newHashMap(config.defines);
       this.cssInputs = Lists.newArrayList(config.cssInputs);
       this.cssDefines = Sets.newHashSet(config.cssDefines);
@@ -1011,6 +1154,7 @@ public final class Config implements Comparable<Config> {
       this.gssFunctionMapProviderClassName = config.
           gssFunctionMapProviderClassName;
       this.cssOutputFile = config.cssOutputFile;
+      this.cssOutputFormat = config.cssOutputFormat;
       this.errorStream = config.errorStream;
     }
 
@@ -1022,7 +1166,7 @@ public final class Config implements Comparable<Config> {
     public void setId(String id) {
       Preconditions.checkNotNull(id);
       Preconditions.checkArgument(ID_PATTERN.matcher(id).matches(),
-          String.format("Not a valid config id: %s", id));
+              String.format("Not a valid config id: %s", id));
       this.id = id;
     }
 
@@ -1181,6 +1325,20 @@ public final class Config implements Comparable<Config> {
       this.customPasses = null;
     }
 
+    public void addCustomWarningsGuard(String className) {
+      Class<?> clazz;
+      try {
+        clazz = Class.forName(className);
+      } catch (ClassNotFoundException e) {
+        throw new RuntimeException(e);
+      }
+      this.customWarningsGuards.add(new WarningsGuardFactory(clazz));
+    }
+
+    public void resetCustomWarningsGuards() {
+      this.customWarningsGuards = ImmutableList.builder();
+    }
+
     /**
      * @return an immutable {@link ListMultimap}
      */
@@ -1228,6 +1386,18 @@ public final class Config implements Comparable<Config> {
 
     public void setFingerprintJsFiles(boolean fingerprint) {
       this.fingerprintJsFiles = fingerprint;
+    }
+
+    public void setLocationMappings(JsonObject locationMappings) {
+      if ( locationMappings != null ) {
+        Set<Map.Entry<String, JsonElement>> entries = locationMappings.entrySet();
+        for (Map.Entry<String, JsonElement> entry : entries) {
+          String prefix = entry.getKey();
+          String replacement = entry.getValue().getAsString();
+          replacement = replacement.replace("%s", id);
+          this.locationMappings.add(new LocationMapping(prefix, replacement));
+        }
+      }
     }
 
     /**
@@ -1294,6 +1464,18 @@ public final class Config implements Comparable<Config> {
       this.disambiguateProperties = disambiguateProperties;
     }
 
+    public void setLanguageIn(LanguageMode newVal) {
+      this.languageIn = newVal;
+    }
+
+    public void setLanguageOut(LanguageMode newVal) {
+      this.languageOut = newVal;
+    }
+
+    public void setNewTypeInference(boolean newVal) {
+      this.newTypeInference = newVal;
+    }
+
     public void setExperimentalCompilerOptions(
         JsonObject experimentalCompilerOptions) {
       this.experimentalCompilerOptions = experimentalCompilerOptions;
@@ -1325,6 +1507,14 @@ public final class Config implements Comparable<Config> {
 
     public void setPropertyMapOutputFile(File file) {
       this.propertyMapOutputFile = file;
+    }
+
+    public void setSourceMapBaseUrl(String sourceMapBaseUrl) {
+      this.sourceMapBaseUrl = sourceMapBaseUrl;
+    }
+
+    public void setSourceMapOutputName(String sourceMapOutputName) {
+      this.sourceMapOutputName = sourceMapOutputName;
     }
 
     public void addCssInput(File cssInput) {
@@ -1371,6 +1561,10 @@ public final class Config implements Comparable<Config> {
 
     public void setCssOutputFile(File cssOutputFile) {
       this.cssOutputFile = cssOutputFile;
+    }
+
+    public void setCssOutputFormat(JobDescription.OutputFormat cssOutputFormat) {
+      this.cssOutputFormat = cssOutputFormat;
     }
 
     public void setErrorStream(PrintStream errorStream) {
@@ -1443,12 +1637,16 @@ public final class Config implements Comparable<Config> {
           treatWarningsAsErrors,
           defines,
           customPasses,
+          customWarningsGuards.build(),
           documentationOutputDirectory,
           stripNameSuffixes,
           stripTypePrefixes,
           idGenerators,
           ambiguateProperties,
           disambiguateProperties,
+          languageIn,
+          languageOut,
+          newTypeInference,
           experimentalCompilerOptions,
           configFileInheritanceChain,
           globalScopeName,
@@ -1456,13 +1654,17 @@ public final class Config implements Comparable<Config> {
           variableMapOutputFile,
           propertyMapInputFile,
           propertyMapOutputFile,
+          sourceMapBaseUrl,
+          sourceMapOutputName,
           cssInputs,
           cssDefines,
           allowedUnrecognizedProperties,
           allowedNonStandardFunctions,
           gssFunctionMapProviderClassName,
           cssOutputFile,
-          errorStream);
+          cssOutputFormat,
+          errorStream,
+          locationMappings);
 
       return config;
     }

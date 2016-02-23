@@ -21,18 +21,17 @@ import static com.google.javascript.jscomp.ReplaceCssNames.UNKNOWN_SYMBOL_WARNIN
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
 import com.google.javascript.rhino.Node;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-
 
 /**
  * Tests for ReplaceCssNames.java.
  *
  */
-public class ReplaceCssNamesTest extends CompilerTestCase {
+public final class ReplaceCssNamesTest extends CompilerTestCase {
   /** Whether to pass the map of replacements as opposed to null */
   boolean useReplacementMap;
 
@@ -95,8 +94,7 @@ public class ReplaceCssNamesTest extends CompilerTestCase {
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    super.enableLineNumberCheck(true);
-    cssNames = Maps.newHashMap();
+    cssNames = new HashMap<>();
     useReplacementMap = true;
     renamingMap = getPartialMap();
   }
@@ -196,14 +194,13 @@ public class ReplaceCssNamesTest extends CompilerTestCase {
   }
 
   public void testTwoArgsWithStringLiterals() {
-    test("var x = goog.getCssName('header', 'active')",
-         null, UNEXPECTED_STRING_LITERAL_ERROR);
-    test("el.className = goog.getCssName('footer', window)",
-         null, ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("setClass(goog.getCssName('buttonbar', 'disabled'))",
-         null, UNEXPECTED_STRING_LITERAL_ERROR);
-    test("setClass(goog.getCssName(goog.getCssName('buttonbar'), 'active'))",
-        null, UNEXPECTED_STRING_LITERAL_ERROR);
+    testError("var x = goog.getCssName('header', 'active')", UNEXPECTED_STRING_LITERAL_ERROR);
+    testError("el.className = goog.getCssName('footer', window)",
+        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError(
+        "setClass(goog.getCssName('buttonbar', 'disabled'))", UNEXPECTED_STRING_LITERAL_ERROR);
+    testError("setClass(goog.getCssName(goog.getCssName('buttonbar'), 'active'))",
+        UNEXPECTED_STRING_LITERAL_ERROR);
   }
 
   public void testTwoArsWithVariableFirstArg() {
@@ -223,47 +220,32 @@ public class ReplaceCssNamesTest extends CompilerTestCase {
   }
 
   public void testZeroArguments() {
-    test("goog.getCssName()", null,
-        ReplaceCssNames.INVALID_NUM_ARGUMENTS_ERROR);
+    testError("goog.getCssName()", ReplaceCssNames.INVALID_NUM_ARGUMENTS_ERROR);
   }
 
   public void testManyArguments() {
-    test("goog.getCssName('a', 'b', 'c')", null,
-        ReplaceCssNames.INVALID_NUM_ARGUMENTS_ERROR);
-    test("goog.getCssName('a', 'b', 'c', 'd')", null,
-        ReplaceCssNames.INVALID_NUM_ARGUMENTS_ERROR);
-    test("goog.getCssName('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i')", null,
+    testError("goog.getCssName('a', 'b', 'c')", ReplaceCssNames.INVALID_NUM_ARGUMENTS_ERROR);
+    testError("goog.getCssName('a', 'b', 'c', 'd')", ReplaceCssNames.INVALID_NUM_ARGUMENTS_ERROR);
+    testError("goog.getCssName('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i')",
         ReplaceCssNames.INVALID_NUM_ARGUMENTS_ERROR);
   }
 
   public void testNonStringArgument() {
-    test("goog.getCssName(window);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName(555);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName([]);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName({});", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName(null);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName(undefined);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName(window);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName(555);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName([]);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName({});", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName(null);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName(undefined);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
 
-    test("goog.getCssName(baseClass, window);", null,
+    testError("goog.getCssName(baseClass, window);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName(baseClass, 555);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName(baseClass, []);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName(baseClass, {});", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName(baseClass, null);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName(baseClass, undefined);",
         ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName(baseClass, 555);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName(baseClass, []);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName(baseClass, {});", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName(baseClass, null);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName(baseClass, undefined);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
-    test("goog.getCssName('foo', 3);", null,
-        ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
+    testError("goog.getCssName('foo', 3);", ReplaceCssNames.STRING_LITERAL_EXPECTED_ERROR);
   }
 
   public void testNoSymbolMapStripsCallAndDoesntIssueWarnings() {
@@ -284,7 +266,7 @@ public class ReplaceCssNamesTest extends CompilerTestCase {
   }
 
   public void testWhitelistByPart() {
-    whitelist = ImmutableSet.<String>of("goog", "elephant");
+    whitelist = ImmutableSet.of("goog", "elephant");
     test("var x = goog.getCssName('goog')",
          "var x = 'goog'");
     test("var x = goog.getCssName('elephant')",
@@ -295,14 +277,14 @@ public class ReplaceCssNamesTest extends CompilerTestCase {
   }
 
   public void testWhitelistByWhole() {
-    whitelist = ImmutableSet.<String>of("long-prefix");
+    whitelist = ImmutableSet.of("long-prefix");
     renamingMap = getFullMap();
     test("var x = goog.getCssName('long-prefix')",
          "var x = 'long-prefix'");
   }
 
   public void testWhitelistWithDashes() {
-    whitelist = ImmutableSet.<String>of("goog-elephant");
+    whitelist = ImmutableSet.of("goog-elephant");
     test("var x = goog.getCssName('goog')",
         "var x = 'g'");
     test("var x = goog.getCssName('elephant')",

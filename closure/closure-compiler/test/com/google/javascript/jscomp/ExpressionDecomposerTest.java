@@ -16,12 +16,15 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.jscomp.ExpressionDecomposer.DecompositionType;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.Token;
+
 import junit.framework.TestCase;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
 
 import javax.annotation.Nullable;
@@ -30,7 +33,7 @@ import javax.annotation.Nullable;
  * Unit tests for ExpressionDecomposer
  * @author johnlenz@google.com (John Lenz)
  */
-public class ExpressionDecomposerTest extends TestCase {
+public final class ExpressionDecomposerTest extends TestCase {
   // Note: functions "foo" and "goo" are external functions
   // in the helper.
 
@@ -51,8 +54,8 @@ public class ExpressionDecomposerTest extends TestCase {
     // by moving the increment into the loop body.
     helperCanExposeExpression(
         DecompositionType.UNDECOMPOSABLE, "for(;;foo());", "foo");
-    // FOR initializer could be supported but they never occur
-    // as they are normalized away.
+    helperCanExposeExpression(
+        DecompositionType.MOVABLE, "for(foo();;);", "foo");
 
     // This is potentially doable but a bit too complex currently.
     helperCanExposeExpression(
@@ -83,6 +86,9 @@ public class ExpressionDecomposerTest extends TestCase {
         DecompositionType.MOVABLE, "x = foo() ? 0 : 1", "foo");
     helperCanExposeExpression(
         DecompositionType.MOVABLE, "(function(a){b = a})(foo())", "foo");
+    helperCanExposeExpression(
+        DecompositionType.MOVABLE,
+        "function f(){ throw foo();}", "foo");
   }
 
   public void testCanExposeExpression3() {
@@ -350,6 +356,64 @@ public class ExpressionDecomposerTest extends TestCase {
         "if (temp_const$$1(1, temp_const$$0, temp$$2));");
   }
 
+  public void testExposeExpression12() {
+    helperExposeExpression(
+        "throw bar() && foo();",
+        "foo",
+        "var temp$$0; if (temp$$0 = bar()) temp$$0 = foo(); throw temp$$0;");
+  }
+
+  public void testExposeYieldExpression1() {
+    helperMoveExpression(
+        "function *f() { return { a: yield 1, c: foo(yield 2, yield 3) }; }",
+        "yield",
+        "function *f() {" +
+        "  var result$$0 = yield 1;" +
+        "  return { a: result$$0, c: foo(yield 2, yield 3) };" +
+        "}");
+
+    helperMoveExpression(
+        "function *f() {" +
+        "  return { a: 0, c: foo(yield 2, yield 3) };" +
+        "}",
+        "yield",
+        "function *f() {" +
+        "  var result$$0 = yield 2;" +
+        "  return { a: 0, c: foo(result$$0, yield 3) };" +
+        "}");
+
+    helperMoveExpression(
+        "function *f() {" +
+        "  return { a: 0, c: foo(1, yield 3) };" +
+        "}",
+        "yield",
+        "function *f() {" +
+        "  var result$$0 = yield 3;" +
+        "  return { a: 0, c: foo(1, result$$0) };" +
+        "}");
+  }
+
+  public void testExposeYieldExpression2() {
+    helperMoveExpression(
+        "function *f() { return (yield 1) || (yield 2); }",
+        "yield",
+        "function *f() {" +
+        "  var result$$0 = yield 1;" +
+        "  return result$$0 || (yield 2);" +
+        "}");
+
+    helperExposeExpression(
+        "function *f(x) {" +
+        "  return x || (yield 2);" +
+        "}",
+        "yield",
+        "function *f(x) {" +
+        "  var temp$$0;" +
+        "  if (temp$$0=x); else temp$$0 = yield 2;" +
+        "  return temp$$0" +
+        "}");
+  }
+
   // Simple name on LHS of assignment-op.
   public void testExposePlusEquals1() {
     helperExposeExpression(
@@ -465,9 +529,10 @@ public class ExpressionDecomposerTest extends TestCase {
   private void helperCanExposeFunctionExpression(
       DecompositionType expectedResult, String code, int call) {
     Compiler compiler = getCompiler();
-    Set<String> knownConstants = Sets.newHashSet();
+    Set<String> knownConstants = new HashSet<>();
     ExpressionDecomposer decomposer = new ExpressionDecomposer(
-        compiler, compiler.getUniqueNameIdSupplier(), knownConstants);
+        compiler, compiler.getUniqueNameIdSupplier(),
+        knownConstants, newScope());
     Node tree = parse(compiler, code);
     assertNotNull(tree);
 
@@ -493,10 +558,11 @@ public class ExpressionDecomposerTest extends TestCase {
       ) {
     Compiler compiler = getCompiler();
     if (knownConstants == null) {
-      knownConstants = Sets.newHashSet();
+      knownConstants = new HashSet<>();
     }
     ExpressionDecomposer decomposer = new ExpressionDecomposer(
-        compiler, compiler.getUniqueNameIdSupplier(), knownConstants);
+        compiler, compiler.getUniqueNameIdSupplier(),
+        knownConstants, newScope());
     Node tree = parse(compiler, code);
     assertNotNull(tree);
 
@@ -529,9 +595,9 @@ public class ExpressionDecomposerTest extends TestCase {
     if (compiler.getErrorCount() != 0) {
       String msg = "Error encountered: ";
       for (JSError err : compiler.getErrors()) {
-        msg += err.toString() + "\n";
+        msg += err + "\n";
       }
-      assertTrue(msg, compiler.getErrorCount() == 0);
+      assertEquals(msg, 0, compiler.getErrorCount());
     }
   }
 
@@ -543,10 +609,11 @@ public class ExpressionDecomposerTest extends TestCase {
       ) {
     Compiler compiler = getCompiler();
     if (knownConstants == null) {
-      knownConstants = Sets.newHashSet();
+      knownConstants = new HashSet<>();
     }
     ExpressionDecomposer decomposer = new ExpressionDecomposer(
-        compiler, compiler.getUniqueNameIdSupplier(), knownConstants);
+        compiler, compiler.getUniqueNameIdSupplier(),
+        knownConstants, newScope());
     decomposer.setTempNamePrefix("temp");
     decomposer.setResultNamePrefix("result");
     Node expectedRoot = parse(compiler, expectedResult);
@@ -557,7 +624,7 @@ public class ExpressionDecomposerTest extends TestCase {
     assertNotNull("Call to " + fnName + " was not found.", callSite);
 
     DecompositionType result = decomposer.canExposeExpression(callSite);
-    assertTrue(result == DecompositionType.DECOMPOSABLE);
+    assertEquals(DecompositionType.DECOMPOSABLE, result);
 
     compiler.resetUniqueNameId();
     decomposer.exposeExpression(callSite);
@@ -585,11 +652,12 @@ public class ExpressionDecomposerTest extends TestCase {
       ) {
     Compiler compiler = getCompiler();
     if (knownConstants == null) {
-      knownConstants = Sets.newHashSet();
+      knownConstants = new HashSet<>();
     }
 
     ExpressionDecomposer decomposer = new ExpressionDecomposer(
-        compiler, compiler.getUniqueNameIdSupplier(), knownConstants);
+        compiler, compiler.getUniqueNameIdSupplier(),
+        knownConstants, newScope());
     decomposer.setTempNamePrefix("temp");
     decomposer.setResultNamePrefix("result");
     Node expectedRoot = parse(compiler, expectedResult);
@@ -608,10 +676,10 @@ public class ExpressionDecomposerTest extends TestCase {
         "\n" + explanation, explanation);
   }
 
-  private static Compiler getCompiler() {
+  private Compiler getCompiler() {
     Compiler compiler = new Compiler();
     CompilerOptions options = new CompilerOptions();
-    options.setLanguageIn(LanguageMode.ECMASCRIPT5);
+    options.setLanguage(LanguageMode.ECMASCRIPT6_STRICT);
     options.setCodingConvention(new GoogleCodingConvention());
     compiler.initOptions(options);
     return compiler;
@@ -624,18 +692,19 @@ public class ExpressionDecomposerTest extends TestCase {
   /**
    * @param name The name to look for.
    * @param call The call to look for.
-   * @return The return the Nth CALL node to name found in a pre-order
-   * traversal.
+   * @return The return the Nth instance of the CALL/YIELD node
+   * matching name found in a pre-order traversal.
    */
   private static Node findCall(
       Node root, @Nullable final String name, final int call) {
     class Find {
       int found = 0;
       Node find(Node n) {
-        if (n.isCall()) {
-          Node callee = n.getFirstChild();
-          if (name == null || (callee.isName()
-              && callee.getString().equals(name))) {
+        if (n.isCall() || n.isYield()) {
+          if (name == null
+              || n.isYield() && "yield".equals(name)
+              || (n.isCall() && n.getFirstChild().isName()
+                  && n.getFirstChild().getString().equals(name))) {
             found++;
             if (found == call) {
               return n;
@@ -659,7 +728,12 @@ public class ExpressionDecomposerTest extends TestCase {
 
   private static Node parse(Compiler compiler, String js) {
     Node n = Normalize.parseAndNormalizeTestCode(compiler, js);
-    assertEquals(0, compiler.getErrorCount());
+    assertEquals(Arrays.toString(compiler.getErrors()),
+        0, compiler.getErrorCount());
     return n;
+  }
+
+  private Scope newScope() {
+    return Scope.createGlobalScope(new Node(Token.SCRIPT));
   }
 }

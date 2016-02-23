@@ -3,8 +3,10 @@ package org.plovr;
 import java.io.File;
 import java.io.IOException;
 import java.io.Writer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.annotation.Nullable;
 
@@ -15,6 +17,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
@@ -23,14 +26,18 @@ import com.google.common.io.Closeables;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import com.google.javascript.jscomp.CheckLevel;
 import com.google.javascript.jscomp.Compiler;
+import com.google.javascript.jscomp.ErrorManager;
 import com.google.javascript.jscomp.JSError;
 import com.google.javascript.jscomp.JSModule;
 import com.google.javascript.jscomp.PlovrCompilerOptions;
+import com.google.javascript.jscomp.PrintStreamErrorManager;
 import com.google.javascript.jscomp.Result;
 import com.google.javascript.jscomp.SourceExcerptProvider;
 import com.google.javascript.jscomp.SourceFile;
 import com.google.javascript.jscomp.SourceMap;
+import com.google.template.soy.base.SoySyntaxException;
 
 /**
  * {@link Compilation} represents a compilation performed by the Closure
@@ -84,8 +91,48 @@ public final class Compilation {
     return new Compilation(externs, null, modules);
   }
 
-  public void compile(Config config) {
+  public static Compilation createAndCompile(Config config) throws CompilationException {
+    // Generate all the code upfront, and track any syntax errors in individual
+    // generated files.
+    Set<JsInput> allDependencies = config.getManifest().getAllDependencies();
+    List<CompilationException> errors = new ArrayList<>();
+    for (JsInput input : allDependencies) {
+      try {
+        input.getCode();
+      } catch (Throwable e) {
+        errors.add(toCheckedException(e));
+      }
+    }
+
+    if (!errors.isEmpty()) {
+      throw new CompilationException.Multi(errors);
+    }
+
+    try {
+      PlovrClosureCompiler dummyCompiler = new PlovrClosureCompiler(config.getErrorStream());
+      Compilation compilation = config.getManifest().getCompilerArguments(
+          config.getModuleConfig(), config.getCompilerOptions(dummyCompiler));
+      compilation.compile(config);
+      return compilation;
+    } catch (Throwable e) {
+      throw toCheckedException(e);
+    }
+  }
+
+  private static CompilationException toCheckedException(Throwable e) {
+    if (e instanceof SoySyntaxException) {
+      return new CheckedSoySyntaxException((SoySyntaxException) e);
+    } else if (e instanceof PlovrSoySyntaxException) {
+      return new CheckedSoySyntaxException((PlovrSoySyntaxException) e);
+    } else if (e instanceof PlovrCoffeeScriptCompilerException) {
+      return new CheckedCoffeeScriptCompilerException((PlovrCoffeeScriptCompilerException) e);
+    }
+    throw Throwables.propagate(e);
+  }
+
+  public void compile(Config config) throws CompilationException {
     this.config = config;
+
     if (config.getCompilationMode() == CompilationMode.RAW) {
       compileRaw(config);
     } else {
@@ -110,7 +157,9 @@ public final class Compilation {
 
     // Need to have a dummy Result that appears to be a success (i.e., has no
     // errors or warnings).
-    this.result = new Compiler().getResult();
+    Compiler dummyCompiler = new Compiler();
+    dummyCompiler.setErrorManager(new PrintStreamErrorManager(System.out));
+    this.result = dummyCompiler.getResult();
   }
 
   /**
@@ -146,21 +195,10 @@ public final class Compilation {
 
     String compiledCode = inputJsConcatenatedInOrder != null ?
         inputJsConcatenatedInOrder : compiler.toSource();
-    String outputWrapper = config.getOutputWrapper();
-    if (outputWrapper != null) {
-      String outputWrapperMarker = config.getOutputWrapperMarker();
-      int pos = outputWrapper.indexOf(outputWrapperMarker);
-      if (pos >= 0) {
-        compiledCode = outputWrapper.substring(0, pos) +
-            compiledCode +
-            outputWrapper.substring(pos + outputWrapperMarker.length());
-      } else {
-        throw new RuntimeException(
-            "output-wrapper did not contain placeholder: " +
-            outputWrapperMarker);
-      }
-    }
-    return compiledCode;
+
+    String sourceUrl = config.getOutputFile() == null ? "" : config.getOutputFile().toString();
+    String outputWrapper = config.getOutputAndGlobalScopeWrapper(true, "", sourceUrl);
+    return interpolateOutputWrapper(compiledCode, outputWrapper);
   }
 
   public String getRootModuleName() {
@@ -197,10 +235,27 @@ public final class Compilation {
     Preconditions.checkState(modules != null,
         "This compilation does not use modules");
 
-    StringBuilder builder = new StringBuilder();
+    JSModule module = nameToModule.get(moduleName);
+    String moduleCode = compiler.toSource(module);
+
+    String outputWrapper = getModuleOutputWrapper(moduleName, isDebugMode, moduleNameToUri);
+    String result = interpolateOutputWrapper(moduleCode, outputWrapper);
+
+    if (resetSourceMap) {
+      SourceMap sourceMap = compiler.getSourceMap();
+      if (sourceMap != null) sourceMap.reset();
+    }
+
+    return result;
+  }
+
+  String getModuleOutputWrapper(
+      String moduleName,
+      boolean isDebugMode,
+      Function<String, String> moduleNameToUri) {
+    StringBuilder rootModuleInfoBuilder = new StringBuilder();
     ModuleConfig moduleConfig = config.getModuleConfig();
     String rootModule = moduleConfig.getRootModule();
-
     boolean isRootModule = rootModule.equals(moduleName);
 
     if (isRootModule) {
@@ -221,7 +276,7 @@ public final class Compilation {
       // which (as much as it pains me) is why "var" is omitted.
       if (!moduleConfig.excludeModuleInfoFromRootModule()) {
         try {
-          appendRootModuleInfo(builder, isDebugMode, moduleNameToUri);
+          appendRootModuleInfo(rootModuleInfoBuilder, isDebugMode, moduleNameToUri);
         } catch (IOException e) {
           // This should not occur because data is being appended to an
           // in-memory StringBuilder rather than a file.
@@ -229,47 +284,31 @@ public final class Compilation {
         }
       }
     }
+    String sourceUrl = moduleNameToUri.apply(moduleName);
+    return rootModuleInfoBuilder.toString() +
+        config.getOutputAndGlobalScopeWrapper(isRootModule, moduleName, sourceUrl);
+  }
 
-    JSModule module = nameToModule.get(moduleName);
-    String moduleCode = compiler.toSource(module);
-
-    boolean hasGlobalScopeName =
-        !Strings.isNullOrEmpty(config.getGlobalScopeName()) &&
-        config.getCompilationMode() != CompilationMode.WHITESPACE;
-
-    // Optionally wrap the module in an anonymous function, with the
-    // requisite wrapper to make it work.
-    if (hasGlobalScopeName) {
-      if (isRootModule) {
-        // Initialize the global scope in the root module.
-        builder.append(config.getGlobalScopeName());
-        builder.append("={};");
-      }
-      builder.append("(function(");
-      builder.append(Config.GLOBAL_SCOPE_NAME);
-      // Including a newline makes the offset into the source map easier to calculate.
-      builder.append("){\n");
-    }
-    builder.append(moduleCode);
-    if (hasGlobalScopeName) {
-      builder.append("})(");
-      builder.append(config.getGlobalScopeName());
-      builder.append(");");
+  private String interpolateOutputWrapper(String code, String outputWrapper) {
+    String outputWrapperMarker = config.getOutputWrapperMarker();
+    if (outputWrapper.equals(outputWrapperMarker)) {
+      return code;
     }
 
-    if (resetSourceMap) {
+    int pos = outputWrapper.indexOf(outputWrapperMarker);
+    if (pos >= 0) {
+      String prefix = outputWrapper.substring(0, pos);
+      String suffix = outputWrapper.substring(pos + outputWrapperMarker.length());
       SourceMap sourceMap = compiler.getSourceMap();
-      if (sourceMap != null) sourceMap.reset();
+      if (sourceMap != null) {
+        sourceMap.setWrapperPrefix(prefix);
+      }
+      return prefix + code + suffix;
+    } else {
+      throw new RuntimeException(
+          "output-wrapper did not contain placeholder: " +
+          outputWrapperMarker);
     }
-
-    // http://code.google.com/p/closure-library/issues/detail?id=196
-    // http://blog.getfirebug.com/2009/08/11/give-your-eval-a-name-with-sourceurl/
-    // non-root modules are loaded with eval, give it a sourceURL for better debugging
-    if (!isRootModule) {
-        builder.append("\n//@ sourceURL=" + moduleNameToUri.apply(moduleName));
-    }
-
-    return builder.toString();
   }
 
   public void appendRootModuleInfo(Appendable appendable, boolean isDebugMode,
@@ -306,6 +345,11 @@ public final class Compilation {
     Map<String, File> moduleToOutputPath = moduleConfig.getModuleToOutputPath();
     final Map<String, String> moduleNameToFingerprint = Maps.newHashMap();
     final boolean isDebugMode = false;
+
+    if (sourceMapPath != null) {
+        new File(sourceMapPath).mkdirs();
+    }
+
     for (JSModule module : modules) {
       String moduleName = module.getName();
       File outputFile = moduleToOutputPath.get(moduleName);
@@ -333,8 +377,9 @@ public final class Compilation {
       // it should only be written out to a file after the compiled code has
       // been generated.
       if (sourceMapPath != null) {
+        String sourceMapFileName = config.getSourceMapOutputName().replace("%s", moduleName);
         Writer writer = Streams.createFileWriter(
-            sourceMapPath + "_" + moduleName, config);
+            new File(sourceMapPath, sourceMapFileName).getPath(), config);
         // This is safe because getCodeForModule() was just called, which has
         // the side-effect of calling compiler.toSource(module).
         SourceMap sourceMap = compiler.getSourceMap();

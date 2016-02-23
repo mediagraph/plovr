@@ -16,8 +16,7 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Sets;
-
+import com.google.common.collect.ImmutableSet;
 import java.util.Set;
 
 /**
@@ -25,7 +24,7 @@ import java.util.Set;
  *
  * @author johnlenz@google.com (John Lenz)
  */
-public class GatherRawExportsTest extends CompilerTestCase {
+public final class GatherRawExportsTest extends CompilerTestCase {
 
   private static final String EXTERNS = "var window;";
   private GatherRawExports last;
@@ -107,6 +106,13 @@ public class GatherRawExportsTest extends CompilerTestCase {
     assertExported("var a = window; a['b']");
   }
 
+  public void testExportsFound17() {
+    // Gather "this" reference in a global if block.
+    assertExported("if (true) { this.a }", "a");
+    // Does not gather "this" reference in a local if block.
+    assertExported("function f() { if (true) { this.a } }");
+  }
+
   public void testExportOnTopFound1() {
     assertExported("top['a']", "a");
   }
@@ -115,9 +121,25 @@ public class GatherRawExportsTest extends CompilerTestCase {
     assertExported("top.a", "a");
   }
 
+  public void testExportOnGoogGlobalFound1() {
+    assertExported("goog.global['a']", "a");
+  }
+
+  public void testExportOnGoogGlobalFound2() {
+    assertExported("goog.global.a", "a");
+  }
+
+  public void testExportOnGoogGlobalFound3() {
+    assertExported("goog$global['a']", "a");
+  }
+
+  public void testExportOnGoogGlobalFound4() {
+    assertExported("goog$global.a", "a");
+  }
+
   private void assertExported(String js, String ... names) {
-    Set<String> setNames = Sets.newHashSet(names);
+    Set<String> setNames = ImmutableSet.copyOf(names);
     testSame(js);
-    assertTrue(last.getExportedVariableNames().equals(setNames));
+    assertEquals(setNames, last.getExportedVariableNames());
   }
 }

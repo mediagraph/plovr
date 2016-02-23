@@ -16,9 +16,10 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.javascript.rhino.jstype.JSTypeNative.NUMBER_STRING_BOOLEAN;
+
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.GlobalNamespace.Name;
 import com.google.javascript.jscomp.GlobalNamespace.Ref;
@@ -27,12 +28,14 @@ import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.JSTypeExpression;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
-import com.google.javascript.rhino.jstype.JSType;
-import com.google.javascript.rhino.jstype.JSTypeNative;
+import com.google.javascript.rhino.TypeI;
+import com.google.javascript.rhino.TypeIRegistry;
 
 import java.text.MessageFormat;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,8 +54,7 @@ class ProcessDefines implements CompilerPass {
    * There are legacy flags that always set these defines, even when they
    * might not be in the binary.
    */
-  private static final Set<String> KNOWN_DEFINES =
-      Sets.newHashSet("COMPILED");
+  private static final Set<String> KNOWN_DEFINES = ImmutableSet.of("COMPILED");
 
   private final AbstractCompiler compiler;
   private final Map<String, Node> dominantReplacements;
@@ -142,9 +144,9 @@ class ProcessDefines implements CompilerPass {
       compiler.reportCodeChange();
     }
 
-    Set<String> unusedReplacements = dominantReplacements.keySet();
-    unusedReplacements.removeAll(allDefines.keySet());
-    unusedReplacements.removeAll(KNOWN_DEFINES);
+    Set<String> unusedReplacements = Sets.difference(
+        dominantReplacements.keySet(), Sets.union(KNOWN_DEFINES, allDefines.keySet()));
+
     for (String unknownDefine : unusedReplacements) {
       compiler.report(JSError.make(UNKNOWN_DEFINE_WARNING, unknownDefine));
     }
@@ -158,10 +160,10 @@ class ProcessDefines implements CompilerPass {
    * Only defines of literal number, string, or boolean are supported.
    */
   private boolean isValidDefineType(JSTypeExpression expression) {
-    JSType type = expression.evaluate(null, compiler.getTypeRegistry());
-    return !type.isUnknownType() && type.isSubtype(
-        compiler.getTypeRegistry().getNativeType(
-            JSTypeNative.NUMBER_STRING_BOOLEAN));
+    TypeIRegistry registry = compiler.getTypeIRegistry();
+    TypeI type = expression.evaluateInEmptyScope(registry);
+    return !type.isUnknownType()
+        && type.isSubtypeOf(registry.getNativeType(NUMBER_STRING_BOOLEAN));
   }
 
   /**
@@ -172,7 +174,7 @@ class ProcessDefines implements CompilerPass {
   private Map<String, DefineInfo> collectDefines(Node root,
       GlobalNamespace namespace) {
     // Find all the global names with a @define annotation
-    List<Name> allDefines = Lists.newArrayList();
+    List<Name> allDefines = new ArrayList<>();
     for (Name name : namespace.getNameIndex().values()) {
       Ref decl = name.getDeclaration();
       if (name.docInfo != null && name.docInfo.isDefine()) {
@@ -182,7 +184,6 @@ class ProcessDefines implements CompilerPass {
           allDefines.add(name);
         } else {
           JSError error = JSError.make(
-              decl.getSourceName(),
               decl.node, INVALID_DEFINE_TYPE_ERROR);
           compiler.report(error);
         }
@@ -210,7 +211,7 @@ class ProcessDefines implements CompilerPass {
     }
 
     CollectDefines pass = new CollectDefines(compiler, allDefines);
-    NodeTraversal.traverse(compiler, root, pass);
+    NodeTraversal.traverseEs6(compiler, root, pass);
     return pass.getAllDefines();
   }
 
@@ -236,14 +237,14 @@ class ProcessDefines implements CompilerPass {
 
     CollectDefines(AbstractCompiler compiler, List<Name> listOfDefines) {
       this.compiler = compiler;
-      this.allDefines = Maps.newHashMap();
+      this.allDefines = new HashMap<>();
 
-      assignableDefines = Maps.newHashMap();
-      assignAllowed = new ArrayDeque<Integer>();
+      assignableDefines = new HashMap<>();
+      assignAllowed = new ArrayDeque<>();
       assignAllowed.push(1);
 
       // Create a map of references to defines keyed by node for easy lookup
-      allRefInfo = Maps.newHashMap();
+      allRefInfo = new HashMap<>();
       for (Name name : listOfDefines) {
         Ref decl = name.getDeclaration();
         if (decl != null) {
@@ -313,7 +314,7 @@ class ProcessDefines implements CompilerPass {
             }
             break;
           default:
-            if (t.inGlobalScope()) {
+            if (t.inGlobalHoistScope()) {
               // Treat this as a reference to a define in the global scope.
               // After this point, the define must not be reassigned,
               // or it's an error.
@@ -464,7 +465,7 @@ class ProcessDefines implements CompilerPass {
      * @param info Represents the define variable.
      * @param t The current traversal.
      */
-    private void setDefineInfoNotAssignable(DefineInfo info, NodeTraversal t) {
+    private static void setDefineInfoNotAssignable(DefineInfo info, NodeTraversal t) {
       info.setNotAssignable(format(REASON_DEFINE_NOT_ASSIGNABLE,
                                 t.getLineNumber(), t.getSourceName()));
     }

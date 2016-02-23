@@ -16,6 +16,9 @@
 
 package com.google.template.soy.basetree;
 
+import com.google.template.soy.base.SourceLocation;
+
+import javax.annotation.Nullable;
 
 /**
  * This class defines the base interface for a node in the parse tree, as well as a number of
@@ -26,23 +29,55 @@ package com.google.template.soy.basetree;
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
 public interface Node {
+
+
+  /**
+   * Returns a pair (syntaxVersion, reasonStr), where the first item is the lowest known upper bound
+   * (exclusive!) for the syntax version of this node, and the second item is a user-friendly
+   * explanation of the reason for the bound. For example:
+   *     (V2_1, "Function hasData() is unnecessary and no longer allowed.")
+   * Returns null if there is no known upper bound on this node's syntax version.
+   */
+  @Nullable SyntaxVersionUpperBound getSyntaxVersionUpperBound();
+
+
+  /**
+   * Records a newly discovered upper bound for the syntax version of this node.
+   * @param newSyntaxVersionBound A newly discovered upper bound (exclusive!) for the syntax version
+   *     of this node.
+   */
+  void maybeSetSyntaxVersionUpperBound(SyntaxVersionUpperBound newSyntaxVersionBound);
+
+
+  /**
+   * Returns false if we know that this node's syntax version must be lower than the given value.
+   * Returns true otherwise (i.e. with what we know so far, this node could be the given syntax
+   * version or higher).
+   * @param syntaxVersionCutoff The syntax version cutoff to check.
+   */
+  boolean couldHaveSyntaxVersionAtLeast(SyntaxVersion syntaxVersionCutoff);
+
+
+  /**
+   * Returns the source location (file path and line number) for this node.
+   */
+  SourceLocation getSourceLocation();
 
 
   /**
    * Sets this node's parent.
    * @param parent The parent node to set.
    */
-  public void setParent(ParentNode<?> parent);
+  void setParent(ParentNode<?> parent);
 
 
   /**
    * Gets this node's parent.
    * @return This node's parent.
    */
-  public ParentNode<?> getParent();
+  ParentNode<?> getParent();
 
 
   /**
@@ -51,7 +86,7 @@ public interface Node {
    * @param ancestorClass The type of ancestor to look for.
    * @return True if this node has an ancestor of the given type.
    */
-  public boolean hasAncestor(Class<? extends Node> ancestorClass);
+  boolean hasAncestor(Class<? extends Node> ancestorClass);
 
 
   /**
@@ -61,12 +96,12 @@ public interface Node {
    * @param ancestorClass The class object for the type of ancestor to retrieve.
    * @return This node's nearest ancestor of the given type, or null if none.
    */
-  public <N extends Node> N getNearestAncestor(Class<N> ancestorClass);
+  <N extends Node> N getNearestAncestor(Class<N> ancestorClass);
 
 
   /**
    * Builds a Soy source string that could be the source for this node. Note that this is not the
-   * actual original source string, but a (sort of) canonical equivalent.
+   * actual original source string, but a (SORT OF, NOT QUITE) canonical equivalent.
    *
    * Note: Some nodes do not have a direct mapping to Soy source (such as nodes created during
    * some optimization passes). Thus this method may not always be supported.
@@ -74,7 +109,7 @@ public interface Node {
    * @return A Soy string that could be the source for this node.
    * @throws UnsupportedOperationException If this node does not directly map to Soy source.
    */
-  public String toSourceString();
+  String toSourceString();
 
 
   /**
@@ -84,13 +119,33 @@ public interface Node {
    * @param indent The indentation for each line of the tree string (usually pass 0).
    * @return A string that visually shows the subtree rooted at this node.
    */
-  public String toTreeString(int indent);
+  String toTreeString(int indent);
 
 
   /**
-   * Clones this node. The clone's parent pointer is set to null.
+   * Copies this node. The copy's parent pointer is set to null.
+   *
+   * <p>All copy() overrides should follow this contract:
+   * <ul>
+   *     <li>only leaf classes (in the class hierarchy) should have non-abstract clone methods
+   *     <li>all leaf classes should be final
+   *     <li>all leaf copy constructors should be private
+   *     <li>all clone methods should look exactly like: <pre>{@code
+   *    {@literal @}Override public T copy(CopyState copyState) {
+   *      return new T(this, copyState);
+   *    }
+   * }</pre>
+   *     <li>all non-leaf copy constructors should be protected
+   * </ul>
+   *
+   * <p>TODO(lukes): The usecases for a copy method are few and far between.  Making the AST nodes
+   * immutable (or at least unmodifiable) would be preferable to maintaining our copy() methods.
+   *
+   * <p>Don't clone nodes unless you know what you're doing. The Soy AST is not actually a tree (it
+   * contains back edges from variables to their definitions), and naively copying nodes can result
+   * in pointers into stale ASTs
+   *
    * @return A clone of this code.
    */
-  public Node clone();
-
+  Node copy(CopyState copyState);
 }

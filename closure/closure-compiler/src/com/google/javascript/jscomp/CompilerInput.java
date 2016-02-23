@@ -18,16 +18,16 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.deps.DependencyInfo;
 import com.google.javascript.jscomp.deps.JsFileParser;
 import com.google.javascript.rhino.InputId;
 import com.google.javascript.rhino.Node;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -37,8 +37,7 @@ import java.util.Set;
  * whether the input is an extern. Also calculates provided and required types.
  *
  */
-public class CompilerInput
-    implements SourceAst, DependencyInfo {
+public class CompilerInput implements SourceAst, DependencyInfo {
 
   private static final long serialVersionUID = 1L;
 
@@ -49,9 +48,10 @@ public class CompilerInput
   // The AST.
   private final SourceAst ast;
 
+  private boolean isModuleFile = false;
   // Provided and required symbols.
-  private final Set<String> provides = Sets.newHashSet();
-  private final Set<String> requires = Sets.newHashSet();
+  private final Set<String> provides = new HashSet<>();
+  private final Set<String> requires = new HashSet<>();
   private boolean generatedDependencyInfoFromSource = false;
 
   // An AbstractCompiler for doing parsing.
@@ -101,10 +101,6 @@ public class CompilerInput
     return id.getIdName();
   }
 
-  public SourceAst getAst() {
-    return ast;
-  }
-
   /** Gets the path relative to closure-base, if one is available. */
   @Override
   public String getPathRelativeToClosureBase() {
@@ -138,21 +134,15 @@ public class CompilerInput
     ast.setSourceFile(file);
   }
 
-  /** Returns the SourceAst object on which this input is based. */
-  public SourceAst getSourceAst() {
-    return ast;
-  }
-
   /** Sets an abstract compiler for doing parsing. */
   public void setCompiler(AbstractCompiler compiler) {
     this.compiler = compiler;
   }
 
   private void checkErrorManager() {
-    Preconditions.checkNotNull(compiler,
-        "Expected setCompiler to be called first: " + this);
-    Preconditions.checkNotNull(compiler.getErrorManager(),
-        "Expected compiler to call an error manager: " + this);
+    Preconditions.checkNotNull(compiler, "Expected setCompiler to be called first: %s", this);
+    Preconditions.checkNotNull(
+        compiler.getErrorManager(), "Expected compiler to call an error manager: %s", this);
   }
 
   /** Gets a list of types depended on by this input. */
@@ -161,11 +151,11 @@ public class CompilerInput
     checkErrorManager();
     try {
       regenerateDependencyInfoIfNecessary();
-      return Collections.<String>unmodifiableSet(requires);
+      return Collections.unmodifiableSet(requires);
     } catch (IOException e) {
       compiler.getErrorManager().report(CheckLevel.ERROR,
           JSError.make(AbstractCompiler.READ_ERROR, getName()));
-      return ImmutableList.<String>of();
+      return ImmutableList.of();
     }
   }
 
@@ -175,29 +165,31 @@ public class CompilerInput
     checkErrorManager();
     try {
       regenerateDependencyInfoIfNecessary();
-      return Collections.<String>unmodifiableSet(provides);
+      return Collections.unmodifiableSet(provides);
     } catch (IOException e) {
       compiler.getErrorManager().report(CheckLevel.ERROR,
           JSError.make(AbstractCompiler.READ_ERROR, getName()));
-      return ImmutableList.<String>of();
+      return ImmutableList.of();
     }
   }
 
   // TODO(nicksantos): Remove addProvide/addRequire/removeRequire once
   // there is better support for discovering non-closure dependencies.
-  void addProvide(String provide) {
+
+  /**
+   * Registers a type that this input defines.
+   */
+  public void addProvide(String provide) {
     getProvides();
     provides.add(provide);
   }
 
-  void addRequire(String require) {
+  /**
+   * Registers a type that this input depends on.
+   */
+  public void addRequire(String require) {
     getRequires();
     requires.add(require);
-  }
-
-  public void removeRequire(String require) {
-    getRequires();
-    requires.remove(require);
   }
 
   /**
@@ -227,7 +219,7 @@ public class CompilerInput
       // compilation scheme. The API needs to be fixed so callers aren't
       // doing weird things like this, and then we should get rid of the
       // multiple-scan strategy.
-
+      isModuleFile = finder.isModuleFile;
       provides.addAll(finder.provides);
       requires.addAll(finder.requires);
     } else {
@@ -242,6 +234,7 @@ public class CompilerInput
             .setIncludeGoogBase(true)
             .parseFile(getName(), getName(), getCode());
 
+        isModuleFile = info.isModule();
         provides.addAll(info.getProvides());
         requires.addAll(info.getRequires());
 
@@ -251,8 +244,9 @@ public class CompilerInput
   }
 
   private static class DepsFinder {
-    private final List<String> provides = Lists.newArrayList();
-    private final List<String> requires = Lists.newArrayList();
+    private boolean isModuleFile;
+    private final List<String> provides = new ArrayList<>();
+    private final List<String> requires = new ArrayList<>();
     private final CodingConvention codingConvention =
         new ClosureCodingConvention();
 
@@ -262,6 +256,11 @@ public class CompilerInput
 
     void visitSubtree(Node n, Node parent) {
       if (n.isCall()) {
+        boolean isModuleDetected =  codingConvention.extractIsModuleFile(n, parent);
+        if (isModuleDetected) {
+          this.isModuleFile = true;
+        }
+
         String require =
             codingConvention.extractClassNameIfRequire(n, parent);
         if (require != null) {
@@ -285,31 +284,6 @@ public class CompilerInput
         visitSubtree(child, n);
       }
     }
-  }
-
-  /**
-   * Gets the source line for the indicated line number.
-   *
-   * @param lineNumber the line number, 1 being the first line of the file.
-   * @return The line indicated. Does not include the newline at the end
-   *     of the file. Returns {@code null} if it does not exist,
-   *     or if there was an IO exception.
-   */
-  public String getLine(int lineNumber) {
-    return getSourceFile().getLine(lineNumber);
-  }
-
-  /**
-   * Get a region around the indicated line number. The exact definition of a
-   * region is implementation specific, but it must contain the line indicated
-   * by the line number. A region must not start or end by a carriage return.
-   *
-   * @param lineNumber the line number, 1 being the first line of the file.
-   * @return The line indicated. Returns {@code null} if it does not exist,
-   *     or if there was an IO exception.
-   */
-  public Region getRegion(int lineNumber) {
-    return getSourceFile().getRegion(lineNumber);
   }
 
   public String getCode() throws IOException {
@@ -360,5 +334,18 @@ public class CompilerInput
   @Override
   public String toString() {
     return getName();
+  }
+
+  @Override
+  public boolean isModule() {
+    checkErrorManager();
+    try {
+      regenerateDependencyInfoIfNecessary();
+      return isModuleFile;
+    } catch (IOException e) {
+      compiler.getErrorManager().report(CheckLevel.ERROR,
+          JSError.make(AbstractCompiler.READ_ERROR, getName()));
+      return false;
+    }
   }
 }

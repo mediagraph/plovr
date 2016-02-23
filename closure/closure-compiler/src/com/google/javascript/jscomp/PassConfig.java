@@ -50,7 +50,7 @@ public abstract class PassConfig {
   private TypedScopeCreator internalScopeCreator;
 
   /** The global typed scope. */
-  Scope topScope = null;
+  TypedScope topScope = null;
 
   public PassConfig(CompilerOptions options) {
     this.options = options;
@@ -96,7 +96,7 @@ public abstract class PassConfig {
   /**
    * Gets the global scope, with type information.
    */
-  Scope getTopScope() {
+  TypedScope getTopScope() {
     return topScope;
   }
 
@@ -162,7 +162,7 @@ public abstract class PassConfig {
         topScope, typedScopeCreator);
   }
 
-  final InferJSDocInfo makeInferJsDocInfo(AbstractCompiler compiler) {
+  static final InferJSDocInfo makeInferJsDocInfo(AbstractCompiler compiler) {
     return new InferJSDocInfo(compiler);
   }
 
@@ -232,12 +232,6 @@ public abstract class PassConfig {
   protected abstract State getIntermediateState();
 
   /**
-   * Set the intermediate state for a pass config, to restart
-   * a compilation process that had been previously paused.
-   */
-  protected abstract void setIntermediateState(State state);
-
-  /**
    * An implementation of PassConfig that just proxies all its method calls
    * into an inner class.
    */
@@ -262,16 +256,12 @@ public abstract class PassConfig {
       return delegate.getTypedScopeCreator();
     }
 
-    @Override Scope getTopScope() {
+    @Override TypedScope getTopScope() {
       return delegate.getTopScope();
     }
 
     @Override protected State getIntermediateState() {
       return delegate.getIntermediateState();
-    }
-
-    @Override protected void setIntermediateState(State state) {
-      delegate.setIntermediateState(state);
     }
   }
 
@@ -282,8 +272,6 @@ public abstract class PassConfig {
     private static final long serialVersionUID = 1L;
 
     final Map<String, Integer> cssNames;
-    final Set<String> exportedNames;
-    final CrossModuleMethodMotion.IdGenerator crossModuleIdGenerator;
     final VariableMap variableMap;
     final VariableMap propertyMap;
     final VariableMap anonymousFunctionNameMap;
@@ -298,8 +286,6 @@ public abstract class PassConfig {
         VariableMap stringMap, FunctionNames functionNames,
         String idGeneratorMap) {
       this.cssNames = cssNames;
-      this.exportedNames = exportedNames;
-      this.crossModuleIdGenerator = crossModuleIdGenerator;
       this.variableMap = variableMap;
       this.propertyMap = propertyMap;
       this.anonymousFunctionNameMap = anonymousFunctionNameMap;

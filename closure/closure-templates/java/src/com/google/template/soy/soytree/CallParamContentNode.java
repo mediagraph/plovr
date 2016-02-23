@@ -16,25 +16,31 @@
 
 package com.google.template.soy.soytree;
 
-import com.google.template.soy.base.SoySyntaxException;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.basetree.MixinParentNode;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
+import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.error.ErrorReporter.Checkpoint;
+import com.google.template.soy.error.ExplodingErrorReporter;
+import com.google.template.soy.error.SoyError;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
 
 import java.util.List;
 
 import javax.annotation.Nullable;
 
-
 /**
  * Node representing a 'param' with content.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class CallParamContentNode extends CallParamNode implements RenderUnitNode {
+public final class CallParamContentNode extends CallParamNode implements RenderUnitNode {
 
+  private static final SoyError PARAM_HAS_VALUE_BUT_IS_NOT_SELF_CLOSING
+      = SoyError.of("A ''param'' tag should contain a value if and only if it is also self-ending "
+          + "(with a trailing ''/'') (invalid tag is '{'param {0}'}').");
 
   /** The mixin object that implements the ParentNode functionality. */
   private final MixinParentNode<StandaloneNode> parentMixin;
@@ -48,22 +54,20 @@ public class CallParamContentNode extends CallParamNode implements RenderUnitNod
 
   /**
    * @param id The id for this node.
+   * @param sourceLocation The node's source location.
    * @param commandText The command text.
-   * @throws SoySyntaxException If a syntax error is found.
    */
-  public CallParamContentNode(int id, String commandText) throws SoySyntaxException {
-    super(id, commandText);
-    parentMixin = new MixinParentNode<StandaloneNode>(this);
+  private CallParamContentNode(
+      int id,
+      SourceLocation sourceLocation,
+      String key,
+      ContentKind contentKind,
+      String commandText) {
+    super(id, sourceLocation, commandText);
+    parentMixin = new MixinParentNode<>(this);
 
-    CommandTextParseResult parseResult = parseCommandTextHelper(commandText);
-    key = parseResult.key;
-    contentKind = parseResult.contentKind;
-
-    if (parseResult.valueExprUnion != null) {
-      throw SoySyntaxException.createWithoutMetaInfo(
-          "A 'param' tag should contain a value if and only if it is also self-ending (with a" +
-              " trailing '/') (invalid tag is {param " + commandText + "}).");
-    }
+    this.key = key;
+    this.contentKind = contentKind;
   }
 
 
@@ -71,9 +75,9 @@ public class CallParamContentNode extends CallParamNode implements RenderUnitNod
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected CallParamContentNode(CallParamContentNode orig) {
-    super(orig);
-    this.parentMixin = new MixinParentNode<StandaloneNode>(orig.parentMixin, this);
+  private CallParamContentNode(CallParamContentNode orig, CopyState copyState) {
+    super(orig, copyState);
+    this.parentMixin = new MixinParentNode<>(orig.parentMixin, this, copyState);
     this.key = orig.key;
     this.contentKind = orig.contentKind;
   }
@@ -107,14 +111,6 @@ public class CallParamContentNode extends CallParamNode implements RenderUnitNod
     appendSourceStringForChildren(sb);
     sb.append("{/").append(getCommandName()).append('}');
     return sb.toString();
-  }
-
-  @Override public void setNeedsEnvFrameDuringInterp(Boolean needsEnvFrameDuringInterp) {
-    parentMixin.setNeedsEnvFrameDuringInterp(needsEnvFrameDuringInterp);
-  }
-
-  @Override public Boolean needsEnvFrameDuringInterp() {
-    return parentMixin.needsEnvFrameDuringInterp();
   }
 
   @Override public int numChildren() {
@@ -181,8 +177,35 @@ public class CallParamContentNode extends CallParamNode implements RenderUnitNod
     return parentMixin.toTreeString(indent);
   }
 
-  @Override public CallParamContentNode clone() {
-    return new CallParamContentNode(this);
+  @Override public CallParamContentNode copy(CopyState copyState) {
+    return new CallParamContentNode(this, copyState);
+  }
+
+  public static final class Builder extends CallParamNode.Builder {
+
+    private static CallParamContentNode error() {
+      return new Builder(-1, "error", SourceLocation.UNKNOWN)
+          .build(ExplodingErrorReporter.get()); // guaranteed to build
+    }
+
+    public Builder(int id, String commandText, SourceLocation sourceLocation) {
+      super(id, commandText, sourceLocation);
+    }
+
+    public CallParamContentNode build(ErrorReporter errorReporter) {
+      Checkpoint checkpoint = errorReporter.checkpoint();
+      CommandTextParseResult parseResult = parseCommandTextHelper(errorReporter);
+      if (parseResult.valueExprUnion != null) {
+        errorReporter.report(sourceLocation, PARAM_HAS_VALUE_BUT_IS_NOT_SELF_CLOSING, commandText);
+      }
+
+      if (errorReporter.errorsSince(checkpoint)) {
+        return error();
+      }
+
+      return new CallParamContentNode(
+          id, sourceLocation, parseResult.key, parseResult.contentKind, commandText);
+    }
   }
 
 }

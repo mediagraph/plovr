@@ -21,8 +21,7 @@ import static com.google.javascript.rhino.jstype.JSTypeNative.BOOLEAN_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.NUMBER_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.STRING_TYPE;
 
-import com.google.common.collect.Lists;
-import com.google.javascript.jscomp.CheckLevel;
+import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.TypeValidator.TypeMismatch;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.jstype.JSType;
@@ -36,12 +35,12 @@ import java.util.List;
  * Tests for TypeValidator.
  * @author nicksantos@google.com (Nick Santos)
  */
-public class TypeValidatorTest extends CompilerTestCase {
+public final class TypeValidatorTest extends CompilerTestCase {
 
   private Compiler compiler = null;
 
   public TypeValidatorTest() {
-    enableTypeCheck(CheckLevel.ERROR);
+    enableTypeCheck();
   }
 
   @Override
@@ -60,7 +59,7 @@ public class TypeValidatorTest extends CompilerTestCase {
   public void testBasicMismatch() throws Exception {
     testSame("/** @param {number} x */ function f(x) {} f('a');",
         TYPE_MISMATCH_WARNING);
-    assertMismatches(Lists.newArrayList(fromNatives(STRING_TYPE, NUMBER_TYPE)));
+    assertMismatches(ImmutableList.of(fromNatives(STRING_TYPE, NUMBER_TYPE)));
   }
 
   public void testFunctionMismatch() throws Exception {
@@ -79,7 +78,7 @@ public class TypeValidatorTest extends CompilerTestCase {
     JSType secondFunction = registry.createFunctionType(string, bool);
 
     assertMismatches(
-        Lists.newArrayList(
+        ImmutableList.of(
             new TypeMismatch(firstFunction, secondFunction, null),
             fromNatives(STRING_TYPE, BOOLEAN_TYPE),
             fromNatives(NUMBER_TYPE, STRING_TYPE)));
@@ -101,9 +100,86 @@ public class TypeValidatorTest extends CompilerTestCase {
     JSType secondFunction = registry.createFunctionType(number, bool);
 
     assertMismatches(
-        Lists.newArrayList(
+        ImmutableList.of(
             new TypeMismatch(firstFunction, secondFunction, null),
             fromNatives(STRING_TYPE, BOOLEAN_TYPE)));
+  }
+
+  public void testFunctionMismatchMediumLengthTypes() throws Exception {
+    testSame("",
+        LINE_JOINER.join(
+            "/**",
+            " * @param {{a: string, b: string, c: string, d: string, e: string}} x",
+            " */",
+            "function f(x) {}",
+            "var y = {a:'',b:'',c:'',d:'',e:0};",
+            "f(y);"),
+        TYPE_MISMATCH_WARNING,
+        LINE_JOINER.join(
+            "actual parameter 1 of f does not match formal parameter",
+            "found   : {",
+            "  a: string, ",
+            "  b: string, ",
+            "  c: string, ",
+            "  d: string, ",
+            "  e: (number|string)",
+            "}",
+            "required: {",
+            "  a: string, ",
+            "  b: string, ",
+            "  c: string, ",
+            "  d: string, ",
+            "  e: string",
+            "}"));
+  }
+
+  /**
+   * Make sure the 'found' and 'required' strings are not identical when there is a mismatch.
+   * See https://code.google.com/p/closure-compiler/issues/detail?id=719.
+   */
+  public void testFunctionMismatchLongTypes() throws Exception {
+    testSame("",
+        LINE_JOINER.join(
+            "/**",
+            " * @param {{a: string, b: string, c: string, d: string, e: string,",
+            " *          f: string, g: string, h: string, i: string, j: string, k: string}} x",
+            " */",
+            "function f(x) {}",
+            "var y = {a:'',b:'',c:'',d:'',e:'',f:'',g:'',h:'',i:'',j:'',k:0};",
+            "f(y);"),
+        TYPE_MISMATCH_WARNING,
+        LINE_JOINER.join(
+            "actual parameter 1 of f does not match formal parameter",
+            "found   : {a: string, b: string, c: string, d: string, e: string, f: string,"
+              + " g: string, h: string, i: string, j: string, k: (number|string)}",
+            "required: {a: string, b: string, c: string, d: string, e: string, f: string,"
+              + " g: string, h: string, i: string, j: string, k: string}"));
+  }
+
+  /**
+   * Same as testFunctionMismatchLongTypes, but with one of the types being a typedef.
+   */
+  public void testFunctionMismatchTypedef() throws Exception {
+    testSame("",
+        LINE_JOINER.join(
+            "/**",
+            " * @typedef {{a: string, b: string, c: string, d: string, e: string,",
+            " *            f: string, g: string, h: string, i: string, j: string, k: string}} x",
+            " */",
+            "var t;",
+            "/**",
+            " * @param {t} x",
+            " */",
+            "function f(x) {}",
+            "var y = {a:'',b:'',c:'',d:'',e:'',f:'',g:'',h:'',i:'',j:'',k:0};",
+            "f(y);"),
+        TYPE_MISMATCH_WARNING,
+        LINE_JOINER.join(
+            "actual parameter 1 of f does not match formal parameter",
+            "found   : {a: string, b: string, c: string, d: string, e: string, f: string,"
+              + " g: string, h: string, i: string, j: string, k: (number|string)}",
+            "required: {a: string, b: string, c: string, d: string, e: string, f: string,"
+              + " g: string, h: string, i: string, j: string, k: string}"));
   }
 
   public void testNullUndefined() {
@@ -134,8 +210,7 @@ public class TypeValidatorTest extends CompilerTestCase {
   }
 
   private void assertMismatches(List<TypeMismatch> expected) {
-    List<TypeMismatch> actual = Lists.newArrayList(
-        compiler.getTypeValidator().getMismatches());
+    List<TypeMismatch> actual = ImmutableList.copyOf(compiler.getTypeMismatches());
     assertEquals(expected, actual);
   }
 }

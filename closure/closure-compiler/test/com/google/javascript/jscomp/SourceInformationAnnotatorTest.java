@@ -22,14 +22,14 @@ import com.google.javascript.rhino.Token;
 /**
  * @author johnlenz@google.com (John Lenz)
  */
-public class SourceInformationAnnotatorTest extends CompilerTestCase {
+public final class SourceInformationAnnotatorTest extends CompilerTestCase {
 
   @Override
   protected CompilerPass getProcessor(final Compiler compiler) {
     return new CompilerPass() {
       @Override
       public void process(Node externs, Node root) {
-        NodeTraversal.traverse(compiler, root,
+        NodeTraversal.traverseEs6(compiler, root,
             new SourceInformationAnnotator("", false));
       }};
   }
@@ -40,7 +40,7 @@ public class SourceInformationAnnotatorTest extends CompilerTestCase {
     name.putProp(Node.ORIGINALNAME_PROP, "bar");
     root.addChildToBack(name);
 
-    NodeTraversal.traverse(new Compiler(), root,
+    NodeTraversal.traverseEs6(new Compiler(), root,
         new SourceInformationAnnotator("", false));
     assertEquals(name.getProp(Node.ORIGINALNAME_PROP), "bar");
   }

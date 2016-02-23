@@ -31,6 +31,10 @@ import com.google.javascript.rhino.jstype.TernaryValue;
  * expected for functions with return type information. Functions with empty
  * bodies are ignored.
  *
+ *
+ * NOTE(dimvar):
+ * Do not convert this pass to use TypeI. The pass is only used with the old type checker.
+ * The new type inference checks missing returns on its own.
  */
 class CheckMissingReturn implements ScopedCallback {
 
@@ -40,7 +44,7 @@ class CheckMissingReturn implements ScopedCallback {
           "Missing return statement. Function expected to return {0}.");
 
   private final AbstractCompiler compiler;
-  private final CheckLevel level;
+  private final CodingConvention convention;
 
   private static final Predicate<Node> IS_RETURN = new Predicate<Node>() {
     @Override
@@ -79,13 +83,9 @@ class CheckMissingReturn implements ScopedCallback {
     }
   };
 
-  /**
-   * @param level level of severity to report when a missing return statement
-   *     is discovered
-   */
-  CheckMissingReturn(AbstractCompiler compiler, CheckLevel level) {
+  CheckMissingReturn(AbstractCompiler compiler) {
     this.compiler = compiler;
-    this.level = level;
+    this.convention = compiler.getCodingConvention();
   }
 
   @Override
@@ -100,7 +100,7 @@ class CheckMissingReturn implements ScopedCallback {
     }
 
     CheckPathsBetweenNodes<Node, ControlFlowGraph.Branch> test =
-        new CheckPathsBetweenNodes<Node, ControlFlowGraph.Branch>(
+        new CheckPathsBetweenNodes<>(
             t.getControlFlowGraph(),
             t.getControlFlowGraph().getEntry(),
             t.getControlFlowGraph().getImplicitReturn(),
@@ -108,8 +108,7 @@ class CheckMissingReturn implements ScopedCallback {
 
     if (!test.allPathsSatisfyPredicate()) {
       compiler.report(
-          t.makeError(t.getScopeRoot(), level,
-              MISSING_RETURN_STATEMENT, returnType.toString()));
+          t.makeError(t.getScopeRoot(), MISSING_RETURN_STATEMENT, returnType.toString()));
     }
   }
 
@@ -119,9 +118,13 @@ class CheckMissingReturn implements ScopedCallback {
    *
    * @return true if all paths return, converse not necessarily true
    */
-  private static boolean fastAllPathsReturnCheck(ControlFlowGraph<Node> cfg) {
+  private boolean fastAllPathsReturnCheck(ControlFlowGraph<Node> cfg) {
     for (DiGraphEdge<Node, Branch> s : cfg.getImplicitReturn().getInEdges()) {
-      if (!s.getSource().getValue().isReturn()) {
+      Node n = s.getSource().getValue();
+      // NOTE(dimvar): it is possible to change ControlFlowAnalysis.java, so
+      // that the calls that always throw are treated in the same way as THROW
+      // in the CFG. Then, we would not need to use the coding convention here.
+      if (!n.isReturn() && !convention.isFunctionCallThatAlwaysThrows(n)) {
         return false;
       }
     }
@@ -194,8 +197,7 @@ class CheckMissingReturn implements ScopedCallback {
    *     containing void or unknown
    */
   private boolean isVoidOrUnknown(JSType returnType) {
-    final JSType voidType =
-        compiler.getTypeRegistry().getNativeType(JSTypeNative.VOID_TYPE);
+    final JSType voidType = compiler.getTypeIRegistry().getNativeType(JSTypeNative.VOID_TYPE);
     return voidType.isSubtype(returnType);
   }
 }

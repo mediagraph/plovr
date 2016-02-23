@@ -16,13 +16,15 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.collect.ImmutableMap;
 
 /**
  * Test cases for {@link NameAnonymousFunctionsMapped}.
  *
  */
-public class NameAnonymousFunctionsMappedTest extends CompilerTestCase {
+public final class NameAnonymousFunctionsMappedTest extends CompilerTestCase {
   private static final String EXTERNS = "var document;";
 
   private NameAnonymousFunctionsMapped pass;
@@ -50,13 +52,12 @@ public class NameAnonymousFunctionsMappedTest extends CompilerTestCase {
 
   private void assertMapping(String... pairs) {
     VariableMap functionMap = pass.getFunctionMap();
-    assertTrue(pairs.length % 2 == 0);
+    assertEquals(0, pairs.length % 2);
     for (int i = 0; i < pairs.length; i += 2) {
       String s = functionMap.lookupSourceName(pairs[i]);
       assertEquals(pairs[i + 1], s);
     }
-    assertEquals(pairs.length / 2,
-        functionMap.getNewNameToOriginalNameMap().size());
+    assertThat(functionMap.getNewNameToOriginalNameMap()).hasSize(pairs.length / 2);
   }
 
   public void testSimpleVarAssignment1() {
@@ -66,7 +67,7 @@ public class NameAnonymousFunctionsMappedTest extends CompilerTestCase {
   }
 
   public void testSimpleVarAssignment2() {
-    previous = VariableMap.fromMap(ImmutableMap.<String,String>of(
+    previous = VariableMap.fromMap(ImmutableMap.of(
         "a", "previous"));
 
     test("var a = function() { return 1; }",
@@ -76,7 +77,7 @@ public class NameAnonymousFunctionsMappedTest extends CompilerTestCase {
   }
 
   public void testSimpleVarAssignment3() {
-    previous = VariableMap.fromMap(ImmutableMap.<String,String>of(
+    previous = VariableMap.fromMap(ImmutableMap.of(
         "unused", "$"));
 
     test("var fn = function() { return 1; }",

@@ -20,19 +20,22 @@ package com.google.javascript.jscomp;
  * Generate exports unit test.
  *
  */
-public class GenerateExportsTest extends CompilerTestCase {
+public final class GenerateExportsTest extends Es6CompilerTestCase {
 
   private static final String EXTERNS =
       "function google_exportSymbol(a, b) {}; " +
       "goog.exportProperty = function(a, b, c) {}; ";
 
+  private boolean allowNonGlobalExports = true;
+
   public GenerateExportsTest() {
     super(EXTERNS);
+    compareJsDoc = false;
   }
 
   @Override
   protected CompilerPass getProcessor(Compiler compiler) {
-    return new GenerateExports(compiler,
+    return new GenerateExports(compiler, allowNonGlobalExports,
         "google_exportSymbol", "goog.exportProperty");
   }
 
@@ -45,12 +48,18 @@ public class GenerateExportsTest extends CompilerTestCase {
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    super.enableLineNumberCheck(false);
+    this.allowNonGlobalExports  = true;
+  }
+
+  @Override
+  protected void testExternChanges(String input, String expectedExtern) {
+    this.enableCompareAsTree(false);
+    super.testExternChanges(input, expectedExtern);
   }
 
   public void testExportSymbol() {
     test("/** @export */function foo() {}",
-        "function foo(){}google_exportSymbol(\"foo\",foo)");
+         "function foo(){}google_exportSymbol(\"foo\",foo)");
   }
 
   public void testExportSymbolAndProperties() {
@@ -60,6 +69,17 @@ public class GenerateExportsTest extends CompilerTestCase {
          "google_exportSymbol(\"foo\",foo);" +
          "foo.prototype.bar=function(){};" +
          "goog.exportProperty(foo.prototype,\"bar\",foo.prototype.bar)");
+  }
+
+  public void testExportPrototypeProperty() {
+    test(
+        LINE_JOINER.join(
+            "function Foo() {}",
+            "/** @export */ Foo.prototype.bar = function() {};"),
+        LINE_JOINER.join(
+            "function Foo() {}",
+            "Foo.prototype.bar = function(){};",
+            "goog.exportProperty(Foo.prototype, 'bar', Foo.prototype.bar);"));
   }
 
   public void testExportSymbolAndConstantProperties() {
@@ -74,7 +94,25 @@ public class GenerateExportsTest extends CompilerTestCase {
   public void testExportVars() {
     test("/** @export */var FOO = 5",
          "var FOO=5;" +
-         "google_exportSymbol(\"FOO\",FOO)");
+         "google_exportSymbol('FOO',FOO)");
+  }
+
+  public void testExportLet() {
+    testEs6("/** @export */let FOO = 5",
+         "let FOO = 5;" +
+         "google_exportSymbol('FOO', FOO)");
+  }
+
+  public void testExportConst() {
+    testEs6("/** @export */const FOO = 5",
+         "const FOO = 5;" +
+         "google_exportSymbol('FOO', FOO)");
+  }
+
+  public void testExportEs6ArrowFunction() {
+    testEs6("/** @export */var fn = ()=>{};",
+          "var fn = ()=>{};"
+        + "google_exportSymbol('fn', fn)");
   }
 
   public void testNoExport() {
@@ -86,8 +124,17 @@ public class GenerateExportsTest extends CompilerTestCase {
    * @see FindExportableNodes
    */
   public void testNestedVarAssign() {
-    test("var BAR;\n/** @export */var FOO = BAR = 5",
-         null, FindExportableNodes.NON_GLOBAL_ERROR);
+    this.allowNonGlobalExports = false;
+    testError(LINE_JOINER.join(
+        "var BAR;",
+        "/** @export */ var FOO = BAR = 5"),
+        FindExportableNodes.NON_GLOBAL_ERROR);
+
+    this.allowNonGlobalExports = true;
+    testError(LINE_JOINER.join(
+        "var BAR;",
+        "/** @export */ var FOO = BAR = 5"),
+        FindExportableNodes.EXPORT_ANNOTATION_NOT_ALLOWED);
   }
 
   /**
@@ -95,18 +142,106 @@ public class GenerateExportsTest extends CompilerTestCase {
    * @see FindExportableNodes
    */
   public void testNestedAssign() {
-    test("var BAR;var FOO = {};\n/** @export */FOO.test = BAR = 5",
-         null, FindExportableNodes.NON_GLOBAL_ERROR);
+    this.allowNonGlobalExports = false;
+    testError(LINE_JOINER.join(
+        "var BAR;var FOO = {};",
+        "/** @export */FOO.test = BAR = 5"),
+        FindExportableNodes.NON_GLOBAL_ERROR);
+
+    this.allowNonGlobalExports = true;
+    testError(LINE_JOINER.join(
+        "var BAR;var FOO = {};",
+        "/** @export */FOO.test = BAR = 5"),
+        FindExportableNodes.EXPORT_ANNOTATION_NOT_ALLOWED);
   }
 
-  public void testNonGlobalScopeExport() {
-    test("(function() { /** @export */var FOO = 5 })()",
-         null, FindExportableNodes.NON_GLOBAL_ERROR);
+  public void testNonGlobalScopeExport1() {
+    this.allowNonGlobalExports = false;
+    testError("(function() { /** @export */var FOO = 5 })()",
+        FindExportableNodes.NON_GLOBAL_ERROR);
+
+    this.allowNonGlobalExports = true;
+    testError("(function() { /** @export */var FOO = 5 })()",
+        FindExportableNodes.EXPORT_ANNOTATION_NOT_ALLOWED);
+  }
+
+  public void testNonGlobalScopeExport2() {
+    this.allowNonGlobalExports = false;
+    testError("var x = {/** @export */ A:function() {}}",
+        FindExportableNodes.NON_GLOBAL_ERROR);
   }
 
   public void testExportClass() {
     test("/** @export */ function G() {} foo();",
          "function G() {} google_exportSymbol('G', G); foo();");
+  }
+
+  public void testExportClassMember() {
+    test(LINE_JOINER.join(
+          "/** @export */ function F() {}",
+          "/** @export */ F.prototype.method = function() {};"),
+         LINE_JOINER.join(
+          "function F() {}",
+          "google_exportSymbol('F', F);",
+          "F.prototype.method = function() {};",
+          "goog.exportProperty(F.prototype, 'method', F.prototype.method);"));
+  }
+
+  public void testExportEs6ClassSymbol() {
+    testEs6("/** @export */ class G {} foo();",
+            "class G {} google_exportSymbol('G', G); foo();");
+
+    testEs6("/** @export */ G = class {}; foo();",
+            "G = class {}; google_exportSymbol('G', G); foo();");
+  }
+
+  public void testExportEs6ClassProperty() {
+    testEs6(LINE_JOINER.join(
+          "/** @export */ G = class {};",
+          "/** @export */ G.foo = class {};"),
+            LINE_JOINER.join(
+          "G = class {}; google_exportSymbol('G', G);",
+          "G.foo = class {};",
+          "goog.exportProperty(G, 'foo', G.foo)"));
+
+    testEs6(LINE_JOINER.join(
+        "G = class {};",
+        "/** @export */ G.prototype.foo = class {};"),
+            LINE_JOINER.join(
+        "G = class {}; G.prototype.foo = class {};",
+        "goog.exportProperty(G.prototype, 'foo', G.prototype.foo)"));
+  }
+
+  public void testExportEs6ClassMembers() {
+    testEs6(LINE_JOINER.join(
+          "/** @export */ class G {",
+          "  /** @export */ method() {} }"),
+            LINE_JOINER.join(
+          "class G { method() {} }",
+          "google_exportSymbol('G', G);",
+          "goog.exportProperty(G.prototype, 'method', G.prototype.method);"));
+
+    testEs6(LINE_JOINER.join(
+          "/** @export */ class G {",
+          "/** @export */ static method() {} }"),
+            LINE_JOINER.join(
+          "class G { static method() {} }",
+          "google_exportSymbol('G', G);",
+          "goog.exportProperty(G, 'method', G.method);"));
+  }
+
+  public void testGoogScopeFunctionOutput() {
+    test(
+        "/** @export */ $jscomp.scope.foo = /** @export */ function() {}",
+        "$jscomp.scope.foo = /** @export */ function() {};"
+            + "google_exportSymbol('$jscomp.scope.foo', $jscomp.scope.foo);");
+  }
+
+  public void testGoogScopeClassOutput() {
+    testEs6(
+        "/** @export */ $jscomp.scope.foo = /** @export */ class {}",
+        "$jscomp.scope.foo = /** @export */ class {};"
+            + "google_exportSymbol('$jscomp.scope.foo', $jscomp.scope.foo);");
   }
 
   public void testExportSubclass() {
@@ -121,5 +256,47 @@ public class GenerateExportsTest extends CompilerTestCase {
     test("/** @enum {string}\n @export */ var E = {A:1, B:2};",
          "/** @enum {string}\n @export */ var E = {A:1, B:2};" +
          "google_exportSymbol('E', E);");
+  }
+
+  public void testExportObjectLit1() {
+    allowExternsChanges(true);
+    String code = "var E = {/** @export */ A:1, B:2};";
+    testSame(code);
+    testExternChanges(code, "Object.prototype.A;");
+  }
+
+  public void testExportObjectLit2() {
+    allowExternsChanges(true);
+    String code = "var E = {/** @export */ get A() { return 1 }, B:2};";
+    testSame(code);
+    testExternChanges(code, "Object.prototype.A;");
+  }
+
+  public void testExportObjectLit3() {
+    allowExternsChanges(true);
+    String code = "var E = {/** @export */ set A(v) {}, B:2};";
+    testSame(code);
+    testExternChanges(code, "Object.prototype.A;");
+  }
+
+  public void testExportObjectLit4() {
+    allowExternsChanges(true);
+    String code = "var E = {/** @export */ A:function() {}, B:2};";
+    testSame(code);
+    testExternChanges(code, "Object.prototype.A;");
+  }
+
+  public void testExportClassMember1() {
+    allowExternsChanges(true);
+    String code = "var E = function() { /** @export */ this.foo = 1; };";
+    testSame(code);
+    testExternChanges(code, "Object.prototype.foo;");
+  }
+
+  public void testExportClassMemberStub() {
+    allowExternsChanges(true);
+    String code = "var E = function() { /** @export */ this.foo; };";
+    testSame(code);
+    testExternChanges(code, "Object.prototype.foo;");
   }
 }

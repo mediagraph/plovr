@@ -16,20 +16,21 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 import com.google.template.soy.soytree.SoyNode.StatementNode;
-
 
 /**
  * Node representing the 'debugger' statement.
  *
- * @author Kai Huang
  */
-public class DebuggerNode extends AbstractCommandNode implements StandaloneNode, StatementNode {
+public final class DebuggerNode extends AbstractCommandNode
+    implements StandaloneNode, StatementNode {
 
 
-  public DebuggerNode(int id) {
-    super(id, "debugger", "");
+  public DebuggerNode(int id, SourceLocation sourceLocation) {
+    super(id, sourceLocation, "debugger", "");
   }
 
 
@@ -37,8 +38,8 @@ public class DebuggerNode extends AbstractCommandNode implements StandaloneNode,
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected DebuggerNode(DebuggerNode orig) {
-    super(orig);
+  private DebuggerNode(DebuggerNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
 
 
@@ -52,8 +53,8 @@ public class DebuggerNode extends AbstractCommandNode implements StandaloneNode,
   }
 
 
-  @Override public SoyNode clone() {
-    return new DebuggerNode(this);
+  @Override public DebuggerNode copy(CopyState copyState) {
+    return new DebuggerNode(this, copyState);
   }
 
 }

@@ -16,12 +16,14 @@
 
 package com.google.template.soy.basicfunctions;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.collect.ImmutableList;
-import com.google.template.soy.data.SoyData;
-import com.google.template.soy.data.SoyListData;
+import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.SoyValueHelper;
 import com.google.template.soy.data.restricted.IntegerData;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
 import com.google.template.soy.jssrc.restricted.JsExpr;
+import com.google.template.soy.pysrc.restricted.PyExpr;
 
 import junit.framework.TestCase;
 
@@ -29,47 +31,26 @@ import junit.framework.TestCase;
 /**
  * Unit tests for LengthFunction.
  *
- * @author Kai Huang
  */
 public class LengthFunctionTest extends TestCase {
 
-
-  public void testComputeForTofu() {
-
+  public void testComputeForJava() {
     LengthFunction lengthFunction = new LengthFunction();
-    SoyData list = new SoyListData(1, 3, 5, 7);
-    assertEquals(IntegerData.forValue(4),
-                 lengthFunction.computeForTofu(ImmutableList.of(list)));
+    SoyValue list = SoyValueHelper.UNCUSTOMIZED_INSTANCE.newEasyList(1, 3, 5, 7);
+    assertEquals(IntegerData.forValue(4), lengthFunction.computeForJava(ImmutableList.of(list)));
   }
 
-
   public void testComputeForJsSrc() {
-
     LengthFunction lengthFunction = new LengthFunction();
     JsExpr expr = new JsExpr("JS_CODE", Integer.MAX_VALUE);
     assertEquals(new JsExpr("JS_CODE.length", Integer.MAX_VALUE),
                  lengthFunction.computeForJsSrc(ImmutableList.of(expr)));
   }
 
-
-  public void testComputeForJavaSrc() {
-
+  public void testComputeForPySrc() {
     LengthFunction lengthFunction = new LengthFunction();
-
-    JavaExpr expr = new JavaExpr("JAVA_CODE", SoyListData.class, Integer.MAX_VALUE);
-    assertEquals(
-        new JavaExpr(
-            "com.google.template.soy.data.restricted.IntegerData.forValue((JAVA_CODE).length())",
-            IntegerData.class, Integer.MAX_VALUE),
-        lengthFunction.computeForJavaSrc(ImmutableList.of(expr)));
-
-    expr = new JavaExpr("JAVA_CODE", SoyData.class, Integer.MAX_VALUE);
-    assertEquals(
-        new JavaExpr(
-            "com.google.template.soy.data.restricted.IntegerData.forValue(" + 
-                "((com.google.template.soy.data.SoyListData) JAVA_CODE).length())",
-            IntegerData.class, Integer.MAX_VALUE),
-        lengthFunction.computeForJavaSrc(ImmutableList.of(expr)));
+    PyExpr expr = new PyExpr("data", Integer.MAX_VALUE);
+    assertThat(lengthFunction.computeForPySrc(ImmutableList.of(expr)))
+        .isEqualTo(new PyExpr("len(data)", Integer.MAX_VALUE));
   }
-
 }

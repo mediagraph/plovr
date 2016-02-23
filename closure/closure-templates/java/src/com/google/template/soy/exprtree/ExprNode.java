@@ -16,9 +16,10 @@
 
 package com.google.template.soy.exprtree;
 
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.basetree.Node;
 import com.google.template.soy.basetree.ParentNode;
-
+import com.google.template.soy.types.SoyType;
 
 /**
  * This class defines the base interface for a node in the Soy expression parse tree, as well as a
@@ -29,7 +30,6 @@ import com.google.template.soy.basetree.ParentNode;
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
 public interface ExprNode extends Node {
 
@@ -53,10 +53,9 @@ public interface ExprNode extends Node {
 
     VAR_NODE,
 
-    DATA_REF_NODE,
-    DATA_REF_ACCESS_KEY_NODE,
-    DATA_REF_ACCESS_INDEX_NODE,
-    DATA_REF_ACCESS_EXPR_NODE,
+    VAR_REF_NODE,
+    FIELD_ACCESS_NODE,
+    ITEM_ACCESS_NODE,
 
     GLOBAL_NODE,
 
@@ -88,9 +87,17 @@ public interface ExprNode extends Node {
    */
   public Kind getKind();
 
+  /**
+   * Gets the data type of this node.
+   */
+  public SoyType getType();
+
   @Override public ParentExprNode getParent();
 
-  @Override public ExprNode clone();
+  /**
+   * See {@link Node#copy(CopyState)} for a description of the copy contract.
+   */
+  @Override public ExprNode copy(CopyState copyState);
 
 
   // -----------------------------------------------------------------------------------------------

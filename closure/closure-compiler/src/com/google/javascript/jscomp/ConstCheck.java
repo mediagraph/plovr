@@ -18,10 +18,12 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
+import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Verifies that constants are only assigned a value once.
@@ -36,23 +38,24 @@ class ConstCheck extends AbstractPostOrderCallback
   static final DiagnosticType CONST_REASSIGNED_VALUE_ERROR =
       DiagnosticType.error(
           "JSC_CONSTANT_REASSIGNED_VALUE_ERROR",
-          "constant {0} assigned a value more than once");
+          "constant {0} assigned a value more than once.\n" +
+          "Original definition at {1}");
 
   private final AbstractCompiler compiler;
-  private final Set<Scope.Var> initializedConstants;
+  private final Set<Var> initializedConstants;
 
   /**
    * Creates an instance.
    */
   public ConstCheck(AbstractCompiler compiler) {
     this.compiler = compiler;
-    this.initializedConstants = new HashSet<Scope.Var>();
+    this.initializedConstants = new HashSet<>();
   }
 
   @Override
   public void process(Node externs, Node root) {
     Preconditions.checkState(compiler.getLifeCycleStage().isNormalized());
-    NodeTraversal.traverse(compiler, root, this);
+    NodeTraversal.traverseRootsEs6(compiler, this, externs, root);
   }
 
   @Override
@@ -60,15 +63,18 @@ class ConstCheck extends AbstractPostOrderCallback
     switch (n.getType()) {
       case Token.NAME:
         if (parent != null &&
-            parent.isVar() &&
-            n.hasChildren()) {
+            parent.isVar()) {
           String name = n.getString();
-          Scope.Var var = t.getScope().getVar(name);
+          Var var = t.getScope().getVar(name);
           if (isConstant(var)) {
-            if (initializedConstants.contains(var)) {
-              reportError(t, n, name);
-            } else {
+            // If a constant is declared in externs, add it to initializedConstants to indicate
+            // that it is initialized externally.
+            if (n.isFromExterns()) {
               initializedConstants.add(var);
+            } else if (n.hasChildren()) {
+              if (!initializedConstants.add(var)) {
+                reportError(t, n, var, name);
+              }
             }
           }
         }
@@ -89,13 +95,9 @@ class ConstCheck extends AbstractPostOrderCallback
         Node lhs = n.getFirstChild();
         if (lhs.isName()) {
           String name = lhs.getString();
-          Scope.Var var = t.getScope().getVar(name);
-          if (isConstant(var)) {
-            if (initializedConstants.contains(var)) {
-              reportError(t, n, name);
-            } else {
-              initializedConstants.add(var);
-            }
+          Var var = t.getScope().getVar(name);
+          if (isConstant(var) && !initializedConstants.add(var)) {
+            reportError(t, n, var, name);
           }
         }
         break;
@@ -106,9 +108,9 @@ class ConstCheck extends AbstractPostOrderCallback
         Node lhs = n.getFirstChild();
         if (lhs.isName()) {
           String name = lhs.getString();
-          Scope.Var var = t.getScope().getVar(name);
+          Var var = t.getScope().getVar(name);
           if (isConstant(var)) {
-            reportError(t, n, name);
+            reportError(t, n, var, name);
           }
         }
         break;
@@ -120,14 +122,19 @@ class ConstCheck extends AbstractPostOrderCallback
    * Gets whether a variable is a constant initialized to a literal value at
    * the point where it is declared.
    */
-  private boolean isConstant(Scope.Var var) {
-    return var != null && var.isConst();
+  private static boolean isConstant(Var var) {
+    return var != null && var.isInferredConst();
   }
 
   /**
    * Reports a reassigned constant error.
    */
-  void reportError(NodeTraversal t, Node n, String name) {
-    compiler.report(t.makeError(n, CONST_REASSIGNED_VALUE_ERROR, name));
+  void reportError(NodeTraversal t, Node n, Var var, String name) {
+    JSDocInfo info = NodeUtil.getBestJSDocInfo(n);
+    if (info == null || !info.getSuppressions().contains("const")) {
+      Node declNode = var.getNode();
+      String declaredPosition = declNode.getSourceFileName() + ":" + declNode.getLineno();
+      compiler.report(t.makeError(n, CONST_REASSIGNED_VALUE_ERROR, name, declaredPosition));
+    }
   }
 }

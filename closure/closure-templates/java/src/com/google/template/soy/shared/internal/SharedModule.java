@@ -19,32 +19,29 @@ package com.google.template.soy.shared.internal;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
-import com.google.inject.Singleton;
 import com.google.inject.multibindings.Multibinder;
 import com.google.template.soy.coredirectives.CoreDirectivesModule;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
-import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.shared.restricted.ApiCallScopeBindingAnnotations.ApiCall;
 import com.google.template.soy.shared.restricted.ApiCallScopeBindingAnnotations.IsUsingIjData;
 import com.google.template.soy.shared.restricted.ApiCallScopeBindingAnnotations.LocaleString;
 import com.google.template.soy.shared.restricted.SoyFunction;
-import com.google.template.soy.shared.restricted.SoyJavaRuntimeFunction;
-import com.google.template.soy.shared.restricted.SoyJavaRuntimePrintDirective;
+import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
+import com.google.template.soy.types.SoyTypeProvider;
+import com.google.template.soy.types.SoyTypeRegistry;
 
-import java.util.Map;
 import java.util.Set;
 
+import javax.inject.Singleton;
 
 /**
  * Guice module for shared classes.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class SharedModule extends AbstractModule {
-
+public final class SharedModule extends AbstractModule {
 
   @Override protected void configure() {
 
@@ -66,15 +63,15 @@ public class SharedModule extends AbstractModule {
     bind(Boolean.class).annotatedWith(IsUsingIjData.class)
         .toProvider(GuiceSimpleScope.<Boolean>getUnscopedProvider())
         .in(ApiCallScope.class);
-    bind(SoyMsgBundle.class)
-        .toProvider(GuiceSimpleScope.<SoyMsgBundle>getUnscopedProvider())
-        .in(ApiCallScope.class);
     bind(String.class).annotatedWith(LocaleString.class)
         .toProvider(GuiceSimpleScope.<String>getUnscopedProvider())
         .in(ApiCallScope.class);
     bind(BidiGlobalDir.class)
         .toProvider(GuiceSimpleScope.<BidiGlobalDir>getUnscopedProvider())
         .in(ApiCallScope.class);
+
+    Multibinder.newSetBinder(binder(), SoyTypeProvider.class);
+    bind(SoyTypeRegistry.class).in(Singleton.class);
   }
 
 
@@ -84,8 +81,8 @@ public class SharedModule extends AbstractModule {
    */
   @Provides
   @Singleton
-  Map<String, SoyFunction> provideSoyFunctionsMap(Set<SoyFunction> soyFunctionsSet) {
-
+  ImmutableMap<String, ? extends SoyFunction> provideSoyFunctionsMap(
+      Set<SoyFunction> soyFunctionsSet) {
     ImmutableMap.Builder<String, SoyFunction> mapBuilder = ImmutableMap.builder();
     for (SoyFunction function : soyFunctionsSet) {
       mapBuilder.put(function.getName(), function);
@@ -100,8 +97,8 @@ public class SharedModule extends AbstractModule {
    */
   @Provides
   @Singleton
-  Map<String, SoyPrintDirective> provideSoyDirectivesMap(Set<SoyPrintDirective> soyDirectivesSet) {
-
+  ImmutableMap<String, ? extends SoyPrintDirective> provideSoyDirectivesMap(
+      Set<SoyPrintDirective> soyDirectivesSet) {
     ImmutableMap.Builder<String, SoyPrintDirective> mapBuilder = ImmutableMap.builder();
     for (SoyPrintDirective directive : soyDirectivesSet) {
       mapBuilder.put(directive.getName(), directive);
@@ -109,35 +106,23 @@ public class SharedModule extends AbstractModule {
     return mapBuilder.build();
   }
 
-
   /**
-   * Builds and provides the map of SoyJavaRuntimeFunctions (name to function).
-   * @param soyFunctionsSet The installed set of SoyFunctions (from Guice Multibinder). Each
-   *     SoyFunction may or may not implement SoyJavaRuntimeFunction.
-   */
-  @Provides
-  @Singleton
-  Map<String, SoyJavaRuntimeFunction> provideSoyJavaRuntimeFunctionsMap(
-      Set<SoyFunction> soyFunctionsSet) {
-
-    return ModuleUtils.buildSpecificSoyFunctionsMap(SoyJavaRuntimeFunction.class, soyFunctionsSet);
-  }
-
-
-  /**
-   * Builds and provides the map of SoyJavaRuntimeDirectives (name to directive).
+   * Builds and provides the map of SoyJavaPrintDirectives (name to directive).
+   *
+   * This actually collects all SoyPrintDirectives that implement either SoyJavaPrintDirective or
+   * SoyJavaRuntimePrintDirective (deprecated). The latter are adapted to the former interface.
+   *
    * @param soyDirectivesSet The installed set of SoyPrintDirectives (from Guice Multibinder). Each
-   *     SoyDirective may or may not implement SoyJavaRuntimeDirective.
+   *     SoyPrintDirective may or may not implement SoyJavaPrintDirective or
+   *     SoyJavaRuntimePrintDirective.
    */
   @Provides
   @Singleton
-  Map<String, SoyJavaRuntimePrintDirective> provideSoyJavaRuntimeDirectivesMap(
+  ImmutableMap<String, ? extends SoyJavaPrintDirective> provideSoyJavaDirectivesMap(
       Set<SoyPrintDirective> soyDirectivesSet) {
-
-    return ModuleUtils.buildSpecificSoyDirectivesMap(
-        SoyJavaRuntimePrintDirective.class, soyDirectivesSet);
+    return FunctionAdapters.buildSpecificSoyDirectivesMap(
+        soyDirectivesSet, SoyJavaPrintDirective.class);
   }
-
 
   @Override public boolean equals(Object other) {
     return other != null && this.getClass().equals(other.getClass());

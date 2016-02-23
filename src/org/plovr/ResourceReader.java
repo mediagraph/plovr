@@ -66,8 +66,7 @@ class ResourceReader {
             "/closure/goog/", INPUT_TO_JS_INPUT));
         allInputs.addAll(loadFromManifest("/third_party_manifest.txt",
             "/third_party/closure/goog/", INPUT_TO_JS_INPUT));
-        allInputs.add(new ResourceJsInput("/soy/soyutils_usegoog.js"));
-        allInputs.add(new ResourceJsInput("/soy/soyutils.js"));
+        allInputs.add(new ResourceJsInput("/javascript/soyutils_usegoog.js"));
 
         inputs = ImmutableList.copyOf(allInputs);
       } catch (IOException e) {
@@ -75,13 +74,6 @@ class ResourceReader {
         throw new RuntimeException(e);
       }
     }
-  }
-
-  /**
-   * @return a SourceFile for each externs file bundled with plovr
-   */
-  static List<SourceFile> getDefaultExterns() {
-    return ExternsHolder.instance.externs;
   }
 
   private static final Function<String, SourceFile> INPUT_TO_JS_SOURCE_FILE =
@@ -92,28 +84,6 @@ class ResourceReader {
         return SourceFile.fromGenerator(path, generator);
       }
   };
-
-  private static class ExternsHolder {
-    private static final ExternsHolder instance = new ExternsHolder();
-
-    final List<SourceFile> externs;
-
-    private ExternsHolder() {
-      List<SourceFile> externs;
-      try {
-        externs = loadExternsFromManifest();
-      } catch (IOException e) {
-        logger.severe(e.getMessage());
-        throw new RuntimeException(e);
-      }
-      this.externs = externs;
-    }
-
-    static List<SourceFile> loadExternsFromManifest() throws IOException {
-      return loadFromManifest("/externs_manifest.txt", "/externs/",
-          INPUT_TO_JS_SOURCE_FILE);
-    }
-  }
 
   /**
    * Loads a list of resources from a jar file using a manifest file which is

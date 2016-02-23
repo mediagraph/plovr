@@ -22,13 +22,12 @@ import com.google.javascript.jscomp.ExtractPrototypeMemberDeclarations.Pattern;
  * Tests for {@link ExtractPrototypeMemberDeclarations}.
  *
  */
-public class ExtractPrototypeMemberDeclarationsTest extends CompilerTestCase {
+public final class ExtractPrototypeMemberDeclarationsTest extends CompilerTestCase {
   private static final String TMP = "JSCompiler_prototypeAlias";
   private Pattern pattern = Pattern.USE_GLOBAL_TEMP;
 
   @Override
   protected void setUp() {
-    super.enableLineNumberCheck(true);
     enableNormalize();
     pattern = Pattern.USE_GLOBAL_TEMP;
   }
@@ -165,7 +164,7 @@ public class ExtractPrototypeMemberDeclarationsTest extends CompilerTestCase {
   }
 
   public void testAnonSimple() {
-    pattern = Pattern.USE_ANON_FUNCTION;
+    pattern = Pattern.USE_IIFE;
 
     extract(
         generatePrototypeDeclarations("x", 3),
@@ -183,7 +182,7 @@ public class ExtractPrototypeMemberDeclarationsTest extends CompilerTestCase {
   }
 
   public void testAnonWithDevirtualization() {
-    pattern = Pattern.USE_ANON_FUNCTION;
+    pattern = Pattern.USE_IIFE;
 
     extract(
         "x.prototype.a = 1;" +
@@ -217,7 +216,7 @@ public class ExtractPrototypeMemberDeclarationsTest extends CompilerTestCase {
   }
 
   public void testAnonWithSideFx() {
-    pattern = Pattern.USE_ANON_FUNCTION;
+    pattern = Pattern.USE_IIFE;
     testSame(
         "function foo() {};" +
         "foo.prototype.a1 = 1;" +
@@ -270,7 +269,7 @@ public class ExtractPrototypeMemberDeclarationsTest extends CompilerTestCase {
   public String generateExtractedDeclarations(int num) {
     StringBuilder builder = new StringBuilder();
 
-    if (pattern == Pattern.USE_ANON_FUNCTION) {
+    if (pattern == Pattern.USE_IIFE) {
       builder.append("(function(" + TMP + "){");
     }
 

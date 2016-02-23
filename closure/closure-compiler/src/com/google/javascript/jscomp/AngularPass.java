@@ -17,10 +17,11 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
+import com.google.javascript.rhino.JSDocInfo.Visibility;
+import com.google.javascript.rhino.JSDocInfoBuilder;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
@@ -30,7 +31,9 @@ import java.util.List;
 /**
  * Compiler pass for AngularJS-specific needs. Generates {@code $inject} \
  * properties for functions (class constructors, wrappers, etc) annotated with
- * @ngInject.
+ * @ngInject. Without this pass, AngularJS will not work properly if variable
+ * renaming is enabled, because the function arguments will be renamed.
+ * @see http://docs.angularjs.org/tutorial/step_05#a-note-on-minification
  *
  * <p>For example, the following code:</p>
  * <pre>{@code
@@ -68,11 +71,12 @@ import java.util.List;
  *
  * }</pre>
  */
-class AngularPass extends AbstractPostOrderCallback implements CompilerPass {
+class AngularPass extends AbstractPostOrderCallback
+    implements HotSwapCompilerPass {
   final AbstractCompiler compiler;
 
   /** Nodes annotated with @ngInject */
-  private final List<NodeContext> injectables = new ArrayList<NodeContext>();
+  private final List<NodeContext> injectables = new ArrayList<>();
 
   public AngularPass(AbstractCompiler compiler) {
     this.compiler = compiler;
@@ -90,23 +94,32 @@ class AngularPass extends AbstractPostOrderCallback implements CompilerPass {
           "@ngInject can only be used when defining a function or " +
           "assigning a function expression.");
 
-  static final DiagnosticType FUNCTION_NAME_ERROR =
-      DiagnosticType.error("JSC_FUNCTION_NAME_ERROR",
-          "Unable to determine target function name for @ngInject.");
+  static final DiagnosticType INJECTED_FUNCTION_HAS_DESTRUCTURED_PARAM =
+      DiagnosticType.error("JSC_INJECTED_FUNCTION_HAS_DESTRUCTURED_PARAM",
+          "@ngInject cannot be used on functions containing "
+          + "destructured parameter.");
+
+  static final DiagnosticType INJECTED_FUNCTION_HAS_DEFAULT_VALUE =
+      DiagnosticType.error("JSC_INJECTED_FUNCTION_HAS_DEFAULT_VALUE",
+          "@ngInject cannot be used on functions containing default value.");
 
   @Override
   public void process(Node externs, Node root) {
+    hotSwapScript(root, null);
+  }
+
+  @Override
+  public void hotSwapScript(Node scriptRoot, Node originalRoot) {
     // Traverses AST looking for nodes annotated with @ngInject.
-    NodeTraversal.traverse(compiler, root, this);
-    CodingConvention convention = compiler.getCodingConvention();
+    NodeTraversal.traverseEs6(compiler, scriptRoot, this);
     boolean codeChanged = false;
     // iterates through annotated nodes adding $inject property to elements.
     for (NodeContext entry : injectables) {
       String name = entry.getName();
       Node fn = entry.getFunctionNode();
       List<Node> dependencies = createDependenciesList(fn);
-      // skips entry if it does have any dependencies.
-      if (dependencies.size() == 0) {
+      // skips entry if it does not have any dependencies.
+      if (dependencies.isEmpty()) {
         continue;
       }
       Node dependenciesArray = IR.arraylit(dependencies.toArray(
@@ -115,18 +128,24 @@ class AngularPass extends AbstractPostOrderCallback implements CompilerPass {
       Node statement = IR.exprResult(
           IR.assign(
               IR.getelem(
-                  NodeUtil.newQualifiedNameNode(convention, name),
+                  NodeUtil.newQName(compiler, name),
                   IR.string(INJECT_PROPERTY_NAME)),
               dependenciesArray
           )
       );
+      NodeUtil.setDebugInformation(statement, entry.getNode(), name);
+      // Set the visibility of the newly created property.
+      JSDocInfoBuilder newPropertyDoc = new JSDocInfoBuilder(false);
+      newPropertyDoc.recordVisibility(Visibility.PUBLIC);
+      statement.getFirstChild().setJSDocInfo(newPropertyDoc.build());
+
       // adds `something.$inject = [...]` node after the annotated node or the following
       // goog.inherits call.
       Node insertionPoint = entry.getTarget();
       Node next = insertionPoint.getNext();
-      while (next != null &&
-             NodeUtil.isExprCall(next) &&
-             convention.getClassesDefinedByCall(
+      while (next != null
+             && NodeUtil.isExprCall(next)
+             && compiler.getCodingConvention().getClassesDefinedByCall(
                  next.getFirstChild()) != null) {
         insertionPoint = next;
         next = insertionPoint.getNext();
@@ -152,7 +171,7 @@ class AngularPass extends AbstractPostOrderCallback implements CompilerPass {
     if (params != null) {
       return createStringsFromParamList(params);
     }
-    return Lists.newArrayList();
+    return new ArrayList<>();
   }
 
   /**
@@ -162,9 +181,19 @@ class AngularPass extends AbstractPostOrderCallback implements CompilerPass {
    */
   private List<Node> createStringsFromParamList(Node params) {
     Node param = params.getFirstChild();
-    ArrayList<Node> names = Lists.newArrayList();
-    while (param != null && param.isName()) {
-      names.add(IR.string(param.getString()).srcref(param));
+    ArrayList<Node> names = new ArrayList<>();
+    while (param != null) {
+      if (param.isName()) {
+        names.add(IR.string(param.getString()).srcref(param));
+      } else if (param.isDestructuringPattern()) {
+        compiler.report(JSError.make(param,
+            INJECTED_FUNCTION_HAS_DESTRUCTURED_PARAM));
+        return new ArrayList<>();
+      } else if (param.isDefaultValue()) {
+        compiler.report(JSError.make(param,
+            INJECTED_FUNCTION_HAS_DEFAULT_VALUE));
+        return new ArrayList<>();
+      }
       param = param.getNext();
     }
     return names;
@@ -214,20 +243,45 @@ class AngularPass extends AbstractPostOrderCallback implements CompilerPass {
       // var a = function() {}
       // var a = b = function() {}
       case Token.VAR:
+      case Token.LET:
+      case Token.CONST:
         name = n.getFirstChild().getString();
         // looks for a function node.
         fn = getDeclarationRValue(n);
         target = n;
         break;
+
+      // handles class method case:
+      // class clName(){
+      //   constructor(){}
+      //   someMethod(){} <===
+      // }
+      case Token.MEMBER_FUNCTION_DEF:
+        Node parent = n.getParent();
+        if (parent.isClassMembers()){
+          Node classNode = parent.getParent();
+          String midPart = n.isStaticMember() ? "." : ".prototype.";
+          name = NodeUtil.getClassName(classNode) + midPart + n.getString();
+          if (n.getString().equals("constructor")) {
+            name = NodeUtil.getClassName(classNode);
+          }
+          fn = n.getFirstChild();
+          if (classNode.getParent().isAssign() || classNode.getParent().isName()) {
+            target = classNode.getParent().getParent();
+          } else {
+            target = classNode;
+          }
+        }
+        break;
     }
-    // checks that the declaration took place in a block or in a global scope.
-    if (!target.getParent().isScript() && !target.getParent().isBlock()) {
-      compiler.report(t.makeError(n, INJECT_IN_NON_GLOBAL_OR_BLOCK_ERROR));
-      return;
-    }
-    // checks that it is a function declaration.
+
     if (fn == null || !fn.isFunction()) {
       compiler.report(t.makeError(n, INJECT_NON_FUNCTION_ERROR));
+      return;
+    }
+    // report an error if the function declaration did not take place in a block or global scope
+    if (!target.getParent().isScript() && !target.getParent().isBlock()) {
+      compiler.report(t.makeError(n, INJECT_IN_NON_GLOBAL_OR_BLOCK_ERROR));
       return;
     }
     // checks that name is present, which must always be the case unless the
@@ -247,12 +301,12 @@ class AngularPass extends AbstractPostOrderCallback implements CompilerPass {
    * var z = x = y = function() {}; // FUNCTION node
    * }</pre>
    * @param n VAR node.
-   * @return the assigned intial value, or the rightmost rvalue of an assignment
+   * @return the assigned initial value, or the rightmost rvalue of an assignment
    * chain, or null.
    */
-  private Node getDeclarationRValue(Node n) {
+  private static Node getDeclarationRValue(Node n) {
     Preconditions.checkNotNull(n);
-    Preconditions.checkArgument(n.isVar());
+    Preconditions.checkArgument(NodeUtil.isNameDeclaration(n));
     n = n.getFirstChild().getFirstChild();
     if (n == null) {
       return null;
@@ -263,7 +317,7 @@ class AngularPass extends AbstractPostOrderCallback implements CompilerPass {
     return n;
   }
 
-  class NodeContext {
+  static class NodeContext {
     /** Name of the function/object. */
     private final String name;
     /** Node jsDoc is attached to. */

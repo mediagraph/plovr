@@ -18,14 +18,17 @@ package com.google.template.soy;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.Module;
 import com.google.template.soy.SoyFileSet.Builder;
-import com.google.template.soy.base.SoyFileKind;
+import com.google.template.soy.base.internal.SoyFileKind;
 
 import org.kohsuke.args4j.CmdLineException;
 import org.kohsuke.args4j.CmdLineParser;
@@ -35,20 +38,29 @@ import org.kohsuke.args4j.spi.Parameters;
 import org.kohsuke.args4j.spi.Setter;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 import javax.annotation.Nullable;
 
-
 /**
- * Private utils for classes with a main() method.
+ * Utilities for classes with a {@code main()} method.
  *
- * @author Kai Huang
  */
-class MainClassUtils {
+final class MainClassUtils {
+
+  /**
+   * Represents a top-level entry point into the Soy codebase.
+   * Used by {@link #run} to catch unexpected exceptions and print errors.
+   */
+  interface Main {
+    CompilationResult main() throws IOException;
+  }
 
   private MainClassUtils() {}
+
 
 
   /**
@@ -59,7 +71,7 @@ class MainClassUtils {
    * flags, but never to turn them off. This implementation allows an optional param value
    * true/false/1/0 so that the user can turn on or off the flag.
    */
-  public static class BooleanOptionHandler extends OptionHandler<Boolean> {
+  public static final class BooleanOptionHandler extends OptionHandler<Boolean> {
 
     /** {@link OptionHandler#OptionHandler(CmdLineParser,OptionDef,Setter)} */
     public BooleanOptionHandler(
@@ -103,10 +115,10 @@ class MainClassUtils {
   /**
    * OptionHandler for args4j that handles a comma-delimited list.
    */
-  public abstract static class ListOptionHandler<T> extends OptionHandler<T> {
+  abstract static class ListOptionHandler<T> extends OptionHandler<T> {
 
     /** {@link OptionHandler#OptionHandler(CmdLineParser,OptionDef,Setter)} */
-    public ListOptionHandler(CmdLineParser parser, OptionDef option, Setter<? super T> setter) {
+    ListOptionHandler(CmdLineParser parser, OptionDef option, Setter<? super T> setter) {
       super(parser, option, setter);
     }
 
@@ -115,7 +127,7 @@ class MainClassUtils {
      * @param item One item from the list.
      * @return The object representation of the item.
      */
-    public abstract T parseItem(String item);
+    abstract T parseItem(String item);
 
     @Override public int parseArguments(Parameters params) throws CmdLineException {
       for (String item : params.getParameter(0).split(",")) {
@@ -133,7 +145,7 @@ class MainClassUtils {
   /**
    * OptionHandler for args4j that handles a comma-delimited list of strings.
    */
-  public static class StringListOptionHandler extends ListOptionHandler<String> {
+  public static final class StringListOptionHandler extends ListOptionHandler<String> {
 
     /** {@link ListOptionHandler#ListOptionHandler(CmdLineParser,OptionDef,Setter)} */
     public StringListOptionHandler(
@@ -141,7 +153,7 @@ class MainClassUtils {
       super(parser, option, setter);
     }
 
-    @Override public String parseItem(String item) {
+    @Override String parseItem(String item) {
       return item;
     }
   }
@@ -156,7 +168,7 @@ class MainClassUtils {
    * @return The CmdLineParser that was created and used to parse the args (can be used to print
    *     usage text for flags when reporting errors).
    */
-  public static CmdLineParser parseFlags(Object objWithFlags, String[] args, String usagePrefix) {
+  static CmdLineParser parseFlags(Object objWithFlags, String[] args, String usagePrefix) {
 
     CmdLineParser cmdLineParser = new CmdLineParser(objWithFlags);
     cmdLineParser.setUsageWidth(100);
@@ -171,6 +183,33 @@ class MainClassUtils {
     return cmdLineParser;
   }
 
+  static void run(Main method) {
+    int status = runInternal(method);
+    System.exit(status);
+  }
+
+  @VisibleForTesting
+  static int runInternal(Main method) {
+    CompilationResult result;
+    try {
+      result = method.main();
+    } catch (Exception e) {
+      System.err.println("INTERNAL SOY ERROR.\n"
+          + "Please open an issue at "
+          + "https://github.com/google/closure-templates/issues"
+          + " with this stack trace and repro steps"
+      );
+      e.printStackTrace(System.err);
+      return 1;
+    }
+
+    if (!result.isSuccess()) {
+      result.printErrors(System.err);
+    }
+
+    return result.isSuccess() ? 0 : 1;
+  }
+
 
   /**
    * Prints an error message and the usage string, and then exits.
@@ -179,7 +218,7 @@ class MainClassUtils {
    * @param cmdLineParser The CmdLineParser used to print usage text for flags.
    * @param usagePrefix The string to prepend to the usage message (when reporting an error).
    */
-  public static void exitWithError(
+  static void exitWithError(
       String errorMsg, CmdLineParser cmdLineParser, String usagePrefix) {
 
     System.err.println("\nError: " + errorMsg + "\n\n");
@@ -189,10 +228,9 @@ class MainClassUtils {
     System.exit(1);
   }
 
-
   /**
    * Creates a Guice injector that includes the SoyModule, a message plugin module, and maybe
-   * additional plugin modules.
+   * additional plugin modules, and maybe additional modules.
    *
    * @param msgPluginModuleName The full class name of the message plugin module. Required.
    * @param pluginModuleNames Comma-delimited list of full class names of additional plugin modules
@@ -200,8 +238,7 @@ class MainClassUtils {
    * @return A Guice injector that includes the SoyModule, the given message plugin module, and the
    *     given additional plugin modules (if any).
    */
-  public static Injector createInjector(
-      String msgPluginModuleName, @Nullable String pluginModuleNames) {
+  static Injector createInjector(String msgPluginModuleName, @Nullable String pluginModuleNames) {
 
     List<Module> guiceModules = Lists.newArrayListWithCapacity(2);
 
@@ -210,7 +247,7 @@ class MainClassUtils {
     checkArgument(msgPluginModuleName != null && msgPluginModuleName.length() > 0);
     guiceModules.add(instantiatePluginModule(msgPluginModuleName));
 
-    if (pluginModuleNames != null && pluginModuleNames.length() > 0) {
+    if (pluginModuleNames != null && !pluginModuleNames.isEmpty()) {
       for (String pluginModuleName : Splitter.on(',').split(pluginModuleNames)) {
         guiceModules.add(instantiatePluginModule(pluginModuleName));
       }
@@ -219,6 +256,29 @@ class MainClassUtils {
     return Guice.createInjector(guiceModules);
   }
 
+  /**
+   * Creates a Guice injector that includes the SoyModule, a message plugin module, and maybe
+   * additional plugin modules, and maybe additional modules.
+   *
+   * @param pluginModuleNames Comma-delimited list of full class names of additional plugin modules
+   *     to include. Optional.
+   * @return A Guice injector that includes the SoyModule, the given message plugin module, and the
+   *     given additional plugin modules (if any).
+   */
+  static Injector createInjector(@Nullable String pluginModuleNames) {
+
+    List<Module> guiceModules = Lists.newArrayListWithCapacity(2);
+
+    guiceModules.add(new SoyModule());
+
+    if (pluginModuleNames != null && !pluginModuleNames.isEmpty()) {
+      for (String pluginModuleName : Splitter.on(',').split(pluginModuleNames)) {
+        guiceModules.add(instantiatePluginModule(pluginModuleName));
+      }
+    }
+
+    return Guice.createInjector(guiceModules);
+  }
 
   /**
    * Private helper for createInjector().
@@ -251,27 +311,35 @@ class MainClassUtils {
    * @param deps The deps from the --deps flag, or empty list if not applicable.
    * @param exitWithErrorFn A function that exits with an error message followed by a usage message.
    */
-  public static void addSoyFilesToBuilder(
+  static void addSoyFilesToBuilder(
       Builder sfsBuilder, String inputPrefix, Collection<String> srcs, Collection<String> args,
-      Collection<String> deps, Function<String, Void> exitWithErrorFn) {
-
-    if (srcs.size() == 0 && args.size() == 0) {
+      Collection<String> deps, Collection<String> indirectDeps,
+      Function<String, Void> exitWithErrorFn) {
+    if (srcs.isEmpty() && args.isEmpty()) {
       exitWithErrorFn.apply("Must provide list of source Soy files (--srcs).");
     }
-    if (srcs.size() != 0 && args.size() != 0) {
+    if (!srcs.isEmpty() && !args.isEmpty()) {
       exitWithErrorFn.apply(
           "Found source Soy files from --srcs and from args (please use --srcs only).");
     }
 
-    for (String src : srcs) {
+    // Create Set versions of each of the arguments, and de-dupe. If something is included as
+    // multiple file kinds, we'll keep the strongest one; a file in both srcs and deps will be a
+    // src, and one in both deps and indirect_deps will be a dep.
+    // TODO(gboyer): Maybe stop supporting old style (srcs from command line args) at some point.
+    Set<String> srcsSet = ImmutableSet.<String>builder().addAll(srcs).addAll(args).build();
+    Set<String> depsSet = Sets.difference(ImmutableSet.copyOf(deps), srcsSet);
+    Set<String> indirectDepsSet = Sets.difference(ImmutableSet.copyOf(indirectDeps),
+        Sets.union(srcsSet, depsSet));
+
+    for (String src : srcsSet) {
       sfsBuilder.addWithKind(new File(inputPrefix + src), SoyFileKind.SRC);
     }
-    // TODO: Maybe stop supporting old style (srcs from command line args) at some point.
-    for (String src : args) {
-      sfsBuilder.addWithKind(new File(inputPrefix + src), SoyFileKind.SRC);
-    }
-    for (String dep : deps) {
+    for (String dep : depsSet) {
       sfsBuilder.addWithKind(new File(inputPrefix + dep), SoyFileKind.DEP);
+    }
+    for (String dep : indirectDepsSet) {
+      sfsBuilder.addWithKind(new File(inputPrefix + dep), SoyFileKind.INDIRECT_DEP);
     }
   }
 

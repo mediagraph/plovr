@@ -18,17 +18,18 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.LinkedHashMultimap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.javascript.jscomp.DefinitionsRemover.Definition;
 import com.google.javascript.jscomp.DefinitionsRemover.ExternalNameOnlyDefinition;
 import com.google.javascript.jscomp.DefinitionsRemover.UnknownDefinition;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
+import com.google.javascript.jscomp.NodeTraversal.Callback;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,10 +49,13 @@ class SimpleDefinitionFinder implements CompilerPass, DefinitionProvider {
   private final Map<Node, DefinitionSite> definitionSiteMap;
   private final Multimap<String, Definition> nameDefinitionMultimap;
   private final Multimap<String, UseSite> nameUseSiteMultimap;
+  // The same defFinder can be used by multiple passes, but its process method
+  // must be run only once
+  private boolean hasProcessBeenRun = false;
 
   public SimpleDefinitionFinder(AbstractCompiler compiler) {
     this.compiler = compiler;
-    this.definitionSiteMap = Maps.newLinkedHashMap();
+    this.definitionSiteMap = new LinkedHashMap<>();
     this.nameDefinitionMultimap = LinkedHashMultimap.create();
     this.nameUseSiteMultimap = LinkedHashMultimap.create();
   }
@@ -102,11 +106,15 @@ class SimpleDefinitionFinder implements CompilerPass, DefinitionProvider {
 
   @Override
   public void process(Node externs, Node source) {
-    NodeTraversal.traverse(
+    if (this.hasProcessBeenRun) {
+      return;
+    }
+    this.hasProcessBeenRun = true;
+    NodeTraversal.traverseEs6(
         compiler, externs, new DefinitionGatheringCallback(true));
-    NodeTraversal.traverse(
+    NodeTraversal.traverseEs6(
         compiler, source, new DefinitionGatheringCallback(false));
-    NodeTraversal.traverse(
+    NodeTraversal.traverseEs6(
         compiler, source, new UseSiteGatheringCallback());
   }
 
@@ -147,7 +155,7 @@ class SimpleDefinitionFinder implements CompilerPass, DefinitionProvider {
     return null;
   }
 
-  private class DefinitionGatheringCallback extends AbstractPostOrderCallback {
+  private class DefinitionGatheringCallback implements Callback {
     private boolean inExterns;
 
     DefinitionGatheringCallback(boolean inExterns) {
@@ -155,12 +163,30 @@ class SimpleDefinitionFinder implements CompilerPass, DefinitionProvider {
     }
 
     @Override
+    public boolean shouldTraverse(NodeTraversal t, Node n, Node parent) {
+      if (inExterns) {
+        if (n.isFunction() && !n.getFirstChild().isName()) {
+          // No need to crawl functions in JSDoc
+          return false;
+        }
+        if (parent != null
+            && parent.isFunction() && n != parent.getFirstChild()) {
+          // Arguments of external functions should not count as name
+          // definitions.  They are placeholder names for documentation
+          // purposes only which are not reachable from anywhere.
+          return false;
+        }
+      }
+      return true;
+    }
+
+
+    @Override
     public void visit(NodeTraversal traversal, Node node, Node parent) {
-      // Arguments of external functions should not count as name
-      // definitions.  They are placeholder names for documentation
-      // purposes only which are not reachable from anywhere.
-      if (inExterns && node.isName() && parent.isParamList()) {
-        return;
+      if (inExterns && node.getJSDocInfo() != null) {
+        for (Node typeRoot : node.getJSDocInfo().getTypeNodes()) {
+          traversal.traverse(typeRoot);
+        }
       }
 
       Definition def =
@@ -185,18 +211,16 @@ class SimpleDefinitionFinder implements CompilerPass, DefinitionProvider {
             // We need special handling of untyped externs stubs here:
             //    the stub should be dropped if the name is provided elsewhere.
 
-            List<Definition> stubsToRemove = Lists.newArrayList();
-            String qualifiedName = node.getQualifiedName();
+            List<Definition> stubsToRemove = new ArrayList<>();
 
             // If there is no qualified name for this, then there will be
             // no stubs to remove. This will happen if node is an object
             // literal key.
-            if (qualifiedName != null) {
+            if (node.isQualifiedName()) {
               for (Definition prevDef : nameDefinitionMultimap.get(name)) {
                 if (prevDef instanceof ExternalNameOnlyDefinition
                     && !jsdocContainsDeclarations(node)) {
-                  String prevName = prevDef.getLValue().getQualifiedName();
-                  if (qualifiedName.equals(prevName)) {
+                  if (node.matchesQualifiedName(prevDef.getLValue())) {
                     // Drop this stub, there is a real definition.
                     stubsToRemove.add(prevDef);
                   }
@@ -232,15 +256,11 @@ class SimpleDefinitionFinder implements CompilerPass, DefinitionProvider {
           //    externs definition if no other definition is provided.
 
           boolean dropStub = false;
-          if (!jsdocContainsDeclarations(node)) {
-            String qualifiedName = node.getQualifiedName();
-            if (qualifiedName != null) {
-              for (Definition prevDef : nameDefinitionMultimap.get(name)) {
-                String prevName = prevDef.getLValue().getQualifiedName();
-                if (qualifiedName.equals(prevName)) {
-                  dropStub = true;
-                  break;
-                }
+          if (!jsdocContainsDeclarations(node) && node.isQualifiedName()) {
+            for (Definition prevDef : nameDefinitionMultimap.get(name)) {
+              if (node.matchesQualifiedName(prevDef.getLValue())) {
+                dropStub = true;
+                break;
               }
             }
           }
@@ -361,11 +381,7 @@ class SimpleDefinitionFinder implements CompilerPass, DefinitionProvider {
     }
 
     CodingConvention codingConvention = compiler.getCodingConvention();
-    if (codingConvention.isExported(partialName)) {
-      return true;
-    }
-
-    return false;
+    return codingConvention.isExported(partialName);
   }
 
   /**
@@ -373,7 +389,7 @@ class SimpleDefinitionFinder implements CompilerPass, DefinitionProvider {
    */
   static boolean isSimpleFunctionDeclaration(Node fn) {
     Node parent = fn.getParent();
-    Node gramps = parent.getParent();
+    Node grandparent = parent.getParent();
 
     // Simple definition finder doesn't provide useful results in some
     // cases, specifically:
@@ -402,12 +418,8 @@ class SimpleDefinitionFinder implements CompilerPass, DefinitionProvider {
 
     // example: a = function(){};
     // example: var a = function(){};
-    if (fn.getFirstChild().getString().isEmpty()
-        && (NodeUtil.isExprAssign(gramps) || parent.isName())) {
-      return true;
-    }
-
-    return false;
+    return fn.getFirstChild().getString().isEmpty()
+        && (NodeUtil.isExprAssign(grandparent) || parent.isName());
   }
 
   /**

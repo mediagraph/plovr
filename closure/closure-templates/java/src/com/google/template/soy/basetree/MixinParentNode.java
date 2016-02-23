@@ -20,7 +20,6 @@ import com.google.common.collect.Lists;
 
 import java.util.List;
 
-
 /**
  * Mixin implementation of the parent-specific aspect of the ParentNode interface.
  * Requires the master to be a ParentNode.
@@ -32,7 +31,6 @@ import java.util.List;
  * SoyFileSetNode N is SoyFileNode, for SoyFileNode N is TemplateNode, etc; for a Soy expression
  * parse tree, N is usually ExprNode.
  *
- * @author Kai Huang
  */
 public final class MixinParentNode<N extends Node> {
 
@@ -47,16 +45,11 @@ public final class MixinParentNode<N extends Node> {
   /** The children of the master node (accessed via this instance). */
   private final List<N> children;
 
-  /** Whether the master node needs an env frame when being interpreted, or null if unknown. */
-  private Boolean needsEnvFrameDuringInterp;
-
-
   /**
    * @param master The master node that delegates to this instance.
    */
   public MixinParentNode(ParentNode<N> master) {
     this.master = master;
-    needsEnvFrameDuringInterp = null;
     children = Lists.newArrayList();
   }
 
@@ -66,37 +59,15 @@ public final class MixinParentNode<N extends Node> {
    * @param orig The node to copy.
    * @param newMaster The master node for the copy.
    */
-  public MixinParentNode(MixinParentNode<N> orig, ParentNode<N> newMaster) {
+  public MixinParentNode(MixinParentNode<N> orig, ParentNode<N> newMaster, CopyState copyState) {
     this.master = newMaster;
-
-    this.needsEnvFrameDuringInterp = orig.needsEnvFrameDuringInterp;
-
     this.children = Lists.newArrayListWithCapacity(orig.children.size());
     for (N origChild : orig.children) {
       @SuppressWarnings("unchecked")
-      N newChild = (N) origChild.clone();
+      N newChild = (N) origChild.copy(copyState);
       this.children.add(newChild);
       newChild.setParent(this.master);
     }
-  }
-
-
-  /**
-   * Sets whether this node needs an env frame when the template is being interpreted.
-   * @param needsEnvFrameDuringInterp Whether this node needs an env frame during interpretation,
-   *     or null if unknown.
-   */
-  public void setNeedsEnvFrameDuringInterp(Boolean needsEnvFrameDuringInterp) {
-    this.needsEnvFrameDuringInterp = needsEnvFrameDuringInterp;
-  }
-
-
-  /**
-   * Returns whether this node needs an env frame during interpretation, or null if unknown.
-   * @return Whether this node needs an env frame during interpretation, or null if unknown.
-   */
-  public Boolean needsEnvFrameDuringInterp() {
-    return needsEnvFrameDuringInterp;
   }
 
 
@@ -278,7 +249,7 @@ public final class MixinParentNode<N extends Node> {
    */
   public String toTreeString(int indent) {
     StringBuilder sb = new StringBuilder();
-    sb.append(SPACES.substring(0, indent)).append("[").append(master.toString()).append("]\n");
+    sb.append(SPACES, 0, indent).append("[").append(master).append("]\n");
     appendTreeStringForChildren(sb, indent);
     return sb.toString();
   }

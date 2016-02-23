@@ -16,15 +16,20 @@
 
 package com.google.template.soy.basetree;
 
-import org.junit.*;
+import static junit.framework.TestCase.assertNull;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.soytree.AbstractParentSoyNode;
+import com.google.template.soy.soytree.SoyNode;
+
+import junit.framework.TestCase;
 
 /**
  * Unit tests for AbstractNode.
  *
- * @author Kai Huang
  */
-public class AbstractNodeTest extends TestCase {
+public final class AbstractNodeTest extends TestCase {
+
 
 
   public void testAncestorMethods() {
@@ -51,30 +56,37 @@ public class AbstractNodeTest extends TestCase {
     assertEquals(dummyB, leaf.getNearestAncestor(DummyNode.class));
     assertEquals(dummyA, leaf.getNearestAncestor(DummyNodeAlpha.class));
     assertEquals(dummyB, leaf.getNearestAncestor(DummyNodeBeta.class));
-    assertEquals(null, leaf.getNearestAncestor(DopeyNode.class));
+    assertNull(leaf.getNearestAncestor(DopeyNode.class));
   }
 
 
-  private static interface DummyNode extends Node {}
+  private static interface DummyNode extends SoyNode {}
 
-  private static class DummyNodeAlpha extends AbstractParentNode<Node> implements DummyNode {
+  private abstract static class BaseNode extends AbstractParentSoyNode<SoyNode> {
+    protected BaseNode() {
+      super(1, SourceLocation.UNKNOWN);
+    }
     @Override public String toSourceString() { return null; }
-    @Override public Node clone() { throw new UnsupportedOperationException(); }
+
+    @Override public DummyNodeAlpha copy(CopyState copyState) {
+      throw new UnsupportedOperationException();
+    }
   }
 
-  private static class DummyNodeBeta extends AbstractParentNode<Node> implements DummyNode {
-    @Override public String toSourceString() { return null; }
-    @Override public Node clone() { throw new UnsupportedOperationException(); }
+  private static final class DummyNodeAlpha extends BaseNode implements DummyNode {
+    @Override public Kind getKind() { return Kind.CALL_BASIC_NODE; }
   }
 
-  private static class SillyNode extends AbstractParentNode<Node> {
-    @Override public String toSourceString() { return null; }
-    @Override public Node clone() { throw new UnsupportedOperationException(); }
+  private static final class DummyNodeBeta extends BaseNode implements DummyNode {
+    @Override public Kind getKind() { return Kind.CALL_BASIC_NODE; }
   }
 
-  private static class DopeyNode extends AbstractParentNode<Node> {
-    @Override public String toSourceString() { return null; }
-    @Override public Node clone() { throw new UnsupportedOperationException(); }
+  private static final class SillyNode extends BaseNode {
+    @Override public Kind getKind() { return Kind.CALL_BASIC_NODE; }
+  }
+
+  private static final class DopeyNode extends BaseNode {
+    @Override public Kind getKind() { return Kind.CALL_BASIC_NODE; }
   }
 
 }

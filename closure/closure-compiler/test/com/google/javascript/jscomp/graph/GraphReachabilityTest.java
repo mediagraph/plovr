@@ -26,37 +26,37 @@ import junit.framework.TestCase;
  * Tests for {@link GraphReachability}.
  *
  */
-public class GraphReachabilityTest extends TestCase {
+public final class GraphReachabilityTest extends TestCase {
   GraphReachability<String, String> reachability = null;
   DiGraph<String, String> graph = null;
 
   public void testSimple() {
     graph = LinkedDirectedGraph.create();
     graph.createNode("A");
-    reachability = new GraphReachability<String, String>(graph);
+    reachability = new GraphReachability<>(graph);
     reachability.compute("A");
     assertReachable("A");
 
     graph.createNode("B");
-    reachability = new GraphReachability<String, String>(graph);
+    reachability = new GraphReachability<>(graph);
     reachability.compute("A");
     assertReachable("A");
     assertNotReachable("B");
 
     graph.connect("A", "--->", "B");
-    reachability = new GraphReachability<String, String>(graph);
+    reachability = new GraphReachability<>(graph);
     reachability.compute("B");
     assertNotReachable("A");
     assertReachable("B");
 
     graph.connect("B", "--->", "A");
-    reachability = new GraphReachability<String, String>(graph);
+    reachability = new GraphReachability<>(graph);
     reachability.compute("B");
     assertReachable("A");
     assertReachable("B");
 
     graph.createNode("C");
-    reachability = new GraphReachability<String, String>(graph);
+    reachability = new GraphReachability<>(graph);
     reachability.compute("A");
     assertReachable("A");
     assertReachable("B");
@@ -64,7 +64,7 @@ public class GraphReachabilityTest extends TestCase {
 
     graph.createNode("D");
     graph.connect("C", "--->", "D");
-    reachability = new GraphReachability<String, String>(graph);
+    reachability = new GraphReachability<>(graph);
     reachability.compute("A");
     assertReachable("A");
     assertReachable("B");

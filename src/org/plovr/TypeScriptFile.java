@@ -12,11 +12,13 @@ public class TypeScriptFile extends LocalFileJsInput {
   }
 
   @Override
-  public String getCode() {
+  public String generateCode() {
     try {
       return TypeScriptCompiler.getInstance().compile(
           Files.toString(getSource()), getName());
     } catch (TypeScriptCompilerException e) {
+      // TODO(nick): Write a instance of CompilationException
+      // for this error type.
       throw new RuntimeException(e);
     } catch (IOException e) {
       throw new RuntimeException(e);

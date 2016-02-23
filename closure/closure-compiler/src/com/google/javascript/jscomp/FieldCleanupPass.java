@@ -33,7 +33,7 @@ import com.google.javascript.rhino.jstype.ObjectType;
  *
  * @author tylerg@google.com (Tyler Goodwin)
  */
-public class FieldCleanupPass implements HotSwapCompilerPass {
+public final class FieldCleanupPass implements HotSwapCompilerPass {
 
   private final AbstractCompiler compiler;
 
@@ -46,7 +46,7 @@ public class FieldCleanupPass implements HotSwapCompilerPass {
     String srcName = originalRoot.getSourceFileName();
     Callback cb =
         new QualifiedNameSearchTraversal(compiler.getTypeRegistry(), srcName);
-    new NodeTraversal(compiler, cb).traverse(originalRoot);
+    NodeTraversal.traverseEs6(compiler, originalRoot, cb);
   }
 
   @Override
@@ -100,9 +100,6 @@ public class FieldCleanupPass implements HotSwapCompilerPass {
         }
         removeProperty(type.toObjectType(), propName);
       }
-      if (n.getJSDocInfo() != null) {
-        n.getJSDocInfo().setAssociatedNode(null);
-      }
     }
 
     /**
@@ -119,7 +116,7 @@ public class FieldCleanupPass implements HotSwapCompilerPass {
       }
     }
 
-    private String getFieldName(Node n) {
+    private static String getFieldName(Node n) {
       return n.getLastChild().getString();
     }
   }

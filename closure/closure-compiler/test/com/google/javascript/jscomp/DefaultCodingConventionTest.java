@@ -16,7 +16,11 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.truth.Truth.assertThat;
+
+import com.google.javascript.jscomp.CodingConvention.SubclassRelationship;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.StaticSourceFile;
 import com.google.javascript.rhino.Token;
 
 import junit.framework.TestCase;
@@ -24,7 +28,7 @@ import junit.framework.TestCase;
 /**
  * Test class for the default {@link CodingConvention}.
  */
-public class DefaultCodingConventionTest extends TestCase {
+public final class DefaultCodingConventionTest extends TestCase {
   private CodingConvention conv = CodingConventions.getDefault();
 
   public void testVarAndOptionalParams() {
@@ -130,6 +134,14 @@ public class DefaultCodingConventionTest extends TestCase {
     assertNotClassDefining("goog.mixin(A.prototype, B.prototype);");
   }
 
+  public void testInheritanceDetection11() {
+    assertDefinesClasses("$jscomp.inherits(A, B)", "A", "B");
+  }
+
+  public void testInheritanceDetection12() {
+    assertDefinesClasses("$jscomp$inherits(A, B)", "A", "B");
+  }
+
   public void testInheritanceDetectionPostCollapseProperties() {
     assertNotClassDefining("goog$inherits(A, B);");
     assertNotClassDefining("goog$inherits(A);");
@@ -150,6 +162,20 @@ public class DefaultCodingConventionTest extends TestCase {
     assertFunctionBind("Function.prototype.bind.call(obj, p1)");
   }
 
+  public void testPackageNames() {
+    assertPackageName("foo.js", "");
+    assertPackageName("foo/bar.js", "foo");
+    assertPackageName("foo/bar/baz.js", "foo/bar");
+    assertPackageName("foo/bar/baz/quux.js", "foo/bar/baz");
+    assertPackageName("foo/test/bar.js", "foo/test");
+    assertPackageName("foo/testxyz/bar.js", "foo/testxyz");
+  }
+
+  private void assertPackageName(String filename, String expectedPackageName) {
+    StaticSourceFile sourceFile = SourceFile.fromCode(filename, "");
+    assertEquals(expectedPackageName, conv.getPackageName(sourceFile));
+  }
+
   private void assertFunctionBind(String code) {
     Node n = parseTestCode(code);
     assertNotNull(conv.describeFunctionBind(n.getFirstChild()));
@@ -163,6 +189,16 @@ public class DefaultCodingConventionTest extends TestCase {
   private void assertNotClassDefining(String code) {
     Node n = parseTestCode(code);
     assertNull(conv.getClassesDefinedByCall(n.getFirstChild()));
+  }
+
+  private void assertDefinesClasses(String code, String subclassName,
+      String superclassName) {
+    Node n = parseTestCode(code);
+    SubclassRelationship classes =
+        conv.getClassesDefinedByCall(n.getFirstChild());
+    assertThat(classes).isNotNull();
+    assertThat(classes.subclassName).isEqualTo(subclassName);
+    assertThat(classes.superclassName).isEqualTo(superclassName);
   }
 
   private Node parseTestCode(String code) {

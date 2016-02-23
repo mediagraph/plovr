@@ -80,9 +80,17 @@ final class CheckGlobalThis implements Callback {
   public boolean shouldTraverse(NodeTraversal t, Node n, Node parent) {
 
     if (n.isFunction()) {
+      // Arrow functions automatically get the "this" value from the
+      // enclosing scope. e.g. the "this" in
+      //   Foo.prototype.getBar = () => this.bar;
+      // is the global "this", not an instance of Foo.
+      if (n.isArrowFunction()) {
+        return true;
+      }
+
       // Don't traverse functions that are constructors or have the @this
       // or @override annotation.
-      JSDocInfo jsDoc = getFunctionJsDocInfo(n);
+      JSDocInfo jsDoc = NodeUtil.getBestJSDocInfo(n);
       if (jsDoc != null &&
           (jsDoc.isConstructor() ||
            jsDoc.isInterface() ||
@@ -109,9 +117,9 @@ final class CheckGlobalThis implements Callback {
       }
 
       // Don't traverse functions that are getting lent to a prototype.
-      Node gramps = parent.getParent();
+      Node grandparent = parent.getParent();
       if (NodeUtil.isObjectLitKey(parent)) {
-        JSDocInfo maybeLends = gramps.getJSDocInfo();
+        JSDocInfo maybeLends = grandparent.getJSDocInfo();
         if (maybeLends != null &&
             maybeLends.getLendsName() != null &&
             maybeLends.getLendsName().endsWith(".prototype")) {
@@ -169,33 +177,5 @@ final class CheckGlobalThis implements Callback {
 
     // Also report a THIS with a property access.
     return parent != null && NodeUtil.isGet(parent);
-  }
-
-  /**
-   * Gets a function's JSDoc information, if it has any. Checks for a few
-   * patterns (ellipses show where JSDoc would be):
-   * <pre>
-   * ... function() {}
-   * ... x = function() {};
-   * var ... x = function() {};
-   * ... var x = function() {};
-   * </pre>
-   */
-  private JSDocInfo getFunctionJsDocInfo(Node n) {
-    JSDocInfo jsDoc = n.getJSDocInfo();
-    Node parent = n.getParent();
-    if (jsDoc == null) {
-      int parentType = parent.getType();
-      if (parentType == Token.NAME || parentType == Token.ASSIGN) {
-        jsDoc = parent.getJSDocInfo();
-        if (jsDoc == null && parentType == Token.NAME) {
-          Node gramps = parent.getParent();
-          if (gramps.isVar()) {
-            jsDoc = gramps.getJSDocInfo();
-          }
-        }
-      }
-    }
-    return jsDoc;
   }
 }

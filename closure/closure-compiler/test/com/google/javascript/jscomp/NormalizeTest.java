@@ -16,24 +16,26 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.Node;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
  * @author johnlenz@google.com (John Lenz)
  *
  */
-public class NormalizeTest extends CompilerTestCase {
+public final class NormalizeTest extends CompilerTestCase {
 
   private static final String EXTERNS = "var window;";
 
   public NormalizeTest() {
     super(EXTERNS);
-    super.enableLineNumberCheck(true);
+    compareJsDoc = false;
   }
 
   @Override
@@ -71,11 +73,11 @@ public class NormalizeTest extends CompilerTestCase {
     test("for(;;){var b = foo(1), c = foo(2);}",
          "for(;;){var b = foo(1); var c = foo(2)}");
 
-    test("try{var b = foo(1), c = foo(2);} finally foo(3);",
-         "try{var b = foo(1); var c = foo(2)} finally foo(3);");
-    test("try{var b = foo(1),c = foo(2);} finally;",
-         "try{var b = foo(1); var c = foo(2)} finally;");
-    test("try{foo(0);} finally var b = foo(1), c = foo(2);",
+    test("try{var b = foo(1), c = foo(2);} finally { foo(3) }",
+         "try{var b = foo(1); var c = foo(2)} finally { foo(3); }");
+    test("try{var b = foo(1),c = foo(2);} finally {}",
+         "try{var b = foo(1); var c = foo(2)} finally {}");
+    test("try{foo(0);} finally { var b = foo(1), c = foo(2); }",
          "try{foo(0);} finally {var b = foo(1); var c = foo(2)}");
 
     test("switch(a) {default: var b = foo(1), c = foo(2); break;}",
@@ -146,6 +148,7 @@ public class NormalizeTest extends CompilerTestCase {
   }
 
   public void testForIn2() {
+    setExpectParseWarningsThisTest();
     // Verify vars are extracted from the FOR-IN node.
     test("for(var a = foo() in b) foo()",
          "var a = foo(); for(a in b) foo()");
@@ -214,6 +217,8 @@ public class NormalizeTest extends CompilerTestCase {
     testSame("switch (function g() {}) {}");
     test("switch (1) { case 1: function g() {}}",
          "switch (1) { case 1: var g = function () {}}");
+    test("if (true) {function g() {} function h() {}}",
+         "if (true) {var h = function() {}; var g = function () {}}");
 
 
     testSameInFunction("function f() {}");
@@ -311,8 +316,7 @@ public class NormalizeTest extends CompilerTestCase {
     // TODO(johnlenz): Do we need to handle this differently for "third_party"
     // mode? Remove the previous function definitions?
     test("function f(){} function f(){}",
-         "function f(){} function f(){}",
-         SyntacticScopeCreator.VAR_MULTIPLY_DECLARED_ERROR);
+         "function f(){} function f(){}");
     test("if (a) { function f(){} } else { function f(){} }",
          "if (a) { var f = function (){} } else { f = function (){} }");
   }
@@ -340,37 +344,29 @@ public class NormalizeTest extends CompilerTestCase {
   }
 
   public void testIssue166a() {
-    test("try { throw 1 } catch(e) { /** @suppress {duplicate} */ var e=2 }",
-         "try { throw 1 } catch(e) { var e=2 }",
+    testError("try { throw 1 } catch(e) { /** @suppress {duplicate} */ var e=2 }",
          Normalize.CATCH_BLOCK_VAR_ERROR);
   }
 
   public void testIssue166b() {
-    test("function a() {" +
+    testError("function a() {" +
          "try { throw 1 } catch(e) { /** @suppress {duplicate} */ var e=2 }" +
          "};",
-         "function a() {" +
-         "try { throw 1 } catch(e) { var e=2 }" +
-         "}",
          Normalize.CATCH_BLOCK_VAR_ERROR);
   }
 
   public void testIssue166c() {
-    test("var e = 0; try { throw 1 } catch(e) {" +
-             "/** @suppress {duplicate} */ var e=2 }",
-         "var e = 0; try { throw 1 } catch(e) { var e=2 }",
-         Normalize.CATCH_BLOCK_VAR_ERROR);
+    testError("var e = 0; try { throw 1 } catch(e) {" +
+        "/** @suppress {duplicate} */ var e=2 }",
+        Normalize.CATCH_BLOCK_VAR_ERROR);
   }
 
   public void testIssue166d() {
-    test("function a() {" +
-         "var e = 0; try { throw 1 } catch(e) {" +
-             "/** @suppress {duplicate} */ var e=2 }" +
-         "};",
-         "function a() {" +
-         "var e = 0; try { throw 1 } catch(e) { var e=2 }" +
-         "}",
-         Normalize.CATCH_BLOCK_VAR_ERROR);
+    testError("function a() {" +
+        "var e = 0; try { throw 1 } catch(e) {" +
+            "/** @suppress {duplicate} */ var e=2 }" +
+        "};",
+        Normalize.CATCH_BLOCK_VAR_ERROR);
   }
 
   public void testIssue166e() {
@@ -395,13 +391,14 @@ public class NormalizeTest extends CompilerTestCase {
   public void testNormalizeSyntheticCode() {
     Compiler compiler = new Compiler();
     compiler.init(
-        Lists.<SourceFile>newArrayList(),
-        Lists.<SourceFile>newArrayList(), new CompilerOptions());
-    Node code = Normalize.parseAndNormalizeSyntheticCode(
-        compiler, "function f(x) {} function g(x) {}", "prefix_");
+        new ArrayList<SourceFile>(),
+         new ArrayList<SourceFile>(), new CompilerOptions());
+    String code = "function f(x) {} function g(x) {}";
+    Node ast = compiler.parseSyntheticCode(code);
+    Normalize.normalizeSyntheticCode(compiler, ast, "prefix_");
     assertEquals(
         "function f(x$$prefix_0){}function g(x$$prefix_1){}",
-        compiler.toSource(code));
+        compiler.toSource(ast));
   }
 
   public void testIsConstant() throws Exception {
@@ -409,7 +406,7 @@ public class NormalizeTest extends CompilerTestCase {
     Node n = getLastCompiler().getRoot();
 
     Set<Node> constantNodes = findNodesWithProperty(n, Node.IS_CONSTANT_NAME);
-    assertEquals(2, constantNodes.size());
+    assertThat(constantNodes).hasSize(2);
     for (Node hasProp : constantNodes) {
       assertEquals("CONST", hasProp.getString());
     }
@@ -420,7 +417,7 @@ public class NormalizeTest extends CompilerTestCase {
     Node n = getLastCompiler().getRoot();
 
     Set<Node> constantNodes = findNodesWithProperty(n, Node.IS_CONSTANT_NAME);
-    assertEquals(2, constantNodes.size());
+    assertThat(constantNodes).hasSize(2);
     for (Node hasProp : constantNodes) {
       assertEquals("CONST", hasProp.getString());
     }
@@ -431,7 +428,7 @@ public class NormalizeTest extends CompilerTestCase {
     Node n = getLastCompiler().getRoot();
 
     Set<Node> constantNodes = findNodesWithProperty(n, Node.IS_CONSTANT_NAME);
-    assertEquals(2, constantNodes.size());
+    assertThat(constantNodes).hasSize(2);
     for (Node hasProp : constantNodes) {
       assertEquals("CONST", hasProp.getString());
     }
@@ -443,7 +440,7 @@ public class NormalizeTest extends CompilerTestCase {
     Node n = getLastCompiler().getRoot();
 
     Set<Node> constantNodes = findNodesWithProperty(n, Node.IS_CONSTANT_NAME);
-    assertEquals(2, constantNodes.size());
+    assertThat(constantNodes).hasSize(2);
     for (Node hasProp : constantNodes) {
       assertEquals("CONST", hasProp.getString());
     }
@@ -456,7 +453,7 @@ public class NormalizeTest extends CompilerTestCase {
     Node n = getLastCompiler().getRoot();
 
     Set<Node> constantNodes = findNodesWithProperty(n, Node.IS_CONSTANT_NAME);
-    assertEquals(2, constantNodes.size());
+    assertThat(constantNodes).hasSize(2);
     for (Node hasProp : constantNodes) {
       assertEquals("CONST", hasProp.getString());
     }
@@ -476,8 +473,8 @@ public class NormalizeTest extends CompilerTestCase {
   }
 
   private Set<Node> findNodesWithProperty(Node root, final int prop) {
-    final Set<Node> set = Sets.newHashSet();
-    NodeTraversal.traverse(
+    final Set<Node> set = new HashSet<>();
+    NodeTraversal.traverseEs6(
         getLastCompiler(), root, new AbstractPostOrderCallback() {
         @Override
         public void visit(NodeTraversal t, Node node, Node parent) {
@@ -492,7 +489,9 @@ public class NormalizeTest extends CompilerTestCase {
   public void testRenamingConstantProperties() {
     // In order to detect that foo.BAR is a constant, we need collapse
     // properties to run first so that we can tell if the initial value is
-    // non-null and immutable.
+    // non-null and immutable. The Normalize pass doesn't modify the code
+    // in these examples, it just infers const-ness of some variables, so
+    // we call enableNormalize to make the Normalize.VerifyConstants pass run.
     new WithCollapse().testConstantProperties();
   }
 
@@ -502,28 +501,25 @@ public class NormalizeTest extends CompilerTestCase {
     }
 
     private void testConstantProperties() {
-      test("var a={}; a.ACONST = 4;var b = a.ACONST;",
-           "var a$ACONST = 4; var b = a$ACONST;");
+      test("var a={}; a.ACONST = 4;var b = 1; b = a.ACONST;",
+          "var a$ACONST = 4; var b = 1; b = a$ACONST;");
 
-      test("var a={b:{}}; a.b.ACONST = 4;var b = a.b.ACONST;",
-           "var a$b$ACONST = 4;var b = a$b$ACONST;");
+      test("var a={b:{}}; a.b.ACONST = 4;var b = 1; b = a.b.ACONST;",
+          "var a$b$ACONST = 4;var b = 1; b = a$b$ACONST;");
 
-      test("var a = {FOO: 1};var b = a.FOO;",
-           "var a$FOO = 1; var b = a$FOO;");
+      test("var a = {FOO: 1};var b = 1; b = a.FOO;",
+          "var a$FOO = 1; var b = 1; b = a$FOO;");
 
-      test("var EXTERN; var ext; ext.FOO;", "var b = EXTERN; var c = ext.FOO",
-           "var b = EXTERN; var c = ext.FOO", null, null);
+      testSame("var EXTERN; var ext; ext.FOO;", "var b = EXTERN; var c = ext.FOO", null);
 
-      test("var a={}; a.ACONST = 4; var b = a.ACONST;",
-           "var a$ACONST = 4; var b = a$ACONST;");
+      test("var a={}; a.ACONST = 4; var b = 1; b = a.ACONST;",
+          "var a$ACONST = 4; var b = 1; b = a$ACONST;");
 
-      test("var a = {}; function foo() { var d = a.CONST; };" +
-           "(function(){a.CONST=4})();",
-           "var a$CONST;function foo(){var d = a$CONST;};" +
-           "(function(){a$CONST = 4})();");
+      test("var a = {}; function foo() { var d = a.CONST; }; (function(){a.CONST=4})();",
+          "var a$CONST;function foo(){var d = a$CONST;}; (function(){a$CONST = 4})();");
 
-      test("var a = {}; a.ACONST = new Foo(); var b = a.ACONST;",
-           "var a$ACONST = new Foo(); var b = a$ACONST;");
+      test("var a = {}; a.ACONST = new Foo(); var b = 1; b = a.ACONST;",
+          "var a$ACONST = new Foo(); var b = 1; b = a$ACONST;");
     }
 
     @Override
@@ -533,13 +529,8 @@ public class NormalizeTest extends CompilerTestCase {
     }
 
     @Override
-    public CompilerPass getProcessor(final Compiler compiler) {
-      return new CompilerPass() {
-        @Override
-        public void process(Node externs, Node root) {
-          new CollapseProperties(compiler, false, true).process(externs, root);
-        }
-      };
+    public CompilerPass getProcessor(Compiler compiler) {
+      return new CollapseProperties(compiler);
     }
   }
 }

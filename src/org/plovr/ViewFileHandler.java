@@ -26,7 +26,7 @@ final class ViewFileHandler extends AbstractGetHandler {
   public ViewFileHandler(CompilationServer server) {
     super(server);
 
-    SoyFileSet.Builder builder = new SoyFileSet.Builder();
+    SoyFileSet.Builder builder = SoyFileSet.builder();
     builder.add(Resources.getResource(ViewFileHandler.class, "view.soy"));
     SoyFileSet fileSet = builder.build();
     viewTemplate = fileSet.compileToTofu();
@@ -46,7 +46,7 @@ final class ViewFileHandler extends AbstractGetHandler {
     try {
       input = manifest.getJsInputByName(name);
       codeToDisplay = input.getCode();
-    } catch (RuntimeException e) {
+    } catch (UncheckedCompilationException e) {
       SoyFile soyFile = findSoyFile(name, manifest, e);
       input = soyFile;
       codeToDisplay = soyFile.getTemplateCode();
@@ -74,8 +74,7 @@ final class ViewFileHandler extends AbstractGetHandler {
    * Find the Soy file by name in the manifest or throw the specified exception.
    */
   private SoyFile findSoyFile(String name, Manifest manifest, RuntimeException e) {
-    Set<JsInput> allDeps = manifest.getAllDependencies(
-        false /* cacheDependencies */);
+    Set<JsInput> allDeps = manifest.getAllDependencies();
     for (JsInput input : allDeps) {
       if (input.getName().equals(name) && input instanceof SoyFile) {
         return (SoyFile)input;

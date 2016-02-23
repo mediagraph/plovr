@@ -19,98 +19,57 @@ package com.google.template.soy.soytree;
 import com.google.common.base.Preconditions;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.basetree.AbstractNode;
-
+import com.google.template.soy.basetree.CopyState;
 
 /**
  * Abstract implementation of a SoyNode.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
 public abstract class AbstractSoyNode extends AbstractNode implements SoyNode {
-
 
   /** The id for this node. */
   private int id;
 
-  /** The first line in the file from which this node was parsed or derived. */
-  private SourceLocation srcLoc;
-
-  /** The syntax version of this node. Not final -- may be adjusted by subclass constructors. */
-  private SyntaxVersion syntaxVersion;
-
+  /** The location in the file from which this node was parsed or derived. */
+  private final SourceLocation srcLoc;
 
   /**
    * @param id The id for this node.
+   * @param sourceLocation The node's source location.
    */
-  protected AbstractSoyNode(int id) {
-    Preconditions.checkNotNull(id);
+  protected AbstractSoyNode(int id, SourceLocation sourceLocation) {
     this.id = id;
-    srcLoc = SourceLocation.UNKNOWN;
-    // Assumes this node follows V2 syntax. Subclass constructors can modify this value.
-    syntaxVersion = SyntaxVersion.V2;
+    srcLoc = Preconditions.checkNotNull(sourceLocation);
   }
-
 
   /**
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected AbstractSoyNode(AbstractSoyNode orig) {
-    super(orig);
+  protected AbstractSoyNode(AbstractSoyNode orig, CopyState copyState) {
+    super(orig, copyState);
     this.id = orig.id;
     this.srcLoc = orig.srcLoc;
-    this.syntaxVersion = orig.syntaxVersion;
   }
-
 
   @Override public void setId(int id) {
     this.id = id;
   }
 
-
   @Override public int getId() {
     return id;
   }
 
-
-  /** The first line of the node in the file from which it was parsed or derived. */
+  /** The location in the file from which this node was parsed or derived. */
   @Override public SourceLocation getSourceLocation() {
     return srcLoc;
   }
 
-
-  @Override public void setSourceLocation(SourceLocation srcLoc) {
-    Preconditions.checkNotNull(srcLoc);
-    this.srcLoc = srcLoc;
-  }
-
-
-  @Override public SyntaxVersion getSyntaxVersion() {
-    return syntaxVersion;
-  }
-
-
-  /**
-   * If the given syntax version is lower than the current syntax version value, then lowers the
-   * syntax version to the given value.
-   * @param syntaxVersion The syntax version to drop down to, if it is lower.
-   */
-  protected void maybeSetSyntaxVersion(SyntaxVersion syntaxVersion) {
-    if (this.syntaxVersion.compareTo(syntaxVersion) > 0) {
-      this.syntaxVersion = syntaxVersion;
-    }
-  }
-
-
   @Override public ParentSoyNode<?> getParent() {
     return (ParentSoyNode<?>) super.getParent();
   }
-
-
-  @Override public abstract SoyNode clone();
-
 
   @Override public String toString() {
     return super.toString() + "_" + id;

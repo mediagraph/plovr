@@ -16,21 +16,19 @@
 
 package com.google.template.soy.soytree;
 
-import com.google.template.soy.soytree.SoyNode.StandaloneNode;
-
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.soytree.SoyNode.MsgSubstUnitNode;
 
 /**
  * A node that is the direct child of a MsgBlockNode and will turn into a placeholder.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class MsgPlaceholderNode extends AbstractBlockNode implements StandaloneNode {
+public final class MsgPlaceholderNode extends AbstractBlockNode implements MsgSubstUnitNode {
 
-
-  /** The base placeholder name for this node. */
-  private final String basePlaceholderName;
+  /** The base placeholder name (what the translator sees). */
+  private final String basePhName;
 
   /** The initial child's SoyNode kind. */
   private final SoyNode.Kind initialNodeKind;
@@ -47,8 +45,8 @@ public class MsgPlaceholderNode extends AbstractBlockNode implements StandaloneN
    *     because it may be modified/replaced later by compiler passes.
    */
   public MsgPlaceholderNode(int id, MsgPlaceholderInitialNode initialNode) {
-    super(id);
-    this.basePlaceholderName = initialNode.genBasePlaceholderName();
+    super(id, initialNode.getSourceLocation());
+    this.basePhName = initialNode.genBasePhName();
     this.initialNodeKind = initialNode.getKind();
     this.samenessKey = initialNode.genSamenessKey();
     this.addChild(initialNode);
@@ -59,9 +57,9 @@ public class MsgPlaceholderNode extends AbstractBlockNode implements StandaloneN
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected MsgPlaceholderNode(MsgPlaceholderNode orig) {
-    super(orig);
-    this.basePlaceholderName = orig.basePlaceholderName;
+  private MsgPlaceholderNode(MsgPlaceholderNode orig, CopyState copyState) {
+    super(orig, copyState);
+    this.basePhName = orig.basePhName;
     this.initialNodeKind = orig.initialNodeKind;
     this.samenessKey = orig.samenessKey;
   }
@@ -72,25 +70,20 @@ public class MsgPlaceholderNode extends AbstractBlockNode implements StandaloneN
   }
 
 
-  /**
-   * Gets the base placeholder name for this node.
-   * @return The base placeholder name for this node.
-   */
-  public String genBasePlaceholderName() {
-    return basePlaceholderName;
+  /** Returns the base placeholder name (what the translator sees). */
+  @Override public String getBaseVarName() {
+    return basePhName;
   }
 
 
   /**
-   * Determines whether this node and the given other node are the same, such that they should be
+   * Returns whether this node and the given other node are the same, such that they should be
    * represented by the same placeholder.
-   * @param other The other MsgPlaceholderNode to compare to.
-   * @return True if this and the other node should be represented by the same placeholder.
    */
-  public boolean isSamePlaceholderAs(MsgPlaceholderNode other) {
-    return
-        this.initialNodeKind == other.initialNodeKind &&
-        this.samenessKey.equals(other.samenessKey);
+  @Override public boolean shouldUseSameVarNameAs(MsgSubstUnitNode other) {
+    return (other instanceof  MsgPlaceholderNode) &&
+        this.initialNodeKind == ((MsgPlaceholderNode) other).initialNodeKind &&
+        this.samenessKey.equals(((MsgPlaceholderNode) other).samenessKey);
   }
 
 
@@ -104,8 +97,8 @@ public class MsgPlaceholderNode extends AbstractBlockNode implements StandaloneN
   }
 
 
-  @Override public MsgPlaceholderNode clone() {
-    return new MsgPlaceholderNode(this);
+  @Override public MsgPlaceholderNode copy(CopyState copyState) {
+    return new MsgPlaceholderNode(this, copyState);
   }
 
 }

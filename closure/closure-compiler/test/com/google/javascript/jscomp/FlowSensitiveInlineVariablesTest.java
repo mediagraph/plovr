@@ -22,7 +22,8 @@ import com.google.javascript.rhino.Node;
  * Unit tests for {@link FlowSensitiveInlineVariables}.
  *
  */
-public class FlowSensitiveInlineVariablesTest extends CompilerTestCase  {
+
+public final class FlowSensitiveInlineVariablesTest extends CompilerTestCase  {
 
   public static final String EXTERN_FUNCTIONS = "" +
       "var print;\n" +

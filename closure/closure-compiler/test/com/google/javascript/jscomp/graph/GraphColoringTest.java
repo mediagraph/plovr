@@ -16,13 +16,14 @@
 
 package com.google.javascript.jscomp.graph;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.javascript.jscomp.graph.Graph;
-import com.google.javascript.jscomp.graph.GraphColoring;
-import com.google.javascript.jscomp.graph.LinkedUndirectedGraph;
-import com.google.javascript.jscomp.graph.GraphNode;
 import com.google.javascript.jscomp.graph.Graph.GraphEdge;
+import com.google.javascript.jscomp.graph.GraphColoring;
 import com.google.javascript.jscomp.graph.GraphColoring.Color;
 import com.google.javascript.jscomp.graph.GraphColoring.GreedyGraphColoring;
+import com.google.javascript.jscomp.graph.LinkedUndirectedGraph;
 
 import junit.framework.TestCase;
 
@@ -32,7 +33,7 @@ import java.util.Comparator;
  * Tests for {@link GraphColoring}.
  *
  */
-public class GraphColoringTest extends TestCase {
+public final class GraphColoringTest extends TestCase {
 
   public void testNoEdge() {
     Graph<String, String> graph = LinkedUndirectedGraph.create();
@@ -40,11 +41,11 @@ public class GraphColoringTest extends TestCase {
       graph.createNode("Node " + i);
       // All node with same color.
       GraphColoring<String, String> coloring =
-          new GreedyGraphColoring<String, String>(graph);
-      assertEquals(1, coloring.color());
+          new GreedyGraphColoring<>(graph);
+      assertThat(coloring.color()).isEqualTo(1);
       validateColoring(graph);
       for (int j = 0; j < i; j++) {
-        assertEquals("Node 0", coloring.getPartitionSuperNode("Node 0"));
+        assertThat(coloring.getPartitionSuperNode("Node 0")).isEqualTo("Node 0");
       }
     }
   }
@@ -55,11 +56,11 @@ public class GraphColoringTest extends TestCase {
     graph.createNode("B");
     graph.connect("A", "--", "B");
     GraphColoring<String, String> coloring =
-        new GreedyGraphColoring<String, String>(graph);
-    assertEquals(2, coloring.color());
+        new GreedyGraphColoring<>(graph);
+    assertThat(coloring.color()).isEqualTo(2);
     validateColoring(graph);
-    assertEquals("A", coloring.getPartitionSuperNode("A"));
-    assertEquals("B", coloring.getPartitionSuperNode("B"));
+    assertThat(coloring.getPartitionSuperNode("A")).isEqualTo("A");
+    assertThat(coloring.getPartitionSuperNode("B")).isEqualTo("B");
   }
 
   public void testGreedy() {
@@ -72,12 +73,12 @@ public class GraphColoringTest extends TestCase {
     graph.connect("B", "--", "C");
     graph.connect("B", "--", "D");
     GraphColoring<String, String> coloring =
-        new GreedyGraphColoring<String, String>(graph);
-    assertEquals(2, coloring.color());
+        new GreedyGraphColoring<>(graph);
+    assertThat(coloring.color()).isEqualTo(2);
     validateColoring(graph);
-    assertEquals("A", coloring.getPartitionSuperNode("A"));
-    assertEquals("A", coloring.getPartitionSuperNode("B"));
-    assertEquals("C", coloring.getPartitionSuperNode("C"));
+    assertThat(coloring.getPartitionSuperNode("A")).isEqualTo("A");
+    assertThat(coloring.getPartitionSuperNode("B")).isEqualTo("A");
+    assertThat(coloring.getPartitionSuperNode("C")).isEqualTo("C");
   }
 
   public void testFullyConnected() {
@@ -93,11 +94,11 @@ public class GraphColoringTest extends TestCase {
       }
     }
     GraphColoring<String, String> coloring =
-        new GreedyGraphColoring<String, String>(graph);
-    assertEquals(count, coloring.color());
+        new GreedyGraphColoring<>(graph);
+    assertThat(coloring.color()).isEqualTo(count);
     validateColoring(graph);
     for (int i = 0; i < count; i++) {
-      assertEquals("Node " + i, coloring.getPartitionSuperNode("Node " + i));
+      assertThat(coloring.getPartitionSuperNode("Node " + i)).isEqualTo("Node " + i);
     }
   }
 
@@ -110,12 +111,12 @@ public class GraphColoringTest extends TestCase {
       graph.connect("Center", null, "Node " + i);
     }
     GraphColoring<String, String> coloring =
-        new GreedyGraphColoring<String, String>(graph);
-    assertEquals(2, coloring.color());
+        new GreedyGraphColoring<>(graph);
+    assertThat(coloring.color()).isEqualTo(2);
     validateColoring(graph);
-    assertEquals("Center", coloring.getPartitionSuperNode("Center"));
+    assertThat(coloring.getPartitionSuperNode("Center")).isEqualTo("Center");
     for (int i = 0; i < count; i++) {
-      assertEquals("Node 0", coloring.getPartitionSuperNode("Node " + i));
+      assertThat(coloring.getPartitionSuperNode("Node " + i)).isEqualTo("Node 0");
     }
   }
 
@@ -135,7 +136,7 @@ public class GraphColoringTest extends TestCase {
         }
       }
     }
-    assertEquals(count, new GreedyGraphColoring<String, String>(graph).color());
+    assertThat(new GreedyGraphColoring<>(graph).color()).isEqualTo(count);
     validateColoring(graph);
 
     // Connect the two cliques.
@@ -146,7 +147,7 @@ public class GraphColoringTest extends TestCase {
     // If we circularly shift the colors of one of the graph by 1, we can
     // connect the isomorphic nodes and still have a valid coloring in the
     // resulting graph.
-    assertEquals(count, new GreedyGraphColoring<String, String>(graph).color());
+    assertThat(new GreedyGraphColoring<>(graph).color()).isEqualTo(count);
     validateColoring(graph);
   }
 
@@ -171,11 +172,11 @@ public class GraphColoringTest extends TestCase {
       }
     };
     GraphColoring<String, String> coloring =
-        new GreedyGraphColoring<String, String>(graph, lexicographic);
-    assertEquals(3, coloring.color());
+        new GreedyGraphColoring<>(graph, lexicographic);
+    assertThat(coloring.color()).isEqualTo(3);
     validateColoring(graph);
-    assertEquals("A", coloring.getPartitionSuperNode("A"));
-    assertEquals("A", coloring.getPartitionSuperNode("C"));
+    assertThat(coloring.getPartitionSuperNode("A")).isEqualTo("A");
+    assertThat(coloring.getPartitionSuperNode("C")).isEqualTo("A");
 
     Comparator<String> biasD = new Comparator<String>() {
       @Override
@@ -184,11 +185,11 @@ public class GraphColoringTest extends TestCase {
       }
     };
 
-    coloring = new GreedyGraphColoring<String, String>(graph, biasD);
-    assertEquals(3, coloring.color());
+    coloring = new GreedyGraphColoring<>(graph, biasD);
+    assertThat(coloring.color()).isEqualTo(3);
     validateColoring(graph);
-    assertEquals("A", coloring.getPartitionSuperNode("A"));
-    assertFalse("A".equals(coloring.getPartitionSuperNode("C")));
+    assertThat(coloring.getPartitionSuperNode("A")).isEqualTo("A");
+    assertThat("A".equals(coloring.getPartitionSuperNode("C"))).isFalse();
   }
 
   /**
@@ -197,14 +198,14 @@ public class GraphColoringTest extends TestCase {
    */
   private static <N, E> void validateColoring(Graph<N, E> graph) {
     for (GraphNode<N, E> node : graph.getNodes()) {
-      assertTrue(node.getAnnotation() != null);
+      assertNotNull(node.getAnnotation());
     }
     for (GraphEdge<N, E> edge : graph.getEdges()) {
       Color c1 = edge.getNodeA().getAnnotation();
       Color c2 = edge.getNodeB().getAnnotation();
-      assertTrue(c1 != null);
-      assertTrue(c2 != null);
-      assertTrue(!c1.equals(c2));
+      assertNotNull(c1);
+      assertNotNull(c2);
+      assertThat(c1.equals(c2)).isFalse();
     }
   }
 }

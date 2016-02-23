@@ -21,7 +21,7 @@ package com.google.javascript.jscomp;
  * Tests for {@link CollapseAnonymousFunctions}
  *
  */
-public class CollapseAnonymousFunctionsTest extends CompilerTestCase {
+public final class CollapseAnonymousFunctionsTest extends CompilerTestCase {
   public CollapseAnonymousFunctionsTest() {
     this.enableNormalize();
   }
@@ -85,6 +85,11 @@ public class CollapseAnonymousFunctionsTest extends CompilerTestCase {
   public void testLocalScopeOnly2() {
     test("if (x) var f = function(){ var g = function(){} };",
          "if (x) var f = function(){ function g(){} }");
+  }
+
+  public void testLocalScopeOnly3() {
+    test("if (x){ var f = function(){ var g = function(){} };}",
+         "if (x){ var f = function(){ function g(){} }}");
   }
 
   public void testReturn() {

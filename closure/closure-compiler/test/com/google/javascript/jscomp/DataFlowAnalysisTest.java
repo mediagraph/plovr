@@ -16,8 +16,6 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.javascript.jscomp.ControlFlowGraph.Branch;
 import com.google.javascript.jscomp.DataFlowAnalysis.BranchedFlowState;
 import com.google.javascript.jscomp.DataFlowAnalysis.BranchedForwardDataFlowAnalysis;
@@ -30,7 +28,10 @@ import com.google.javascript.jscomp.graph.LatticeElement;
 
 import junit.framework.TestCase;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -41,7 +42,7 @@ import java.util.Map;
  * manually put each instruction in a {@code ControlFlowGraph}.
  *
  */
-public class DataFlowAnalysisTest extends TestCase {
+public final class DataFlowAnalysisTest extends TestCase {
 
   /**
    * Operations supported by ArithmeticInstruction.
@@ -341,7 +342,7 @@ public class DataFlowAnalysisTest extends TestCase {
      */
     ConstPropLatticeElement(boolean isTop) {
       this.isTop = isTop;
-      this.constMap = Maps.newHashMap();
+      this.constMap = new HashMap<>();
     }
 
     /**
@@ -353,7 +354,7 @@ public class DataFlowAnalysisTest extends TestCase {
 
     ConstPropLatticeElement(ConstPropLatticeElement other) {
       this.isTop = other.isTop;
-      this.constMap = Maps.newHashMap(other.constMap);
+      this.constMap = new HashMap<>(other.constMap);
     }
 
     @Override
@@ -518,7 +519,7 @@ public class DataFlowAnalysisTest extends TestCase {
     Instruction inst3 = newAssignNumberToVariableInstruction(b, 1);
     Instruction inst4 = newAssignVariableToVariableInstruction(c, b);
     ControlFlowGraph<Instruction> cfg =
-      new ControlFlowGraph<Instruction>(inst1, true, true);
+      new ControlFlowGraph<>(inst1, true, true);
     GraphNode<Instruction, Branch> n1 = cfg.createNode(inst1);
     GraphNode<Instruction, Branch> n2 = cfg.createNode(inst2);
     GraphNode<Instruction, Branch> n3 = cfg.createNode(inst3);
@@ -575,7 +576,7 @@ public class DataFlowAnalysisTest extends TestCase {
     Instruction inst3 = new BranchInstruction(b);
     Instruction inst4 = newAssignVariableToVariableInstruction(c, a);
     ControlFlowGraph<Instruction> cfg =
-      new ControlFlowGraph<Instruction>(inst1, true, true);
+      new ControlFlowGraph<>(inst1, true, true);
     GraphNode<Instruction, Branch> n1 = cfg.createNode(inst1);
     GraphNode<Instruction, Branch> n2 = cfg.createNode(inst2);
     GraphNode<Instruction, Branch> n3 = cfg.createNode(inst3);
@@ -658,16 +659,14 @@ public class DataFlowAnalysisTest extends TestCase {
     @Override
     List<ConstPropLatticeElement> branchedFlowThrough(Instruction node,
         ConstPropLatticeElement input) {
-      List<ConstPropLatticeElement> result = Lists.newArrayList();
+      List<ConstPropLatticeElement> result = new ArrayList<>();
       List<DiGraphEdge<Instruction, Branch>> outEdges =
         getCfg().getOutEdges(node);
       if (node.isArithmetic()) {
         assertTrue(outEdges.size() < 2);
         ConstPropLatticeElement aResult = flowThroughArithmeticInstruction(
             (ArithmeticInstruction) node, input);
-        for (int i = 0; i < outEdges.size(); i++) {
-          result.add(aResult);
-        }
+        result.addAll(Collections.nCopies(outEdges.size(), aResult));
       } else {
         BranchInstruction branchInst = (BranchInstruction) node;
         for (DiGraphEdge<Instruction, Branch> branch : outEdges) {
@@ -704,7 +703,7 @@ public class DataFlowAnalysisTest extends TestCase {
     Instruction inst3 = newAssignNumberToVariableInstruction(b, 0);
     Instruction inst4 = newAssignVariableToVariableInstruction(c, b);
     ControlFlowGraph<Instruction> cfg =
-      new ControlFlowGraph<Instruction>(inst1, true, true);
+      new ControlFlowGraph<>(inst1, true, true);
     GraphNode<Instruction, Branch> n1 = cfg.createNode(inst1);
     GraphNode<Instruction, Branch> n2 = cfg.createNode(inst2);
     GraphNode<Instruction, Branch> n3 = cfg.createNode(inst3);
@@ -737,8 +736,9 @@ public class DataFlowAnalysisTest extends TestCase {
     verifyBranchedInHas(n4, a, 0);
   }
 
+  private static final int MAX_STEP = 10;
+
   public void testMaxIterationsExceededException() {
-    final int MAX_STEP = 10;
     Variable a = new Variable("a");
     Instruction inst1 = new ArithmeticInstruction(a, a, Operation.ADD, a);
     ControlFlowGraph<Instruction> cfg =

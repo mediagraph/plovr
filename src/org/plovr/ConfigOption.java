@@ -8,9 +8,11 @@ import org.plovr.ModuleConfig.BadDependencyTreeException;
 import org.plovr.webdriver.ReflectionWebDriverFactory;
 import org.plovr.webdriver.WebDriverFactory;
 
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
+import com.google.common.css.JobDescription;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -18,6 +20,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import com.google.javascript.jscomp.CheckLevel;
+import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.jscomp.CustomPassExecutionTime;
 import com.google.javascript.jscomp.WarningLevel;
 
@@ -139,7 +142,7 @@ public enum ConfigOption {
         CompilationMode compilationMode = CompilationMode.valueOf(mode.toUpperCase());
         builder.setCompilationMode(compilationMode);
       } catch (IllegalArgumentException e) {
-        // OK
+        throw Throwables.propagate(e);
       }
     }
 
@@ -157,7 +160,7 @@ public enum ConfigOption {
         WarningLevel warningLevel = WarningLevel.valueOf(level.toUpperCase());
         builder.setWarningLevel(warningLevel);
       } catch (IllegalArgumentException e) {
-        // OK
+        throw Throwables.propagate(e);
       }
     }
 
@@ -202,6 +205,20 @@ public enum ConfigOption {
       boolean prettyPrint = Boolean.valueOf(prettyPrintParam);
       builder.setPrettyPrint(prettyPrint);
       return true;
+    }
+  }),
+
+  SOURCE_MAP_BASE_URL("source-map-base-url", new ConfigUpdater() {
+    @Override
+    public void apply(String sourceMapBaseUrl, Config.Builder builder) {
+      builder.setSourceMapBaseUrl(sourceMapBaseUrl);
+    }
+  }),
+
+  SOURCE_MAP_OUTPUT_NAME("source-map-output-name", new ConfigUpdater() {
+    @Override
+    public void apply(String sourceMapOutputName, Config.Builder builder) {
+      builder.setSourceMapOutputName(sourceMapOutputName);
     }
   }),
 
@@ -255,10 +272,46 @@ public enum ConfigOption {
     }
   }),
 
+  LANGUAGE_IN("language-in", new ConfigUpdater() {
+    @Override
+    public void apply(String mode, Config.Builder builder) {
+      try {
+        builder.setLanguageIn(LanguageMode.valueOf(mode));
+      } catch (IllegalArgumentException e) {
+        throw Throwables.propagate(e);
+      }
+    }
+  }),
+
+  LANGUAGE_OUT("language-out", new ConfigUpdater() {
+    @Override
+    public void apply(String mode, Config.Builder builder) {
+      try {
+        builder.setLanguageOut(LanguageMode.valueOf(mode));
+      } catch (IllegalArgumentException e) {
+        throw Throwables.propagate(e);
+      }
+    }
+  }),
+
+  NEW_TYPE_INFERENCE("new-type-inference", new ConfigUpdater() {
+    @Override
+    public void apply(boolean on, Config.Builder builder) {
+      builder.setNewTypeInference(on);
+    }
+  }),
+
   FINGERPRINT("fingerprint", new ConfigUpdater() {
     @Override
     public void apply(boolean fingerprint, Config.Builder builder) {
       builder.setFingerprintJsFiles(fingerprint);
+    }
+  }),
+
+  LOCATION_MAPPING("location-mapping", new ConfigUpdater() {
+    @Override
+    public void apply(JsonObject locationMapping, Config.Builder builder) {
+      builder.setLocationMappings(locationMapping);
     }
   }),
 
@@ -520,6 +573,29 @@ public enum ConfigOption {
     }
   }),
 
+  CUSTOM_WARNINGS_GUARDS("custom-warnings-guards", new ConfigUpdater() {
+    @Override
+    public void apply(String input, Config.Builder builder) {
+      builder.addCustomWarningsGuard(input);
+    }
+
+    @Override
+    public void apply(JsonArray inputs, Config.Builder builder) {
+      for (JsonElement item : inputs) {
+        String input = GsonUtil.stringOrNull(item);
+        if (input != null) {
+          apply(input, builder);
+        }
+      }
+    }
+
+    @Override
+    public boolean reset(Config.Builder builder) {
+      builder.resetCustomWarningsGuards();
+      return true;
+    }
+  }),
+
   SOY_FUNCTION_PLUGINS("soy-function-plugins", new ConfigUpdater() {
     @Override
     public void apply(String input, Config.Builder builder) {
@@ -767,6 +843,25 @@ public enum ConfigOption {
       File outputFile = (outputFilePath == null) ? null :
           new File(maybeResolvePath(outputFilePath, builder));
       builder.setCssOutputFile(outputFile);
+    }
+  }),
+
+  CSS_OUTPUT_FORMAT("css-output-format", new ConfigUpdater() {
+    @Override
+    public void apply(String cssOutputFormatParam, Config.Builder builder) {
+      try {
+        JobDescription.OutputFormat cssOutputFormat =
+            JobDescription.OutputFormat.valueOf(cssOutputFormatParam.toUpperCase());
+        builder.setCssOutputFormat(cssOutputFormat);
+      } catch (IllegalArgumentException e) {
+        throw Throwables.propagate(e);
+      }
+    }
+
+    @Override
+    public boolean update(String cssOutputFormatParam, Config.Builder builder) {
+      apply(cssOutputFormatParam, builder);
+      return true;
     }
   }),
   ;

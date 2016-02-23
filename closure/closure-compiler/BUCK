@@ -9,62 +9,58 @@ java_library(
         'gen/**/*.java',
       ],
       excludes = [
+        'src/com/google/javascript/jscomp/ant/**/*.java',
+        'src/com/google/javascript/jscomp/debugger/**/*.java',
+        'src/com/google/javascript/jscomp/gwt/**/*.java',
         'src/com/google/javascript/jscomp/jsonml/**/*.java',
         'src/com/google/javascript/jscomp/testing/**/*.java',
+        'src/com/google/javascript/refactoring/testing/**/*.java',
         'src/com/google/javascript/jscomp/webservice/**/*.java',
         'src/com/google/javascript/rhino/testing/**/*.java',
       ]),
-  resources = [
-    'src/com/google/javascript/jscomp/parsing/ParserConfig.properties',
-
-    # This needs to end up at
-    # rhino_ast/java/com/google/javascript/rhino/Messages.properties
-    'src/com/google/javascript/rhino/Messages.properties',
-  ],
   deps = [
-    ':ant',
     ':args4j',
+    ':gson',
     ':guava',
-    ':json',
     ':jsr305',
     ':protobuf',
-    ':rhino',
+    ':externs_srcs',
+    ':externs_zip',
+    ':support_srcs',
   ],
   visibility = [ 'PUBLIC' ],
 )
 
-# This rule is hacky. It can be cleaned up once the following Buck issue is fixed:
-# https://github.com/facebook/buck/issues/19
+java_library(
+  name = 'externs_srcs',
+  resources = glob(includes=[
+    'externs/**/*.js',
+    'contrib/externs/**/*.js',
+  ]) + [
+    ':externs_zip',
+  ],
+  resources_root = '.')
+
+java_library(
+  name = 'support_srcs',
+  resources = glob(includes=[
+    'src/com/google/javascript/jscomp/js/*.js',
+    'src/**/*.properties'
+  ]),
+  resources_root = './src')
+
 genrule(
-  name = 'gen_rhino',
-  srcs = [
-    'lib/jarjar.jar',
-    'jarjar-rules.txt',
-    genfile('lib/rhino/lib__rhino__output/rhino.jar'),
-  ],
-  cmd = 'java -jar $SRCDIR/lib/jarjar.jar process $SRCDIR/jarjar-rules.txt $SRCDIR/rhino.jar $OUT',
-  out = 'rhino.jar',
-  deps = [
-    '//closure/closure-compiler/lib/rhino:rhino',
-  ],
-)
-
-prebuilt_jar(
-  name = 'rhino',
-  binary_jar = genfile('rhino.jar'),
-  deps = [
-    ':gen_rhino',
-  ],
-  visibility = [ 'PUBLIC' ],
+  name = 'externs_zip',
+  srcs = glob(['externs/**/*.js']),
+  cmd = 'cd externs && zip -r $OUT *',
+  out = 'externs.zip',
 )
 
 prebuilt_jar(
   name = 'ant',
   binary_jar = 'lib/ant.jar',
   visibility = [
-    # Closure Templates should really have its own ant.jar and not use
-    # includeAntRuntime="true" in its build.xml file.
-    '//closure/closure-templates:',
+    'PUBLIC',
   ],
 )
 
@@ -77,18 +73,16 @@ prebuilt_jar(
 )
 
 prebuilt_jar(
-  name = 'caja',
-  binary_jar = 'lib/caja-r4314.jar',
+  name = 'gson',
+  binary_jar = 'lib/gson.jar',
+  visibility = [
+    'PUBLIC',
+  ],
 )
 
 prebuilt_jar(
   name = 'guava',
   binary_jar = 'lib/guava.jar',
-)
-
-prebuilt_jar(
-  name = 'json',
-  binary_jar = 'lib/json.jar',
   visibility = [
     'PUBLIC',
   ],
@@ -97,6 +91,14 @@ prebuilt_jar(
 prebuilt_jar(
   name = 'jsr305',
   binary_jar = 'lib/jsr305.jar',
+  visibility = [
+    'PUBLIC',
+  ],
+)
+
+prebuilt_jar(
+  name = 'junit',
+  binary_jar = 'lib/junit.jar',
   visibility = [
     'PUBLIC',
   ],

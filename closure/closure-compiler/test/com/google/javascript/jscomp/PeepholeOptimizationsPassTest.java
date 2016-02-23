@@ -16,12 +16,14 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -29,15 +31,9 @@ import java.util.Set;
  * Unit tests for PeepholeOptimizationsPass.
  *
  */
-public class PeepholeOptimizationsPassTest extends CompilerTestCase {
+public final class PeepholeOptimizationsPassTest extends CompilerTestCase {
 
   private ImmutableList<AbstractPeepholeOptimization> currentPeepholePasses;
-
-  @Override
-  public void setUp() throws Exception {
-    super.setUp();
-    super.enableLineNumberCheck(true);
-  }
 
   @Override
   public CompilerPass getProcessor(final Compiler compiler) {
@@ -57,7 +53,7 @@ public class PeepholeOptimizationsPassTest extends CompilerTestCase {
    * optimizations are turned on.
    */
   public void testEmptyPass() {
-    currentPeepholePasses = ImmutableList.<AbstractPeepholeOptimization>of();
+    currentPeepholePasses = ImmutableList.of();
 
     testSame("var x; var y;");
   }
@@ -81,7 +77,7 @@ public class PeepholeOptimizationsPassTest extends CompilerTestCase {
      * AST for the first optimization and then a second time for the second).
      */
 
-    final List<String> visitationLog = Lists.newArrayList();
+    final List<String> visitationLog = new ArrayList<>();
 
     AbstractPeepholeOptimization note1Applied =
         new AbstractPeepholeOptimization() {
@@ -108,8 +104,7 @@ public class PeepholeOptimizationsPassTest extends CompilerTestCase {
     };
 
     currentPeepholePasses =
-      ImmutableList.<
-       AbstractPeepholeOptimization>of(note1Applied, note2Applied);
+      ImmutableList.of(note1Applied, note2Applied);
 
     test("var x; var y", "var x; var y");
 
@@ -118,12 +113,8 @@ public class PeepholeOptimizationsPassTest extends CompilerTestCase {
      * visited by optimization2 "y" visited by optimization1 "y" visited by
      * optimization2
      */
-
-    assertEquals(4, visitationLog.size());
-    assertEquals("x1", visitationLog.get(0));
-    assertEquals("x2", visitationLog.get(1));
-    assertEquals("y1", visitationLog.get(2));
-    assertEquals("y2", visitationLog.get(3));
+    assertThat(visitationLog)
+        .containsExactly("x1", "x2", "y1", "y2").inOrder();
   }
 
   /**
@@ -135,7 +126,7 @@ public class PeepholeOptimizationsPassTest extends CompilerTestCase {
     @Override
     public Node optimizeSubtree(Node node) {
       if (node.isVar()) {
-        Set<Node> nodesToRemove = Sets.newHashSet();
+        Set<Node> nodesToRemove = new HashSet<>();
 
         for (Node child : node.children()) {
           if ("x".equals(child.getString())) {
@@ -241,17 +232,17 @@ public class PeepholeOptimizationsPassTest extends CompilerTestCase {
    * second wants to remove (the now nonexistent) parent of that node.
    */
   public void testOptimizationsRemoveParentAfterRemoveChild() {
-    currentPeepholePasses = ImmutableList.<AbstractPeepholeOptimization>of(
-          new RemoveNodesNamedXOptimization(),
-          new RemoveParentVarsForNodesNamedX());
+    currentPeepholePasses = ImmutableList.of(
+        new RemoveNodesNamedXOptimization(),
+        new RemoveParentVarsForNodesNamedX());
 
     test("var x,y; var z;", "var y; var z;");
   }
 
   public void testOptimizationReplacingNode() {
-    currentPeepholePasses = ImmutableList.<AbstractPeepholeOptimization>of(
-          new RenameYToX(),
-          new RemoveParentVarsForNodesNamedX());
+    currentPeepholePasses = ImmutableList.of(
+        new RenameYToX(),
+        new RemoveParentVarsForNodesNamedX());
 
     test("var y; var z;", "var z;");
   }

@@ -21,19 +21,13 @@ import com.google.javascript.rhino.Node;
 /**
  * @author johnlenz@google.com (John Lenz)
  */
-public class MinimizeExitPointsTest extends CompilerTestCase {
-
-  @Override
-  public void setUp() {
-    super.enableLineNumberCheck(true);
-  }
-
+public final class MinimizeExitPointsTest extends CompilerTestCase {
   @Override
   protected CompilerPass getProcessor(final Compiler compiler) {
     return new CompilerPass() {
       @Override
       public void process(Node externs, Node js) {
-        NodeTraversal.traverse(compiler, js, new MinimizeExitPoints(compiler));
+        NodeTraversal.traverseEs6(compiler, js, new MinimizeExitPoints(compiler));
       }
     };
   }
@@ -49,10 +43,6 @@ public class MinimizeExitPointsTest extends CompilerTestCase {
 
   void fold(String js, String expected) {
     test(js, expected);
-  }
-
-  void fold(String js, String expected, DiagnosticType warning) {
-    test(js, expected, warning);
   }
 
   public void testBreakOptimization() throws Exception {
@@ -274,5 +264,15 @@ public class MinimizeExitPointsTest extends CompilerTestCase {
 
   public void testDontRemoveBreakInTryFinally() throws Exception {
     foldSame("function f() {b:try{throw 9} finally {break b} return 1;}");
+  }
+
+  /**
+   * See https://github.com/google/closure-compiler/issues/554
+   * The 'break' prevents the 'b=false' from being evaluated.
+   * If we fold the do-while to 'do;while(b=false)' the code will
+   * be incorrect.
+   */
+  public void testDontFoldBreakInDoWhileIfConditionHasSideEffects() {
+    foldSame("var b=true;do{break}while(b=false);");
   }
 }

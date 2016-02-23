@@ -16,7 +16,7 @@
 
 package com.google.template.soy.jssrc;
 
-import com.google.template.soy.jssrc.SoyJsSrcOptions;
+import static com.google.common.truth.Truth.assertThat;
 
 import junit.framework.TestCase;
 
@@ -24,10 +24,8 @@ import junit.framework.TestCase;
 /**
  * Unit tests for SoyJsSrcOptions.
  *
- * @author Steven Saviano
  */
-public class SoyJsSrcOptionsTest extends TestCase {
-
+public final class SoyJsSrcOptionsTest extends TestCase {
 
   public void testClone() {
 
@@ -36,12 +34,10 @@ public class SoyJsSrcOptionsTest extends TestCase {
     options.setBidiGlobalDir(1);
 
     SoyJsSrcOptions clonedOptions = options.clone();
-    assertEquals(options.getBidiGlobalDir(),
-        clonedOptions.getBidiGlobalDir());
-    assertEquals(options.getUseGoogIsRtlForBidiGlobalDir(),
-        clonedOptions.getUseGoogIsRtlForBidiGlobalDir());
-    assertEquals(options.shouldGenerateGoogMsgDefs(), clonedOptions.shouldGenerateGoogMsgDefs());
-    assertEquals(options.getCodeStyle(), clonedOptions.getCodeStyle());
+    assertThat(clonedOptions.getBidiGlobalDir()).isEqualTo(options.getBidiGlobalDir());
+    assertThat(clonedOptions.getUseGoogIsRtlForBidiGlobalDir())
+        .isEqualTo(options.getUseGoogIsRtlForBidiGlobalDir());
+    assertThat(clonedOptions.shouldGenerateGoogMsgDefs())
+        .isEqualTo(options.shouldGenerateGoogMsgDefs());
   }
-
 }

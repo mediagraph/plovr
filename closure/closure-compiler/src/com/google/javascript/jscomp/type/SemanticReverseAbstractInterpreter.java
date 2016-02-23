@@ -19,7 +19,6 @@ package com.google.javascript.jscomp.type;
 import static com.google.javascript.rhino.jstype.JSTypeNative.UNKNOWN_TYPE;
 
 import com.google.common.base.Function;
-import com.google.javascript.jscomp.CodingConvention;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 import com.google.javascript.rhino.jstype.FunctionType;
@@ -28,7 +27,7 @@ import com.google.javascript.rhino.jstype.JSType.TypePair;
 import com.google.javascript.rhino.jstype.JSTypeNative;
 import com.google.javascript.rhino.jstype.JSTypeRegistry;
 import com.google.javascript.rhino.jstype.ObjectType;
-import com.google.javascript.rhino.jstype.StaticSlot;
+import com.google.javascript.rhino.jstype.StaticTypedSlot;
 import com.google.javascript.rhino.jstype.UnionType;
 import com.google.javascript.rhino.jstype.Visitor;
 
@@ -38,7 +37,7 @@ import com.google.javascript.rhino.jstype.Visitor;
  * expects the parse tree inputs to be typed.
  *
  */
-public class SemanticReverseAbstractInterpreter
+public final class SemanticReverseAbstractInterpreter
     extends ChainableReverseAbstractInterpreter {
 
   /**
@@ -115,9 +114,8 @@ public class SemanticReverseAbstractInterpreter
   /**
    * Creates a semantic reverse abstract interpreter.
    */
-  public SemanticReverseAbstractInterpreter(CodingConvention convention,
-      JSTypeRegistry typeRegistry) {
-    super(convention, typeRegistry);
+  public SemanticReverseAbstractInterpreter(JSTypeRegistry typeRegistry) {
+    super(typeRegistry);
   }
 
   @Override
@@ -304,7 +302,7 @@ public class SemanticReverseAbstractInterpreter
   }
 
   private FlowScope caseAndOrNotShortCircuiting(Node left, Node right,
-        FlowScope blindScope, boolean condition) {
+      FlowScope blindScope, boolean outcome) {
     // left type
     JSType leftType = getTypeIfRefinable(left, blindScope);
     boolean leftIsRefineable;
@@ -314,16 +312,18 @@ public class SemanticReverseAbstractInterpreter
       leftIsRefineable = false;
       leftType = left.getJSType();
       blindScope = firstPreciserScopeKnowingConditionOutcome(
-          left, blindScope, condition);
+          left, blindScope, outcome);
     }
 
     // restricting left type
     JSType restrictedLeftType = (leftType == null) ? null :
-        leftType.getRestrictedTypeGivenToBooleanOutcome(condition);
+        leftType.getRestrictedTypeGivenToBooleanOutcome(outcome);
     if (restrictedLeftType == null) {
       return firstPreciserScopeKnowingConditionOutcome(
-          right, blindScope, condition);
+          right, blindScope, outcome);
     }
+    blindScope = maybeRestrictName(blindScope, left, leftType,
+        leftIsRefineable ? restrictedLeftType : null);
 
     // right type
     JSType rightType = getTypeIfRefinable(right, blindScope);
@@ -334,27 +334,24 @@ public class SemanticReverseAbstractInterpreter
       rightIsRefineable = false;
       rightType = right.getJSType();
       blindScope = firstPreciserScopeKnowingConditionOutcome(
-          right, blindScope, condition);
+          right, blindScope, outcome);
     }
 
-    if (condition) {
+    if (outcome) {
       JSType restrictedRightType = (rightType == null) ? null :
-          rightType.getRestrictedTypeGivenToBooleanOutcome(condition);
-
+          rightType.getRestrictedTypeGivenToBooleanOutcome(outcome);
       // creating new scope
-      return maybeRestrictTwoNames(
-          blindScope,
-          left, leftType, leftIsRefineable ? restrictedLeftType : null,
-          right, rightType, rightIsRefineable ? restrictedRightType : null);
+      return maybeRestrictName(blindScope, right, rightType,
+          rightIsRefineable ? restrictedRightType : null);
     }
     return blindScope;
   }
 
   private FlowScope caseAndOrMaybeShortCircuiting(Node left, Node right,
-      FlowScope blindScope, boolean condition) {
+      FlowScope blindScope, boolean outcome) {
     FlowScope leftScope = firstPreciserScopeKnowingConditionOutcome(
-        left, blindScope, !condition);
-    StaticSlot<JSType> leftVar = leftScope.findUniqueRefinedSlot(blindScope);
+        left, blindScope, !outcome);
+    StaticTypedSlot<JSType> leftVar = leftScope.findUniqueRefinedSlot(blindScope);
     if (leftVar == null) {
       // If we did create a more precise scope, blindScope has a child and
       // it is frozen. We can't just throw it away to return it. So we
@@ -363,10 +360,10 @@ public class SemanticReverseAbstractInterpreter
           blindScope : blindScope.createChildFlowScope();
     }
     FlowScope rightScope = firstPreciserScopeKnowingConditionOutcome(
-        left, blindScope, condition);
+        left, blindScope, outcome);
     rightScope = firstPreciserScopeKnowingConditionOutcome(
-        right, rightScope, !condition);
-    StaticSlot<JSType> rightVar = rightScope.findUniqueRefinedSlot(blindScope);
+        right, rightScope, !outcome);
+    StaticTypedSlot<JSType> rightVar = rightScope.findUniqueRefinedSlot(blindScope);
     if (rightVar == null || !leftVar.getName().equals(rightVar.getName())) {
       return blindScope == rightScope ?
           blindScope : blindScope.createChildFlowScope();
@@ -393,8 +390,8 @@ public class SemanticReverseAbstractInterpreter
    * It is OK to pass non-name nodes into this method, as long as you pass
    * in {@code null} for a restricted type.
    */
-  private FlowScope maybeRestrictName(
-      FlowScope blindScope, Node node, JSType originalType, JSType restrictedType) {
+  private FlowScope maybeRestrictName(FlowScope blindScope, Node node,
+      JSType originalType, JSType restrictedType) {
     if (restrictedType != null && restrictedType != originalType) {
       FlowScope informed = blindScope.createChildFlowScope();
       declareNameInScope(informed, node, restrictedType);
@@ -493,7 +490,7 @@ public class SemanticReverseAbstractInterpreter
           JSType unknownType = typeRegistry.getNativeType(
               JSTypeNative.UNKNOWN_TYPE);
           informed.inferQualifiedSlot(
-              object, propertyQualifiedName, unknownType, unknownType);
+              object, propertyQualifiedName, unknownType, unknownType, false);
           return informed;
         }
       }

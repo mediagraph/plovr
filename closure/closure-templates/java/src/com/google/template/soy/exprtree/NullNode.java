@@ -16,26 +16,29 @@
 
 package com.google.template.soy.exprtree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.types.SoyType;
+import com.google.template.soy.types.primitive.NullType;
 
 /**
  * Node representing a null value.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class NullNode extends AbstractPrimitiveNode {
+public final class NullNode extends AbstractPrimitiveNode {
 
-
-  public NullNode() {}
-
+  public NullNode(SourceLocation sourceLocation) {
+    super(sourceLocation);
+  }
 
   /**
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected NullNode(NullNode orig) {
-    super(orig);
+  private NullNode(NullNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
 
 
@@ -44,13 +47,18 @@ public class NullNode extends AbstractPrimitiveNode {
   }
 
 
+  @Override public SoyType getType() {
+    return NullType.getInstance();
+  }
+
+
   @Override public String toSourceString() {
     return "null";
   }
 
 
-  @Override public NullNode clone() {
-    return new NullNode(this);
+  @Override public NullNode copy(CopyState copyState) {
+    return new NullNode(this, copyState);
   }
 
 }

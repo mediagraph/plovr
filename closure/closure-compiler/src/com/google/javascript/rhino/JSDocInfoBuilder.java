@@ -39,11 +39,13 @@
 
 package com.google.javascript.rhino;
 
+import com.google.common.base.Preconditions;
 import com.google.javascript.rhino.JSDocInfo.Visibility;
-import com.google.javascript.rhino.jstype.StaticSourceFile;
 
 import java.util.List;
 import java.util.Set;
+
+import javax.annotation.Nullable;
 
 /**
  * A builder for {@link JSDocInfo} objects. This builder abstracts the
@@ -53,7 +55,7 @@ import java.util.Set;
  * object being created.
  *
  */
-final public class JSDocInfoBuilder {
+public final class JSDocInfoBuilder {
   // the current JSDoc which is being populated
   private JSDocInfo currentInfo;
 
@@ -67,8 +69,29 @@ final public class JSDocInfoBuilder {
   private JSDocInfo.Marker currentMarker = null;
 
   public JSDocInfoBuilder(boolean parseDocumentation) {
-    this.currentInfo = new JSDocInfo(parseDocumentation);
+    this(new JSDocInfo(parseDocumentation), parseDocumentation, false);
+  }
+
+  private JSDocInfoBuilder(
+      JSDocInfo info, boolean parseDocumentation, boolean populated) {
+    this.currentInfo = info;
     this.parseDocumentation = parseDocumentation;
+    this.populated = populated;
+  }
+
+  public static JSDocInfoBuilder copyFrom(JSDocInfo info) {
+    JSDocInfo clone = info.clone();
+    if (clone.getVisibility() == Visibility.INHERITED) {
+      clone.setVisibility(null);
+    }
+    return new JSDocInfoBuilder(clone, info.isDocumentationIncluded(), true);
+  }
+
+  public static JSDocInfoBuilder maybeCopyFrom(@Nullable JSDocInfo info) {
+    if (info == null) {
+      return new JSDocInfoBuilder(true);
+    }
+    return copyFrom(info);
   }
 
   /**
@@ -120,23 +143,53 @@ final public class JSDocInfoBuilder {
     return currentInfo.getDescription() != null;
   }
 
+
+  /**
+   * Builds a {@link JSDocInfo} object based on the populated information and
+   * returns it.
+   *
+   * @return a {@link JSDocInfo} object populated with the values given to this
+   *     builder. If no value was populated, this method simply returns
+   *     {@code null}
+   */
+  public JSDocInfo build() {
+    return build(false);
+  }
+
   /**
    * Builds a {@link JSDocInfo} object based on the populated information and
    * returns it. Once this method is called, the builder can be reused to build
    * another {@link JSDocInfo} object.
    *
-   * @param associatedNode The source node containing the JSDoc.
    * @return a {@link JSDocInfo} object populated with the values given to this
    *     builder. If no value was populated, this method simply returns
    *     {@code null}
    */
-  public JSDocInfo build(Node associatedNode) {
-    if (populated) {
+  public JSDocInfo buildAndReset() {
+    JSDocInfo info = build(false);
+    if (currentInfo == null) {
+      currentInfo = new JSDocInfo(parseDocumentation);
+      populated = false;
+    }
+    return info;
+  }
+
+  /**
+   * Builds a {@link JSDocInfo} object based on the populated information and
+   * returns it.
+   *
+   * @param always Return an default JSDoc object.
+   * @return a {@link JSDocInfo} object populated with the values given to this
+   *     builder. If no value was populated and {@code always} is false, returns
+   *     {@code null}. If {@code always} is true, returns a default JSDocInfo.
+   */
+  public JSDocInfo build(boolean always) {
+    if (populated || always) {
+      Preconditions.checkState(currentInfo != null);
       JSDocInfo built = currentInfo;
-      built.setAssociatedNode(associatedNode);
+      currentInfo = null;
       populateDefaults(built);
       populated = false;
-      currentInfo = new JSDocInfo(this.parseDocumentation);
       return built;
     } else {
       return null;
@@ -197,15 +250,6 @@ final public class JSDocInfoBuilder {
           endLineno, endCharno);
       currentMarker.setType(position);
     }
-  }
-
-  /**
-   * Adds a name declaration to the current marker.
-   * @deprecated Use #markName(String, StaticSourceFile, int, int)
-   */
-  @Deprecated
-  public void markName(String name,  int lineno, int charno) {
-    markName(name, null, lineno, charno);
   }
 
   /**
@@ -273,8 +317,8 @@ final public class JSDocInfoBuilder {
    *     {@code false} if a parameter with the same name was already defined
    */
   public boolean recordParameter(String parameterName, JSTypeExpression type) {
-    if (!hasAnySingletonTypeTags() &&
-        currentInfo.declareParam(type, parameterName)) {
+    if (!hasAnySingletonTypeTags()
+        && currentInfo.declareParam(type, parameterName)) {
       populated = true;
       return true;
     } else {
@@ -302,10 +346,23 @@ final public class JSDocInfoBuilder {
    * Records a template type name.
    *
    * @return {@code true} if the template type name was recorded and
-   *     {@code false} if a template type name was already defined.
+   *     {@code false} if the input template type name was already defined.
    */
-  public boolean recordTemplateTypeNames(List<String> names) {
-    if (currentInfo.declareTemplateTypeNames(names)) {
+  public boolean recordTemplateTypeName(String name) {
+    if (currentInfo.declareTemplateTypeName(name)) {
+      populated = true;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  /**
+   * Records a type transformation expression together with its template
+   * type name.
+   */
+  public boolean recordTypeTransformation(String name, Node expr) {
+    if (currentInfo.declareTypeTransformation(name, expr)) {
       populated = true;
       return true;
     } else {
@@ -317,7 +374,7 @@ final public class JSDocInfoBuilder {
    * Records a thrown type.
    */
   public boolean recordThrowType(JSTypeExpression type) {
-    if (!hasAnySingletonTypeTags()) {
+    if (type != null && !hasAnySingletonTypeTags()) {
       currentInfo.declareThrows(type);
       populated = true;
       return true;
@@ -444,6 +501,13 @@ final public class JSDocInfoBuilder {
   }
 
   /**
+   * Returns whether a deprecation reason has been recorded.
+   */
+  public boolean isDeprecationReasonRecorded() {
+    return currentInfo.getDeprecationReason() != null;
+  }
+
+  /**
    * Records the list of suppressed warnings.
    */
   public boolean recordSuppressions(Set<String> suppressions) {
@@ -453,6 +517,11 @@ final public class JSDocInfoBuilder {
     } else {
       return false;
     }
+  }
+
+  public void addSuppression(String suppression) {
+    currentInfo.addSuppression(suppression);
+    populated = true;
   }
 
   /**
@@ -484,13 +553,16 @@ final public class JSDocInfoBuilder {
     }
   }
 
+  public void recordInlineType() {
+    currentInfo.setInlineType();
+  }
+
   /**
    * Records that the {@link JSDocInfo} being built should be populated
    * with a {@code typedef}'d type.
    */
   public boolean recordTypedef(JSTypeExpression type) {
-    if (type != null && !hasAnyTypeRelatedTags()) {
-      currentInfo.setTypedefType(type);
+    if (type != null && !hasAnyTypeRelatedTags() && currentInfo.declareTypedefType(type)) {
       populated = true;
       return true;
     }
@@ -522,8 +594,8 @@ final public class JSDocInfoBuilder {
    *     it is invalid or was already defined
    */
   public boolean recordReturnType(JSTypeExpression jsType) {
-    if (jsType != null && currentInfo.getReturnType() == null &&
-        !hasAnySingletonTypeTags()) {
+    if (jsType != null && currentInfo.getReturnType() == null
+        && !hasAnySingletonTypeTags()) {
       currentInfo.setReturnType(jsType);
       populated = true;
       return true;
@@ -583,6 +655,10 @@ final public class JSDocInfoBuilder {
     }
   }
 
+  // TODO(tbreisacher): Disallow nullable types here. If someone writes
+  // "@this {Foo}" in their JS we automatically treat it as though they'd written
+  // "@this {!Foo}". But, if the type node is created in the compiler
+  // (e.g. in the WizPass) we should explicitly add the '!'
   /**
    * Records a type for {@code @this} annotation.
    *
@@ -610,6 +686,21 @@ final public class JSDocInfoBuilder {
   public boolean recordBaseType(JSTypeExpression jsType) {
     if (jsType != null && !hasAnySingletonTypeTags() &&
         !currentInfo.hasBaseType()) {
+      currentInfo.setBaseType(jsType);
+      populated = true;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  /**
+   * Changes a base type, even if one has already been set on currentInfo.
+   *
+   * @return {@code true} if the base type was changed successfully.
+   */
+  public boolean changeBaseType(JSTypeExpression jsType) {
+    if (jsType != null && !hasAnySingletonTypeTags()) {
       currentInfo.setBaseType(jsType);
       populated = true;
       return true;
@@ -682,6 +773,22 @@ final public class JSDocInfoBuilder {
     }
   }
 
+  public boolean recordLicense(String license) {
+    currentInfo.setLicense(license);
+    populated = true;
+    return true;
+  }
+
+  public boolean addLicense(String license) {
+    String txt = currentInfo.getLicense();
+    if (txt == null) {
+      txt = "";
+    }
+    currentInfo.setLicense(txt + license);
+    populated = true;
+    return true;
+  }
+
   /**
    * Records that the {@link JSDocInfo} being built should have its
    * {@link JSDocInfo#isHidden()} flag set to {@code true}.
@@ -718,14 +825,14 @@ final public class JSDocInfoBuilder {
 
   /**
    * Records that the {@link JSDocInfo} being built should have its
-   * {@link JSDocInfo#isNoTypeCheck()} flag set to {@code true}.
+   * {@link JSDocInfo#isNoCollapse()} flag set to {@code true}.
    *
-   * @return {@code true} if the no check flag was recorded and {@code false}
+   * @return {@code true} if the no collapse flag was recorded and {@code false}
    *     if it was already recorded
    */
-  public boolean recordNoTypeCheck() {
-    if (!currentInfo.isNoTypeCheck()) {
-      currentInfo.setNoCheck(true);
+  public boolean recordNoCollapse() {
+    if (!currentInfo.isNoCollapse()) {
+      currentInfo.setNoCollapse(true);
       populated = true;
       return true;
     } else {
@@ -742,9 +849,29 @@ final public class JSDocInfoBuilder {
    *     flags
    */
   public boolean recordConstructor() {
-    if (!hasAnySingletonTypeTags() &&
-        !currentInfo.isConstructor() && !currentInfo.isInterface()) {
+    if (!hasAnySingletonTypeTags() && !currentInfo.isConstructorOrInterface()) {
       currentInfo.setConstructor(true);
+      populated = true;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  /**
+   * Records that the {@link JSDocInfo} being built should have its
+   * {@link JSDocInfo#usesImplicitMatch()} flag set to {@code true}.
+   *
+   * @return {@code true} if the {@code @record} tag was recorded and {@code false}
+   *     if it was already defined or it was incompatible with the existing
+   *     flags
+   */
+  public boolean recordImplicitMatch() {
+    if (!hasAnySingletonTypeTags() &&
+        !currentInfo.isInterface() &&
+        !currentInfo.isConstructor()) {
+      currentInfo.setInterface(true);
+      currentInfo.setImplicitMatch(true);
       populated = true;
       return true;
     } else {
@@ -762,19 +889,46 @@ final public class JSDocInfoBuilder {
 
   /**
    * Records that the {@link JSDocInfo} being built should have its
+   * {@link JSDocInfo#makesUnrestricted()} flag set to {@code true}.
+   *
+   * @return {@code true} if annotation was recorded and {@code false}
+   * if it was already defined or it was incompatible with the existing flags
+   */
+  public boolean recordUnrestricted() {
+    if (hasAnySingletonTypeTags() || currentInfo.isInterface() ||
+        currentInfo.makesDicts() || currentInfo.makesStructs() ||
+        currentInfo.makesUnrestricted()) {
+      return false;
+    }
+    currentInfo.setUnrestricted();
+    populated = true;
+    return true;
+  }
+
+  public boolean isUnrestrictedRecorded() {
+    return currentInfo.makesUnrestricted();
+  }
+
+  /**
+   * Records that the {@link JSDocInfo} being built should have its
    * {@link JSDocInfo#makesStructs()} flag set to {@code true}.
    *
    * @return {@code true} if the struct was recorded and {@code false}
    * if it was already defined or it was incompatible with the existing flags
    */
   public boolean recordStruct() {
-    if (hasAnySingletonTypeTags() || currentInfo.isInterface() ||
-        currentInfo.makesDicts() || currentInfo.makesStructs()) {
+    if (hasAnySingletonTypeTags()
+        || currentInfo.makesDicts() || currentInfo.makesStructs()
+        || currentInfo.makesUnrestricted()) {
       return false;
     }
     currentInfo.setStruct();
     populated = true;
     return true;
+  }
+
+  public boolean isStructRecorded() {
+    return currentInfo.makesStructs();
   }
 
   /**
@@ -785,8 +939,9 @@ final public class JSDocInfoBuilder {
    * if it was already defined or it was incompatible with the existing flags
    */
   public boolean recordDict() {
-    if (hasAnySingletonTypeTags() || currentInfo.isInterface() ||
-        currentInfo.makesDicts() || currentInfo.makesStructs()) {
+    if (hasAnySingletonTypeTags()
+        || currentInfo.makesDicts() || currentInfo.makesStructs()
+        || currentInfo.makesUnrestricted()) {
       return false;
     }
     currentInfo.setDict();
@@ -794,30 +949,8 @@ final public class JSDocInfoBuilder {
     return true;
   }
 
-  /**
-   * Records that the {@link JSDocInfo} being built should have its
-   * {@link JSDocInfo#isJavaDispatch()} flag set to {@code true}.
-   *
-   * @return {@code true} if the javadispatch was recorded and {@code false}
-   *     if it was already defined or it was incompatible with the existing
-   *     flags
-   */
-  public boolean recordJavaDispatch() {
-    if (!currentInfo.isJavaDispatch()) {
-      currentInfo.setJavaDispatch(true);
-      populated = true;
-      return true;
-    } else {
-      return false;
-    }
-  }
-
-  /**
-   * Whether the {@link JSDocInfo} being built will have its
-   * {@link JSDocInfo#isJavaDispatch()} flag set to {@code true}.
-   */
-  public boolean isJavaDispatch() {
-    return currentInfo.isJavaDispatch();
+  public boolean isDictRecorded() {
+    return currentInfo.makesDicts();
   }
 
   /**
@@ -885,7 +1018,6 @@ final public class JSDocInfoBuilder {
    */
   public boolean recordInterface() {
     if (hasAnySingletonTypeTags() ||
-        currentInfo.makesStructs() || currentInfo.makesDicts() ||
         currentInfo.isConstructor() || currentInfo.isInterface()) {
       return false;
     }
@@ -915,20 +1047,6 @@ final public class JSDocInfoBuilder {
   public boolean recordExpose() {
     if (!currentInfo.isExpose()) {
       currentInfo.setExpose(true);
-      populated = true;
-      return true;
-    } else {
-      return false;
-    }
-  }
-
-  /**
-   * Records that the {@link JSDocInfo} being built should have its
-   * {@link JSDocInfo#isNoShadow()} flag set to {@code true}.
-   */
-  public boolean recordNoShadow() {
-    if (!currentInfo.isNoShadow()) {
-      currentInfo.setNoShadow(true);
       populated = true;
       return true;
     } else {
@@ -1053,6 +1171,86 @@ final public class JSDocInfoBuilder {
   }
 
   /**
+   * Returns whether current JSDoc is annotated with {@code @jaggerInject}.
+   */
+  public boolean isJaggerInjectRecorded() {
+    return currentInfo.isJaggerInject();
+  }
+
+  /**
+   * Records annotation with {@code @jaggerInject}.
+   */
+  public boolean recordJaggerInject(boolean inject) {
+    if (!isJaggerInjectRecorded()) {
+      currentInfo.setJaggerInject(inject);
+      populated = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Returns whether current JSDoc is annotated with {@code @jaggerModule}.
+   */
+  public boolean isJaggerModuleRecorded() {
+    return currentInfo.isJaggerModule();
+  }
+
+  /**
+   * Records annotation with {@code @jaggerModule}.
+   */
+  public boolean recordJaggerModule(boolean jaggerModule) {
+    if (!isJaggerModuleRecorded()) {
+      currentInfo.setJaggerModule(jaggerModule);
+      populated = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Returns whether current JSDoc is annotated with {@code @jaggerProvide}.
+   */
+  public boolean isJaggerProvideRecorded() {
+    return currentInfo.isJaggerProvide();
+  }
+
+  /**
+   * Records annotation with {@code @jaggerProvide}.
+   */
+  public boolean recordJaggerProvide(boolean jaggerProvide) {
+    if (!isJaggerProvideRecorded()) {
+      currentInfo.setJaggerProvide(jaggerProvide);
+      populated = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Returns whether current JSDoc is annotated with {@code @jaggerProvide}.
+   */
+  public boolean isJaggerProvidePromiseRecorded() {
+    return currentInfo.isJaggerProvidePromise();
+  }
+
+  /**
+   * Records annotation with {@code @jaggerProvide}.
+   */
+  public boolean recordJaggerProvidePromise(boolean jaggerPromise) {
+    if (!isJaggerProvidePromiseRecorded()) {
+      currentInfo.setJaggerProvidePromise(jaggerPromise);
+      populated = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Returns whether current JSDoc is annotated with {@code @wizaction}.
    */
   public boolean isWizactionRecorded() {
@@ -1073,10 +1271,27 @@ final public class JSDocInfoBuilder {
   }
 
   /**
-   * Returns whether current JSDoc is annotated with {@code @disposes}.
+   * Returns whether current JSDoc is annotated with {@code @polymerBehavior}.
    */
-  public boolean isDisposesRecorded() {
-    return currentInfo.isDisposes();
+  public boolean isPolymerBehaviorRecorded() {
+    return currentInfo.isPolymerBehavior();
+  }
+
+  /**
+   * Records that this method is to be exposed as a polymerBehavior.
+   */
+  public boolean recordPolymerBehavior() {
+    if (!isPolymerBehaviorRecorded()) {
+      currentInfo.setPolymerBehavior(true);
+      populated = true;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  public void mergePropertyBitfieldFrom(JSDocInfo other) {
+    currentInfo.mergePropertyBitfieldFrom(other);
   }
 
   /**

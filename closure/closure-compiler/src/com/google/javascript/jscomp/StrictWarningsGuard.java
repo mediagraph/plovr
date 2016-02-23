@@ -21,7 +21,7 @@ package com.google.javascript.jscomp;
  *
  * @author anatol@google.com (Anatol Pomazau)
  */
-public class StrictWarningsGuard extends WarningsGuard {
+public final class StrictWarningsGuard extends WarningsGuard {
   private static final long serialVersionUID = 1L;
 
   static final DiagnosticType UNRAISABLE_WARNING =
@@ -38,5 +38,11 @@ public class StrictWarningsGuard extends WarningsGuard {
   @Override
   protected int getPriority() {
     return WarningsGuard.Priority.STRICT.value; // applied last
+  }
+
+  @Override
+  protected WarningsGuard makeNonStrict() {
+    throw new UnsupportedOperationException(
+        "Cannot make a StrictWarningsGuard non-strict");
   }
 }

@@ -34,7 +34,6 @@ import java.util.Set;
  * (see
  * {@link com.google.template.soy.parsepasses.contextautoesc.Context#forContentKind(ContentKind)}).
  *
- * @author Christoph Kern
  */
 public class NodeContentKinds {
 
@@ -47,39 +46,80 @@ public class NodeContentKinds {
               .put("js", ContentKind.JS)
               .put("text", ContentKind.TEXT)
               .put("uri", ContentKind.URI)
+              .put("trusted_resource_uri", ContentKind.TRUSTED_RESOURCE_URI)
               .build();
 
-  private static final ImmutableMap<ContentKind, String> KIND_TO_JS_TYPE_NAME =
+  private static final ImmutableMap<ContentKind, String> KIND_TO_JS_CTOR_NAME =
       ImmutableMap.<ContentKind, String>builder()
           .put(ContentKind.HTML, "soydata.SanitizedHtml")
           .put(ContentKind.ATTRIBUTES, "soydata.SanitizedHtmlAttribute")
           .put(ContentKind.JS, "soydata.SanitizedJs")
-          .put(ContentKind.JS_STR_CHARS, "soydata.SanitizedJsStrChars")
           .put(ContentKind.URI, "soydata.SanitizedUri")
           .put(ContentKind.CSS, "soydata.SanitizedCss")
+          .put(ContentKind.TRUSTED_RESOURCE_URI, "soydata.SanitizedTrustedResourceUri")
           // NOTE: Text intentionally doesn't follow the convention. Note that we don't just
           // convert them to a string, because the UnsanitizedText wrapper helps prevent the
           // content from getting used elsewhere in a noAutoescape.
           .put(ContentKind.TEXT, "soydata.UnsanitizedText")
           .build();
 
+  /** The Javascript sanitized ordainer functions. */
   private static final ImmutableMap<ContentKind, String> KIND_TO_JS_ORDAINER_NAME =
       ImmutableMap.<ContentKind, String>builder()
           .put(ContentKind.HTML, "soydata.VERY_UNSAFE.ordainSanitizedHtml")
           .put(ContentKind.ATTRIBUTES, "soydata.VERY_UNSAFE.ordainSanitizedHtmlAttribute")
           .put(ContentKind.JS, "soydata.VERY_UNSAFE.ordainSanitizedJs")
-          .put(ContentKind.JS_STR_CHARS, "soydata.VERY_UNSAFE.ordainSanitizedJsStrChars")
           .put(ContentKind.URI, "soydata.VERY_UNSAFE.ordainSanitizedUri")
           .put(ContentKind.CSS, "soydata.VERY_UNSAFE.ordainSanitizedCss")
+          .put(ContentKind.TRUSTED_RESOURCE_URI,
+              "soydata.VERY_UNSAFE.ordainSanitizedTrustedResourceUri")
           .put(ContentKind.TEXT, "soydata.markUnsanitizedText")
           .build();
 
+  /**
+   * The specialized ordainers used for param and let blocks. These ones do not wrap if the input
+   * is empty string, in order that empty strings can still be truth-tested. This is an incomplete
+   * solution to the truth testing problem, but dramatically simplifies migration.
+   */
+  private static final ImmutableMap<ContentKind, String>
+      KIND_TO_JS_ORDAINER_NAME_FOR_INTERNAL_BLOCKS = ImmutableMap.<ContentKind, String>builder()
+          .put(ContentKind.HTML, "soydata.VERY_UNSAFE.$$ordainSanitizedHtmlForInternalBlocks")
+          .put(ContentKind.ATTRIBUTES,
+              "soydata.VERY_UNSAFE.$$ordainSanitizedAttributesForInternalBlocks")
+          .put(ContentKind.JS, "soydata.VERY_UNSAFE.$$ordainSanitizedJsForInternalBlocks")
+          .put(ContentKind.URI, "soydata.VERY_UNSAFE.$$ordainSanitizedUriForInternalBlocks")
+          .put(ContentKind.CSS, "soydata.VERY_UNSAFE.$$ordainSanitizedCssForInternalBlocks")
+          .put(ContentKind.TRUSTED_RESOURCE_URI,
+              "soydata.VERY_UNSAFE.$$ordainSanitizedTrustedResourceUriForInternalBlocks")
+          .put(ContentKind.TEXT, "soydata.$$markUnsanitizedTextForInternalBlocks")
+          .build();
+
+  /** The Python sanitized classes. */
+  private static final ImmutableMap<ContentKind, String> KIND_TO_PY_SANITIZED_NAME =
+      ImmutableMap.<ContentKind, String>builder()
+          .put(ContentKind.HTML, "sanitize.SanitizedHtml")
+          .put(ContentKind.ATTRIBUTES, "sanitize.SanitizedHtmlAttribute")
+          .put(ContentKind.JS, "sanitize.SanitizedJs")
+          .put(ContentKind.URI, "sanitize.SanitizedUri")
+          .put(ContentKind.CSS, "sanitize.SanitizedCss")
+          .put(ContentKind.TRUSTED_RESOURCE_URI, "sanitize.SanitizedTrustedResourceUri")
+          .put(ContentKind.TEXT, "sanitize.UnsanitizedText")
+          .build();
+
   static {
-    if (!KIND_TO_JS_TYPE_NAME.keySet().containsAll(EnumSet.allOf(ContentKind.class))) {
+    if (!KIND_TO_JS_CTOR_NAME.keySet().containsAll(EnumSet.allOf(ContentKind.class))) {
       throw new AssertionError("Not all ContentKind enums have a JS constructor");
     }
-    if (!KIND_TO_JS_ORDAINER_NAME.keySet().containsAll(EnumSet.allOf(ContentKind.class))) {
-      throw new AssertionError("Not all ContentKind enums have a JS ordainer");
+    // These are the content kinds that actually have a native Soy language representation.
+    Set<ContentKind> soyContentKinds = KIND_ATTRIBUTE_TO_SANITIZED_CONTENT_KIND_BI_MAP.values();
+    if (!KIND_TO_JS_ORDAINER_NAME.keySet().containsAll(soyContentKinds)) {
+      throw new AssertionError("Not all Soy-accessible ContentKind enums have a JS ordainer");
+    }
+    if (!KIND_TO_JS_ORDAINER_NAME_FOR_INTERNAL_BLOCKS.keySet().containsAll(soyContentKinds)) {
+      throw new AssertionError("Not all Soy-accessible ContentKind enums have a JS ordainer");
+    }
+    if (!KIND_TO_PY_SANITIZED_NAME.keySet().containsAll(soyContentKinds)) {
+      throw new AssertionError("Not all Soy-accessible ContentKind enums have a Python sanitizer");
     }
   }
 
@@ -113,10 +153,10 @@ public class NodeContentKinds {
    * used. This is so that Soy developers have to jump through extra hoops and carefully think
    * about the implications of directly calling the SanitizedContent constructors.
    */
-  public static String toJsSanitizedContentTypeName(
+  public static String toJsSanitizedContentCtorName(
       ContentKind contentKind) {
     // soydata.SanitizedHtml types etc are defined in soyutils{,_usegoog}.js.
-    return Preconditions.checkNotNull(KIND_TO_JS_TYPE_NAME.get(contentKind));
+    return Preconditions.checkNotNull(KIND_TO_JS_CTOR_NAME.get(contentKind));
   }
 
 
@@ -127,6 +167,27 @@ public class NodeContentKinds {
       ContentKind contentKind) {
     // soydata.VERY_UNSAFE.ordainSanitizedHtml etc are defined in soyutils{,_usegoog}.js.
     return Preconditions.checkNotNull(KIND_TO_JS_ORDAINER_NAME.get(contentKind));
+  }
+
+
+  /**
+   * Returns the ordainer function for param and let blocks, which behaves subtly differently than
+   * the normal ordainers to ease migration.
+   */
+  public static String toJsSanitizedContentOrdainerForInternalBlocks(
+      ContentKind contentKind) {
+    // Functions are defined in soyutils{,_usegoog}.js.
+    return Preconditions.checkNotNull(
+        KIND_TO_JS_ORDAINER_NAME_FOR_INTERNAL_BLOCKS.get(contentKind));
+  }
+
+
+  /**
+   * Given a {@link ContentKind}, returns the corresponding Python sanitize class.
+   */
+  public static String toPySanitizedContentOrdainer(ContentKind contentKind) {
+    // Sanitization classes are defined in sanitize.py.
+    return Preconditions.checkNotNull(KIND_TO_PY_SANITIZED_NAME.get(contentKind));
   }
 
 

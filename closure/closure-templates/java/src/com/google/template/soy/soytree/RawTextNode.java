@@ -17,21 +17,21 @@
 package com.google.template.soy.soytree;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-
 /**
  * Node representing a contiguous raw text section.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class RawTextNode extends AbstractSoyNode implements StandaloneNode {
+public final class RawTextNode extends AbstractSoyNode implements StandaloneNode {
 
 
   /** The special chars we need to re-escape for toSourceString(). */
@@ -52,9 +52,10 @@ public class RawTextNode extends AbstractSoyNode implements StandaloneNode {
   /**
    * @param id The id for this node.
    * @param rawText The raw text string.
+   * @param sourceLocation The node's source location.
    */
-  public RawTextNode(int id, String rawText) {
-    super(id);
+  public RawTextNode(int id, String rawText, SourceLocation sourceLocation) {
+    super(id, sourceLocation);
     this.rawText = rawText;
   }
 
@@ -63,8 +64,8 @@ public class RawTextNode extends AbstractSoyNode implements StandaloneNode {
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected RawTextNode(RawTextNode orig) {
-    super(orig);
+  private RawTextNode(RawTextNode orig, CopyState copyState) {
+    super(orig, copyState);
     this.rawText = orig.rawText;
   }
 
@@ -101,8 +102,8 @@ public class RawTextNode extends AbstractSoyNode implements StandaloneNode {
   }
 
 
-  @Override public RawTextNode clone() {
-    return new RawTextNode(this);
+  @Override public RawTextNode copy(CopyState copyState) {
+    return new RawTextNode(this, copyState);
   }
 
 }

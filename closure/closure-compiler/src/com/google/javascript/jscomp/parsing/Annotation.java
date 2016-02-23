@@ -30,6 +30,7 @@ enum Annotation {
   CONSISTENTIDGENERATOR,
   CONSTANT,
   CONSTRUCTOR,
+  RECORD,
   DEFINE,
   DEPRECATED,
   DESC,
@@ -47,19 +48,23 @@ enum Annotation {
   IMPLICIT_CAST,
   INHERIT_DOC,
   INTERFACE,
-  JAVA_DISPATCH,
+  JAGGER_INJECT,
+  JAGGER_MODULE,
+  JAGGER_PROVIDE,
+  JAGGER_PROVIDE_PROMISE,
   LENDS,
   LICENSE, // same as preserve
   MEANING,
   MODIFIES,
   NO_ALIAS,
+  NO_COLLAPSE,
   NO_COMPILE,
-  NO_SHADOW,
   NO_SIDE_EFFECTS,
-  NO_TYPE_CHECK,
   NOT_IMPLEMENTED,
   OVERRIDE,
+  PACKAGE,
   PARAM,
+  POLYMER_BEHAVIOR,
   PRESERVE, // same as license
   PRESERVE_TRY,
   PRIVATE,
@@ -75,6 +80,7 @@ enum Annotation {
   THROWS,
   TYPE,
   TYPEDEF,
+  UNRESTRICTED,
   VERSION,
   WIZACTION;
 
@@ -106,19 +112,24 @@ enum Annotation {
       put("implicitCast", Annotation.IMPLICIT_CAST).
       put("inheritDoc", Annotation.INHERIT_DOC).
       put("interface", Annotation.INTERFACE).
-      put("javadispatch", Annotation.JAVA_DISPATCH).
+      put("record", Annotation.RECORD).
+      put("jaggerInject", Annotation.JAGGER_INJECT).
+      put("jaggerModule", Annotation.JAGGER_MODULE).
+      put("jaggerProvidePromise", Annotation.JAGGER_PROVIDE_PROMISE).
+      put("jaggerProvide", Annotation.JAGGER_PROVIDE).
       put("lends", Annotation.LENDS).
       put("license", Annotation.LICENSE).
       put("meaning", Annotation.MEANING).
       put("modifies", Annotation.MODIFIES).
       put("noalias", Annotation.NO_ALIAS).
+      put("nocollapse", Annotation.NO_COLLAPSE).
       put("nocompile", Annotation.NO_COMPILE).
-      put("noshadow", Annotation.NO_SHADOW).
       put("nosideeffects", Annotation.NO_SIDE_EFFECTS).
-      put("notypecheck", Annotation.NO_TYPE_CHECK).
       put("override", Annotation.OVERRIDE).
       put("owner", Annotation.AUTHOR).
+      put("package", Annotation.PACKAGE).
       put("param", Annotation.PARAM).
+      put("polymerBehavior", Annotation.POLYMER_BEHAVIOR).
       put("preserve", Annotation.PRESERVE).
       put("preserveTry", Annotation.PRESERVE_TRY).
       put("private", Annotation.PRIVATE).
@@ -135,6 +146,7 @@ enum Annotation {
       put("throws", Annotation.THROWS).
       put("type", Annotation.TYPE).
       put("typedef", Annotation.TYPEDEF).
+      put("unrestricted", Annotation.UNRESTRICTED).
       put("version", Annotation.VERSION).
       put("wizaction", Annotation.WIZACTION).
       build();

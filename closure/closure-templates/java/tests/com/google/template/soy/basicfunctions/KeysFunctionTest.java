@@ -16,14 +16,17 @@
 
 package com.google.template.soy.basicfunctions;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
-import com.google.template.soy.data.SoyData;
-import com.google.template.soy.data.SoyListData;
-import com.google.template.soy.data.SoyMapData;
-import com.google.template.soy.data.restricted.IntegerData;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
+import com.google.template.soy.data.SoyList;
+import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.SoyValueHelper;
+import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.jssrc.restricted.JsExpr;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyListExpr;
 
 import junit.framework.TestCase;
 
@@ -33,31 +36,32 @@ import java.util.Set;
 /**
  * Unit tests for KeysFunction.
  *
- * @author Kai Huang
  */
 public class KeysFunctionTest extends TestCase {
 
 
-  public void testComputeForTofu() {
+  private static final SoyValueHelper VALUE_HELPER = SoyValueHelper.UNCUSTOMIZED_INSTANCE;
 
+
+  public void testComputeForJava() {
     KeysFunction keysFunction = new KeysFunction();
-    SoyData map = new SoyMapData("boo", "bar", "foo", 2, "goo", new SoyMapData("moo", 4));
-    SoyData result = keysFunction.computeForTofu(ImmutableList.of(map));
 
-    assertTrue(result instanceof SoyListData);
-    SoyListData resultAsList = (SoyListData) result;
+    SoyValue map = VALUE_HELPER.newEasyDict(
+        "boo", "bar", "foo", 2, "goo", VALUE_HELPER.newEasyDict("moo", 4));
+    SoyValue result = keysFunction.computeForJava(ImmutableList.of(map));
+
+    assertTrue(result instanceof SoyList);
+    SoyList resultAsList = (SoyList) result;
     assertEquals(3, resultAsList.length());
 
     Set<String> resultItems = Sets.newHashSet();
-    for (SoyData item : resultAsList) {
-      resultItems.add(item.stringValue());
+    for (SoyValueProvider itemProvider : resultAsList.asJavaList()) {
+      resultItems.add(itemProvider.resolve().stringValue());
     }
     assertEquals(Sets.newHashSet("boo", "foo", "goo"), resultItems);
   }
 
-
   public void testComputeForJsSrc() {
-
     KeysFunction keysFunction = new KeysFunction();
     JsExpr expr = new JsExpr("JS_CODE", Integer.MAX_VALUE);
     assertEquals(
@@ -65,25 +69,10 @@ public class KeysFunctionTest extends TestCase {
         keysFunction.computeForJsSrc(ImmutableList.of(expr)));
   }
 
-
-  public void testComputeForJavaSrc() {
-
+  public void testComputeForPySrc() {
     KeysFunction keysFunction = new KeysFunction();
-
-    JavaExpr expr = new JavaExpr("JAVA_CODE", SoyMapData.class, Integer.MAX_VALUE);
-    assertEquals(
-        new JavaExpr(
-            "new com.google.template.soy.data.SoyListData((JAVA_CODE).getKeys())",
-            IntegerData.class, Integer.MAX_VALUE),
-        keysFunction.computeForJavaSrc(ImmutableList.of(expr)));
-
-    expr = new JavaExpr("JAVA_CODE", SoyData.class, Integer.MAX_VALUE);
-    assertEquals(
-        new JavaExpr(
-            "new com.google.template.soy.data.SoyListData(" + 
-                "((com.google.template.soy.data.SoyMapData) JAVA_CODE).getKeys())",
-            IntegerData.class, Integer.MAX_VALUE),
-        keysFunction.computeForJavaSrc(ImmutableList.of(expr)));
+    PyExpr dict = new PyExpr("dictionary", Integer.MAX_VALUE);
+    assertThat(keysFunction.computeForPySrc(ImmutableList.of(dict)))
+        .isEqualTo(new PyListExpr("(dictionary).keys()", Integer.MAX_VALUE));
   }
-
 }

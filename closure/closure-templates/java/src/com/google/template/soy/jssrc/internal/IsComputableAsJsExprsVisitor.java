@@ -16,12 +16,16 @@
 
 package com.google.template.soy.jssrc.internal;
 
-import com.google.common.collect.Maps;
-import com.google.inject.Inject;
-import com.google.template.soy.jssrc.SoyJsSrcOptions;
-import com.google.template.soy.jssrc.SoyJsSrcOptions.CodeStyle;
+import com.google.template.soy.html.AbstractReturningHtmlSoyNodeVisitor;
+import com.google.template.soy.html.HtmlAttributeNode;
+import com.google.template.soy.html.HtmlCloseTagNode;
+import com.google.template.soy.html.HtmlOpenTagEndNode;
+import com.google.template.soy.html.HtmlOpenTagNode;
+import com.google.template.soy.html.HtmlOpenTagStartNode;
+import com.google.template.soy.html.HtmlPrintNode;
+import com.google.template.soy.html.HtmlTextNode;
+import com.google.template.soy.html.HtmlVoidTagNode;
 import com.google.template.soy.shared.internal.ApiCallScope;
-import com.google.template.soy.soytree.AbstractReturningSoyNodeVisitor;
 import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamValueNode;
@@ -42,11 +46,14 @@ import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.jssrc.GoogMsgNode;
+import com.google.template.soy.soytree.XidNode;
+import com.google.template.soy.soytree.jssrc.GoogMsgDefNode;
 import com.google.template.soy.soytree.jssrc.GoogMsgRefNode;
 
+import java.util.HashMap;
 import java.util.Map;
 
+import javax.inject.Inject;
 
 /**
  * Visitor to determine whether the output string for the subtree rooted at a given node is
@@ -61,26 +68,18 @@ import java.util.Map;
  * out of {@code ApiCallScope} and rewrite the code somehow to still take advantage of the
  * memoized results to the extent that they remain correct.)
  *
- * @author Kai Huang
  */
 @ApiCallScope
-class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisitor<Boolean> {
-
-
-  /** The options for generating JS source code. */
-  private final SoyJsSrcOptions jsSrcOptions;
+public
+class IsComputableAsJsExprsVisitor extends AbstractReturningHtmlSoyNodeVisitor<Boolean> {
 
   /** The memoized results of past visits to nodes. */
   private final Map<SoyNode, Boolean> memoizedResults;
 
 
-  /**
-   * @param jsSrcOptions The options for generating JS source code.
-   */
   @Inject
-  IsComputableAsJsExprsVisitor(SoyJsSrcOptions jsSrcOptions) {
-    this.jsSrcOptions = jsSrcOptions;
-    memoizedResults = Maps.newHashMap();
+  IsComputableAsJsExprsVisitor() {
+    memoizedResults = new HashMap<>();
   }
 
 
@@ -120,7 +119,7 @@ class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisitor<Boole
   }
 
 
-  @Override protected Boolean visitGoogMsgNode(GoogMsgNode node) {
+  @Override protected Boolean visitGoogMsgDefNode(GoogMsgDefNode node) {
     return false;
   }
 
@@ -141,6 +140,11 @@ class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisitor<Boole
 
 
   @Override protected Boolean visitPrintNode(PrintNode node) {
+    return true;
+  }
+
+
+  @Override protected Boolean visitXidNode(XidNode node) {
     return true;
   }
 
@@ -188,7 +192,7 @@ class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisitor<Boole
 
 
   @Override protected Boolean visitCallNode(CallNode node) {
-    return jsSrcOptions.getCodeStyle() == CodeStyle.CONCAT && areChildrenComputableAsJsExprs(node);
+    return areChildrenComputableAsJsExprs(node);
   }
 
 
@@ -211,6 +215,37 @@ class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisitor<Boole
     return false;
   }
 
+  @Override protected Boolean visitHtmlAttributeNode(HtmlAttributeNode node) {
+    return false;
+  }
+
+  @Override protected Boolean visitHtmlOpenTagNode(HtmlOpenTagNode node) {
+    return false;
+  }
+
+  @Override protected Boolean visitHtmlCloseTagNode(HtmlCloseTagNode node) {
+    return false;
+  }
+
+  @Override protected Boolean visitHtmlOpenTagStartNode(HtmlOpenTagStartNode node) {
+    return false;
+  }
+
+  @Override protected Boolean visitHtmlOpenTagEndNode(HtmlOpenTagEndNode node) {
+    return false;
+  }
+
+  @Override protected Boolean visitHtmlVoidTagNode(HtmlVoidTagNode node) {
+    return false;
+  }
+
+  @Override protected Boolean visitHtmlTextNode(HtmlTextNode node) {
+    return false;
+  }
+
+  @Override protected Boolean visitHtmlPrintNode(HtmlPrintNode node) {
+    return false;
+  }
 
   // -----------------------------------------------------------------------------------------------
   // Private helpers.
@@ -220,7 +255,7 @@ class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisitor<Boole
    * Private helper to check whether all children of a given parent node satisfy
    * IsComputableAsJsExprsVisitor.
    * @param node The parent node whose children to check.
-   * @return True if all children satisfy IsComputableAsJsExprsVisitor. 
+   * @return True if all children satisfy IsComputableAsJsExprsVisitor.
    */
   private boolean areChildrenComputableAsJsExprs(ParentSoyNode<?> node) {
 

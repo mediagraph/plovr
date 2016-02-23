@@ -30,7 +30,7 @@ import com.google.javascript.jscomp.graph.FixedPointGraphTraversal.EdgeCallback;
  *
  * @see GraphNode#getAnnotation()
  */
-public class GraphReachability<N, E> implements EdgeCallback<N, E> {
+public final class GraphReachability<N, E> implements EdgeCallback<N, E> {
 
   // TODO(user): This should work for undirected graphs when
   // FixedPointGraphTraversal accepts them.
@@ -73,7 +73,7 @@ public class GraphReachability<N, E> implements EdgeCallback<N, E> {
   public boolean traverseEdge(N source, E e, N destination) {
     if (graph.getNode(source).getAnnotation() == REACHABLE &&
         (edgePredicate == null ||
-            edgePredicate.apply(new EdgeTuple<N, E>(source, e, destination)))) {
+            edgePredicate.apply(new EdgeTuple<>(source, e, destination)))) {
       GraphNode<N, E> destNode = graph.getNode(destination);
       if (destNode.getAnnotation() != REACHABLE) {
         destNode.setAnnotation(REACHABLE);
@@ -86,16 +86,14 @@ public class GraphReachability<N, E> implements EdgeCallback<N, E> {
   public static final Annotation REACHABLE = new Annotation() {};
 
   /**
-   * Represents Source Node, Edge and Destination Node.
+   * Represents a Source Node and an Edge.
    */
   public static final class EdgeTuple<N, E> {
     public final N sourceNode;
     public final E edge;
-    public final N destNode;
     public EdgeTuple(N sourceNode, E edge, N destNode) {
       this.sourceNode = sourceNode;
       this.edge = edge;
-      this.destNode = destNode;
     }
   }
 }

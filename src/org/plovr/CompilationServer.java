@@ -39,6 +39,8 @@ public final class CompilationServer implements Runnable {
    */
   private final ConcurrentMap<String, Compilation> compilations;
 
+  private HttpServer server;
+
   public CompilationServer(String listenAddress, int port, boolean isHttps) {
     this.listenAddress = listenAddress;
     this.port = port;
@@ -95,8 +97,11 @@ public final class CompilationServer implements Runnable {
 
   @Override
   public void run() {
+    if (server != null) {
+      throw new RuntimeException("Server already started");
+    }
+
     InetSocketAddress addr = new InetSocketAddress(listenAddress, port);
-    HttpServer server;
     try {
       server = HttpServerUtil.create(addr, 0, isHttps);
     } catch (IOException e) {
@@ -128,6 +133,25 @@ public final class CompilationServer implements Runnable {
 
     server.setExecutor(Executors.newCachedThreadPool());
     server.start();
+  }
+
+  /**
+   * Synonym for {@link #run()}
+   */
+  public void start() {
+    run();
+  }
+
+  /**
+   * Stop listening and close all connections.
+   * @param delay Seconds to wait for existing connections to finish.
+   */
+  public void stop(int delay) {
+    if (server == null) {
+      throw new RuntimeException("Server not started");
+    }
+    server.stop(delay);
+    server = null;
   }
 
   public boolean containsConfigWithId(String id) {
@@ -165,24 +189,34 @@ public final class CompilationServer implements Runnable {
   /**
    * Returns the server name using an incoming request to this CompilationServer.
    *
-   * Unfortunately, HttpExchange does not appear to have a getServerName()
-   * method like ServletRequest does, so this method must use a heuristic.
    * If the hostname is not specified in the config file, and it cannot be
-   * determined from the referrer, then it is assumed to be localhost.
+   * determined from the referrer or host headers, then it is assumed to be localhost.
+   *
    * @param exchange
    * @return the server scheme, name, and port, such as "http://localhost:9810/"
    */
   public String getServerForExchange(HttpExchange exchange) {
     URI referrer = HttpUtil.getReferrer(exchange);
-    String scheme;
-    String host;
-    if (referrer == null) {
-      scheme = "http";
-      host = "localhost";
-    } else {
-      scheme = referrer.getScheme();
+    URI hostHeader = HttpUtil.getHost(exchange);
+    int port = this.port;
+    String host = "localhost";
+    String scheme = isHttps ? "https" : "http";
+
+    // If we're being referred from an https scheme, assume that
+    // we also need to load https.
+    if (referrer != null && "https".equals(referrer.getScheme())) {
+      scheme = "https";
+    }
+
+    if (hostHeader != null) {
+      port = hostHeader.getPort();
+      host = hostHeader.getHost();
+    } else if (referrer != null) {
+      // If we only have a referrer, assume that plovr is running on
+      // the same host but a different port.
       host = referrer.getHost();
     }
-    return String.format("%s://%s:%d/", scheme, host, this.port);
+
+    return String.format("%s://%s:%d/", scheme, host, port);
   }
 }

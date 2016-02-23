@@ -16,15 +16,17 @@
 
 package com.google.template.soy.soytree;
 
-import junit.framework.TestCase;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.soytree.SoyNode.Kind;
 
+import junit.framework.TestCase;
 
 /**
  * Unit tests for AbstractCommandNode.
  *
- * @author Kai Huang
  */
-public class AbstractSoyCommandNodeTest extends TestCase {
+public final class AbstractSoyCommandNodeTest extends TestCase {
 
 
   public void testGetTagString() {
@@ -46,14 +48,14 @@ public class AbstractSoyCommandNodeTest extends TestCase {
   private static class DummyNode extends AbstractCommandNode {
 
     public DummyNode(int id, String commandText) {
-      super(id, "dummy", commandText);
+      super(id, SourceLocation.UNKNOWN, "dummy", commandText);
     }
 
     @Override public Kind getKind() {
       throw new UnsupportedOperationException();
     }
 
-    @Override public SoyNode clone() {
+    @Override public DummyNode copy(CopyState copyState) {
       throw new UnsupportedOperationException();
     }
   }

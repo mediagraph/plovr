@@ -16,56 +16,48 @@
 
 package com.google.template.soy.soytree;
 
-import com.google.template.soy.base.SoySyntaxException;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.basetree.MixinParentNode;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
+import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.error.ErrorReporter.Checkpoint;
+import com.google.template.soy.error.ExplodingErrorReporter;
+import com.google.template.soy.error.SoyError;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
 
 import java.util.List;
 
 import javax.annotation.Nullable;
 
-
 /**
  * Node representing a 'let' statement with content.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class LetContentNode extends LetNode implements RenderUnitNode {
+public final class LetContentNode extends LetNode implements RenderUnitNode {
 
+  public static final SoyError NON_SELF_ENDING_WITH_VALUE
+      = SoyError.of("A ''let'' tag should contain a value if and only if it is also self-ending "
+          + "(with a trailing ''/'').");
 
   /** The mixin object that implements the ParentNode functionality. */
   private final MixinParentNode<StandaloneNode> parentMixin;
-
-  /** The local variable name (without preceding '$'). */
-  private final String varName;
 
   /** The let node's content kind, or null if no 'kind' attribute was present. */
   @Nullable private final ContentKind contentKind;
 
 
-  /**
-   * @param id The id for this node.
-   * @param isLocalVarNameUniquified Whether the local var name is already uniquified (e.g. by
-   *     appending node id).
-   * @param commandText The command text.
-   * @throws SoySyntaxException If a syntax error is found.
-   */
-  public LetContentNode(int id, boolean isLocalVarNameUniquified, String commandText) {
-    super(id, isLocalVarNameUniquified, commandText);
-    parentMixin = new MixinParentNode<StandaloneNode>(this);
-
-    CommandTextParseResult parseResult = parseCommandTextHelper(commandText);
-    varName = parseResult.localVarName;
-    contentKind = parseResult.contentKind;
-
-    if (parseResult.valueExpr != null) {
-      throw SoySyntaxException.createWithoutMetaInfo(
-          "A 'let' tag should contain a value if and only if it is also self-ending (with a" +
-              " trailing '/') (invalid tag is {let " + commandText + "}).");
-    }
+  private LetContentNode(
+      int id,
+      SourceLocation sourceLocation,
+      String localVarName,
+      String commandText,
+      ContentKind contentKind) {
+    super(id, sourceLocation, localVarName, commandText);
+    this.contentKind = contentKind;
+    parentMixin = new MixinParentNode<>(this);
   }
 
 
@@ -73,10 +65,9 @@ public class LetContentNode extends LetNode implements RenderUnitNode {
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected LetContentNode(LetContentNode orig) {
-    super(orig);
-    this.parentMixin = new MixinParentNode<StandaloneNode>(orig.parentMixin, this);
-    this.varName = orig.varName;
+  private LetContentNode(LetContentNode orig, CopyState copyState) {
+    super(orig, copyState);
+    this.parentMixin = new MixinParentNode<>(orig.parentMixin, this, copyState);
     this.contentKind = orig.contentKind;
   }
 
@@ -86,8 +77,11 @@ public class LetContentNode extends LetNode implements RenderUnitNode {
   }
 
 
-  @Override public String getVarName() {
-    return varName;
+  /**
+   * Return The local variable name (without preceding '$').
+   */
+  @Override public final String getVarName() {
+    return var.name();
   }
 
 
@@ -109,14 +103,6 @@ public class LetContentNode extends LetNode implements RenderUnitNode {
     appendSourceStringForChildren(sb);
     sb.append("{/").append(getCommandName()).append("}");
     return sb.toString();
-  }
-
-  @Override public void setNeedsEnvFrameDuringInterp(Boolean needsEnvFrameDuringInterp) {
-    parentMixin.setNeedsEnvFrameDuringInterp(needsEnvFrameDuringInterp);
-  }
-
-  @Override public Boolean needsEnvFrameDuringInterp() {
-    return parentMixin.needsEnvFrameDuringInterp();
   }
 
   @Override public int numChildren() {
@@ -183,8 +169,54 @@ public class LetContentNode extends LetNode implements RenderUnitNode {
     return parentMixin.toTreeString(indent);
   }
 
-  @Override public SoyNode clone() {
-    return new LetContentNode(this);
+  @Override public LetContentNode copy(CopyState copyState) {
+    return new LetContentNode(this, copyState);
   }
 
+  /**
+   * Builder for {@link LetContentNode}.
+   */
+  public static final class Builder {
+
+    private static LetContentNode error() {
+      return new LetContentNode.Builder(-1, "$error", SourceLocation.UNKNOWN)
+          .build(ExplodingErrorReporter.get()); // guaranteed to be valid
+    }
+
+    private final int id;
+    private final String commandText;
+    private final SourceLocation sourceLocation;
+
+    /**
+     * @param id The node's id.
+     * @param commandText The node's command text.
+     * @param sourceLocation The node's source location.
+     */
+    public Builder(int id, String commandText, SourceLocation sourceLocation) {
+      this.id = id;
+      this.commandText = commandText;
+      this.sourceLocation = sourceLocation;
+    }
+
+    /**
+     * Returns a new {@link LetContentNode} built from the builder's state. If the builder's state
+     * is invalid, errors are reported to the {@code errorManager} and {Builder#error} is returned.
+     */
+    public LetContentNode build(ErrorReporter errorReporter) {
+      Checkpoint checkpoint = errorReporter.checkpoint();
+      CommandTextParseResult parseResult
+          = parseCommandTextHelper(commandText, errorReporter, sourceLocation);
+
+      if (parseResult.valueExpr != null) {
+        errorReporter.report(sourceLocation, NON_SELF_ENDING_WITH_VALUE);
+      }
+
+      if (errorReporter.errorsSince(checkpoint)) {
+        return error();
+      }
+
+      return new LetContentNode(
+          id, sourceLocation, parseResult.localVarName, commandText, parseResult.contentKind);
+    }
+  }
 }

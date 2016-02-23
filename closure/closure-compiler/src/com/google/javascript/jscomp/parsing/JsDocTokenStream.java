@@ -17,7 +17,7 @@
 package com.google.javascript.jscomp.parsing;
 
 import com.google.common.base.Preconditions;
-import com.google.javascript.rhino.head.ScriptRuntime;
+import com.google.javascript.rhino.TokenUtil;
 
 /**
  * This class implements the scanner for JsDoc strings.
@@ -67,7 +67,7 @@ class JsDocTokenStream {
           return JsDocToken.EOF;
         } else if (c == '\n') {
           return JsDocToken.EOL;
-        } else if (!isJSSpace(c)) {
+        } else if (!TokenUtil.isJSSpace(c)) {
           break;
         }
       }
@@ -98,25 +98,25 @@ class JsDocTokenStream {
           return JsDocToken.COMMA;
 
         case '>':
-          return JsDocToken.GT;
+          return JsDocToken.RIGHT_ANGLE;
 
         case '(':
-          return JsDocToken.LP;
+          return JsDocToken.LEFT_PAREN;
 
         case ')':
-          return JsDocToken.RP;
+          return JsDocToken.RIGHT_PAREN;
 
         case '{':
-          return JsDocToken.LC;
+          return JsDocToken.LEFT_CURLY;
 
         case '}':
-          return JsDocToken.RC;
+          return JsDocToken.RIGHT_CURLY;
 
         case '[':
-          return JsDocToken.LB;
+          return JsDocToken.LEFT_SQUARE;
 
         case ']':
-          return JsDocToken.RB;
+          return JsDocToken.RIGHT_SQUARE;
 
         case '?':
           return JsDocToken.QMARK;
@@ -131,13 +131,15 @@ class JsDocTokenStream {
           return JsDocToken.EQUALS;
 
         case '|':
-          matchChar('|');
           return JsDocToken.PIPE;
+
+        case '<':
+          return JsDocToken.LEFT_ANGLE;
 
         case '.':
           c = getChar();
           if (c == '<') {
-            return JsDocToken.LT;
+            return JsDocToken.LEFT_ANGLE;
           } else {
             if (c == '.') {
               c = getChar();
@@ -230,11 +232,9 @@ class JsDocTokenStream {
 
   final String getString() { return string; }
 
-  final boolean eof() { return hitEOF; }
-
   private String getStringFromBuffer() {
-    tokenEnd = cursor;
-    return new String(stringBuffer, 0, stringBufferTop);
+    String s = new String(stringBuffer, 0, stringBufferTop);
+    return s.intern();
   }
 
   private void addToString(int c) {
@@ -258,7 +258,6 @@ class JsDocTokenStream {
   private boolean matchChar(int test) {
     int c = getCharIgnoreLineEnd();
     if (c == test) {
-      tokenEnd = cursor;
       return true;
     } else {
       ungetCharIgnoreLineEnd(c);
@@ -275,11 +274,12 @@ class JsDocTokenStream {
     }
   }
 
-  private boolean isJSDocString(int c) {
+  private static boolean isJSDocString(int c) {
     switch (c) {
       case '@':
       case '*':
       case ',':
+      case '<':
       case '>':
       case ':':
       case '(':
@@ -297,25 +297,8 @@ class JsDocTokenStream {
         return false;
 
       default:
-        return !isJSSpace(c);
+        return !TokenUtil.isJSSpace(c);
     }
-  }
-
-  /* As defined in ECMA.  jsscan.c uses C isspace() (which allows
-   * \v, I think.)  note that code in getChar() implicitly accepts
-   * '\r' == \u000D as well.
-   */
-  static boolean isJSSpace(int c) {
-    if (c <= 127) {
-      return c == 0x20 || c == 0x9 || c == 0xC || c == 0xB;
-    } else {
-      return c == 0xA0
-          || Character.getType((char) c) == Character.SPACE_SEPARATOR;
-    }
-  }
-
-  private static boolean isJSFormatChar(int c) {
-    return c > 127 && Character.getType((char) c) == Character.FORMAT;
   }
 
   /**
@@ -345,7 +328,6 @@ class JsDocTokenStream {
     for (;;) {
       int c;
       if (sourceCursor == sourceEnd) {
-        hitEOF = true;
         if (charno == -1) {
           charno = getOffset();
         }
@@ -371,10 +353,10 @@ class JsDocTokenStream {
           c = '\n';
         }
       } else {
-        if (isJSFormatChar(c)) {
+        if (TokenUtil.isJSFormatChar(c)) {
           continue;
         }
-        if (ScriptRuntime.isJSLineTerminator(c)) {
+        if (isJSLineTerminator(c)) {
           lineEndChar = c;
           c = '\n';
         }
@@ -401,7 +383,6 @@ class JsDocTokenStream {
     for (;;) {
       int c;
       if (sourceCursor == sourceEnd) {
-        hitEOF = true;
         if (charno == -1) {
           charno = getOffset();
         }
@@ -417,10 +398,10 @@ class JsDocTokenStream {
           c = '\n';
         }
       } else {
-        if (isJSFormatChar(c)) {
+        if (TokenUtil.isJSFormatChar(c)) {
           continue;
         }
-        if (ScriptRuntime.isJSLineTerminator(c)) {
+        if (isJSLineTerminator(c)) {
           lineEndChar = c;
           c = '\n';
         }
@@ -432,6 +413,15 @@ class JsDocTokenStream {
 
       return c;
     }
+  }
+
+  private static boolean isJSLineTerminator(int c) {
+    // Optimization for faster check for eol character:
+    // they do not have 0xDFD0 bits set
+    if ((c & 0xDFD0) != 0) {
+      return false;
+    }
+    return c == '\n' || c == '\r' || c == 0x2028 || c == 0x2029;
   }
 
   private void ungetCharIgnoreLineEnd(int c) {
@@ -459,17 +449,15 @@ class JsDocTokenStream {
   private final int[] ungetBuffer = new int[3];
   private int ungetCursor;
 
-  private boolean hitEOF = false;
-
   private int lineStart = 0;
   private int lineEndChar = -1;
   int lineno;
   private int charno = -1;
-  private int initCharno;
-  private int initLineno;
+  private final int initCharno;
+  private final int initLineno;
 
-  private String sourceString;
-  private int sourceEnd;
+  private final String sourceString;
+  private final int sourceEnd;
 
   // sourceCursor is an index into a small buffer that keeps a
   // sliding window of the source stream.
@@ -479,8 +467,4 @@ class JsDocTokenStream {
   // source stream, tracking exactly how far scanning has progressed.
   // Its value is the index of the next character to be scanned.
   int cursor;
-
-  // Record start and end positions of last scanned token.
-  int tokenBeg;
-  int tokenEnd;
 }

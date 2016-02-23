@@ -16,12 +16,12 @@
 
 package com.google.javascript.jscomp;
 
-import org.junit.*;
+import junit.framework.*;
 
 /**
  * @author anatol@google.com (Anatol Pomazau)
  */
-public class JsMessageTest extends TestCase {
+public final class JsMessageTest extends TestCase {
 
   public void testIsEmpty() {
     assertTrue(new JsMessage.Builder().build().isEmpty());

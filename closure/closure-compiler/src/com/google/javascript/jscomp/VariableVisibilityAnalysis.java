@@ -17,11 +17,10 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Maps;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.ReferenceCollection;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.rhino.Node;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -68,7 +67,7 @@ class VariableVisibilityAnalysis implements CompilerPass {
   public VariableVisibilityAnalysis(AbstractCompiler compiler) {
     this.compiler = compiler;
 
-    visibilityByDeclaringNameNode = Maps.newHashMap();
+    visibilityByDeclaringNameNode = new HashMap<>();
   }
 
   /**
@@ -113,7 +112,7 @@ class VariableVisibilityAnalysis implements CompilerPass {
       new ReferenceCollectingCallback(compiler,
           ReferenceCollectingCallback.DO_NOTHING_BEHAVIOR);
 
-    NodeTraversal.traverse(compiler, root, callback);
+    NodeTraversal.traverseEs6(compiler, root, callback);
 
     for (Var variable : callback.getAllSymbols()) {
       ReferenceCollection referenceCollection =

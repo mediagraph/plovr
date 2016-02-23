@@ -16,13 +16,13 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.CodingConvention.AssertionFunctionSpec;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.jscomp.NodeTraversal.Callback;
 import com.google.javascript.rhino.Node;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -61,12 +61,12 @@ final class ClosureCodeRemoval implements CompilerPass {
    * nodes.
    */
   private final List<RemovableAssignment> abstractMethodAssignmentNodes =
-      Lists.newArrayList();
+       new ArrayList<>();
 
   /**
    * List of assertion functions.
    */
-  private final List<Node> assertionCalls = Lists.newArrayList();
+  private final List<Node> assertionCalls = new ArrayList<>();
 
 
   /**
@@ -86,7 +86,7 @@ final class ClosureCodeRemoval implements CompilerPass {
     /**
      * Full chain of ASSIGN ancestors
      */
-    final List<Node> assignAncestors = Lists.newArrayList();
+    final List<Node> assignAncestors = new ArrayList<>();
 
     /**
      * The last ancestor
@@ -145,7 +145,7 @@ final class ClosureCodeRemoval implements CompilerPass {
 
         if (nameNode.isQualifiedName() &&
             valueNode.isQualifiedName() &&
-            ABSTRACT_METHOD_NAME.equals(valueNode.getQualifiedName())) {
+            valueNode.matchesQualifiedName(ABSTRACT_METHOD_NAME)) {
           abstractMethodAssignmentNodes.add(new RemovableAssignment(
               n.getFirstChild(), n, t));
         }
@@ -158,13 +158,15 @@ final class ClosureCodeRemoval implements CompilerPass {
    * Identifies all assertion calls.
    */
   private class FindAssertionCalls extends AbstractPostOrderCallback {
-    Set<String> assertionNames = Sets.newHashSet();
+    final Set<String> assertionNames;
 
     FindAssertionCalls() {
+      ImmutableSet.Builder<String> assertionNamesBuilder = ImmutableSet.builder();
       for (AssertionFunctionSpec spec :
                compiler.getCodingConvention().getAssertionFunctions()) {
-        assertionNames.add(spec.getFunctionName());
+        assertionNamesBuilder.add(spec.getFunctionName());
       }
+      assertionNames = assertionNamesBuilder.build();
     }
 
 
@@ -196,7 +198,7 @@ final class ClosureCodeRemoval implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
-    List<Callback> passes = Lists.newArrayList();
+    List<Callback> passes = new ArrayList<>();
     if (removeAbstractMethods) {
       passes.add(new FindAbstractMethods());
     }

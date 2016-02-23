@@ -16,15 +16,15 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Charsets;
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
-import com.google.common.collect.Sets;
 import com.google.common.collect.TreeMultimap;
 import com.google.common.io.CharSource;
 import com.google.common.io.CharStreams;
@@ -34,6 +34,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Reader;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -48,14 +50,19 @@ import java.util.regex.Pattern;
  * @author anatol@google.com (Anatol Pomazau)
  * @author bashir@google.com (Bashir Sadjad)
  */
+@GwtIncompatible("java.io, java.util.regex")
 public class WhitelistWarningsGuard extends WarningsGuard {
-  private static final Splitter LINE_SPLITTER = Splitter.on("\n");
+  private static final Splitter LINE_SPLITTER = Splitter.on('\n');
 
   /** The set of white-listed warnings, same format as {@code formatWarning}. */
   private final Set<String> whitelist;
 
   /** Pattern to match line number in error descriptions. */
   private static final Pattern LINE_NUMBER = Pattern.compile(":-?\\d+");
+
+  public WhitelistWarningsGuard() {
+    this(ImmutableSet.<String>of());
+  }
 
   /**
    * This class depends on an input set that contains the white-list. The format
@@ -77,8 +84,8 @@ public class WhitelistWarningsGuard extends WarningsGuard {
    *
    * @return known legacy warnings without line numbers.
    */
-  private static Set<String> normalizeWhitelist(Set<String> whitelist) {
-    Set<String> result = Sets.newHashSet();
+  protected Set<String> normalizeWhitelist(Set<String> whitelist) {
+    Set<String> result = new HashSet<>();
     for (String line : whitelist) {
       String trimmed = line.trim();
       if (trimmed.isEmpty() || trimmed.charAt(0) == '#') {
@@ -130,7 +137,7 @@ public class WhitelistWarningsGuard extends WarningsGuard {
    */
   public static Set<String> loadWhitelistedJsWarnings(File file) {
     return loadWhitelistedJsWarnings(
-        Files.asCharSource(file, Charsets.UTF_8));
+        Files.asCharSource(file, UTF_8));
   }
 
   /**
@@ -153,16 +160,18 @@ public class WhitelistWarningsGuard extends WarningsGuard {
   static Set<String> loadWhitelistedJsWarnings(Reader reader)
       throws IOException {
     Preconditions.checkNotNull(reader);
-    Set<String> result = Sets.newHashSet();
+    Set<String> result = new HashSet<>();
 
-    for (String line : CharStreams.readLines(reader)) {
-      result.add(line);
-    }
+    result.addAll(CharStreams.readLines(reader));
 
     return result;
   }
 
-  public static String formatWarning(JSError error) {
+  /**
+   * If subclasses want to modify the formatting, they should override
+   * #formatWarning(JSError, boolean), not this method.
+   */
+  protected String formatWarning(JSError error) {
     return formatWarning(error, false);
   }
 
@@ -170,14 +179,13 @@ public class WhitelistWarningsGuard extends WarningsGuard {
    * @param withMetaData If true, include metadata that's useful to humans
    *     This metadata won't be used for matching the warning.
    */
-  public static String formatWarning(JSError error, boolean withMetaData) {
+  protected String formatWarning(JSError error, boolean withMetaData) {
     StringBuilder sb = new StringBuilder();
     sb.append(error.sourceName).append(":");
     if (withMetaData) {
       sb.append(error.lineNumber);
     }
-    List<String> lines = ImmutableList.copyOf(
-        LINE_SPLITTER.split(error.description));
+    List<String> lines = LINE_SPLITTER.splitToList(error.description);
     sb.append("  ").append(lines.get(0));
 
     // Add the rest of the message as a comment.
@@ -200,8 +208,8 @@ public class WhitelistWarningsGuard extends WarningsGuard {
   }
 
   /** Whitelist builder */
-  public static class WhitelistBuilder implements ErrorHandler {
-    private final Set<JSError> warnings = Sets.newLinkedHashSet();
+  public class WhitelistBuilder implements ErrorHandler {
+    private final Set<JSError> warnings = new LinkedHashSet<>();
     private String productName = null;
     private String generatorTarget = null;
     private String headerNote = null;
@@ -224,12 +232,6 @@ public class WhitelistWarningsGuard extends WarningsGuard {
       return this;
     }
 
-    /** We now always record the line number. */
-    @Deprecated
-    public WhitelistBuilder setWithLineNumber(boolean line) {
-      return this;
-    }
-
     @Override
     public void report(CheckLevel level, JSError error) {
       warnings.add(error);
@@ -240,9 +242,9 @@ public class WhitelistWarningsGuard extends WarningsGuard {
      * can read back later.
      */
     public void writeWhitelist(File out) throws IOException {
-      PrintStream stream = new PrintStream(out);
-      appendWhitelist(stream);
-      stream.close();
+      try (PrintStream stream = new PrintStream(out)) {
+        appendWhitelist(stream);
+      }
     }
 
     /**
@@ -253,20 +255,18 @@ public class WhitelistWarningsGuard extends WarningsGuard {
       out.append(
           "# This is a list of legacy warnings that have yet to be fixed.\n");
 
-      if (productName != null) {
+      if (productName != null && !productName.isEmpty() && !warnings.isEmpty()) {
         out.append("# Please find some time and fix at least one of them "
             + "and it will be the happiest day for " + productName + ".\n");
       }
 
-      if (generatorTarget != null) {
+      if (generatorTarget != null && !generatorTarget.isEmpty()) {
         out.append("# When you fix any of these warnings, run "
             + generatorTarget + " task.\n");
       }
 
       if (headerNote != null) {
-        out.append("#"
-            + Joiner.on("\n# ").join(Splitter.on("\n").split(headerNote))
-            + "\n");
+        out.append("#" + Joiner.on("\n# ").join(Splitter.on('\n').split(headerNote)) + "\n");
       }
 
       Multimap<DiagnosticType, String> warningsByType = TreeMultimap.create();

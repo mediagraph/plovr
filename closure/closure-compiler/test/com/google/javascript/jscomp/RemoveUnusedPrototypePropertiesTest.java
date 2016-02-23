@@ -16,12 +16,14 @@
 
 package com.google.javascript.jscomp;
 
+import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
+
 /**
  * Tests for {@link RemoveUnusedPrototypeProperties}.
  *
  * @author nicksantos@google.com (Nick Santos)
  */
-public class RemoveUnusedPrototypePropertiesTest extends CompilerTestCase {
+public final class RemoveUnusedPrototypePropertiesTest extends CompilerTestCase {
   private static final String EXTERNS =
       "IFoo.prototype.bar; var mExtern; mExtern.bExtern; mExtern['cExtern'];";
 
@@ -40,6 +42,7 @@ public class RemoveUnusedPrototypePropertiesTest extends CompilerTestCase {
 
   @Override
   public void setUp() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT6);
     anchorUnusedVars = false;
     canRemoveExterns = false;
   }
@@ -193,10 +196,7 @@ public class RemoveUnusedPrototypePropertiesTest extends CompilerTestCase {
   }
 
   public void testStatementRestriction() {
-    test("function e(){}" +
-           "var x = e.prototype.method1 = function(){};" +
-           "var y = new e; x()",
-         "function e(){}" +
+    testSame("function e(){}" +
            "var x = e.prototype.method1 = function(){};" +
            "var y = new e; x()");
   }
@@ -311,6 +311,12 @@ public class RemoveUnusedPrototypePropertiesTest extends CompilerTestCase {
   public void testPropertiesDefinedWithGetElem() {
     testSame("function Foo() {} Foo.prototype['elem'] = function() {};");
     testSame("function Foo() {} Foo.prototype[1 + 1] = function() {};");
+  }
+
+  public void testQuotedProperties() {
+    // Basic removal for prototype replacement
+    testSame("function e(){}" +
+           "e.prototype = {'a': function(){}, 'b': function(){}};");
   }
 
   public void testNeverRemoveImplicitlyUsedProperties() {
@@ -504,4 +510,19 @@ public class RemoveUnusedPrototypePropertiesTest extends CompilerTestCase {
         "(new Foo()).method1();");
   }
 
+  public void testRemoveInBlock() {
+    test(LINE_JOINER.join(
+        "if (true) {",
+        "  if (true) {",
+        "    var foo = function() {};",
+        "  }",
+        "}"),
+         LINE_JOINER.join(
+        "if (true) {",
+        "  if (true) {",
+        "  }",
+        "}"));
+
+    testSame("if (true) { let foo = function() {} }");
+  }
 }

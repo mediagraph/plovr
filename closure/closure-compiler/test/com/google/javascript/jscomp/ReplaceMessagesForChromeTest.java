@@ -25,7 +25,7 @@ import com.google.javascript.jscomp.JsMessage.Style;
  *
  * @author tbreisacher@google.com (Tyler Breisacher)
  */
-public class ReplaceMessagesForChromeTest extends CompilerTestCase {
+public final class ReplaceMessagesForChromeTest extends CompilerTestCase {
 
   private Style style = RELAX;
 
@@ -44,6 +44,7 @@ public class ReplaceMessagesForChromeTest extends CompilerTestCase {
   @Override
   protected void setUp()  {
     style = RELAX;
+    compareJsDoc = false;
   }
 
   public void testReplaceSimpleMessage() {
@@ -79,9 +80,9 @@ public class ReplaceMessagesForChromeTest extends CompilerTestCase {
   }
 
   public void testReplacePlaceholderMissingValue() {
-    test("/** @desc A message with two placeholders, but one is missing. */\n" +
+    testError("/** @desc A message with two placeholders, but one is missing. */\n" +
          "var MSG_F = goog.getMsg('{$greeting}, {$name}!', {name: 'Tyler'});",
-         null, JsMessageVisitor.MESSAGE_TREE_MALFORMED);
+         JsMessageVisitor.MESSAGE_TREE_MALFORMED);
   }
 
   public void testReplaceTwoPlaceholdersNonAlphaOrder() {
@@ -96,5 +97,33 @@ public class ReplaceMessagesForChromeTest extends CompilerTestCase {
     test("/** @desc A message that was extracted with SoyMsgExtractor. */\n" +
          "var MSG_EXTERNAL_1357902468 = goog.getMsg('Hello world');",
          "var MSG_EXTERNAL_1357902468 = chrome.i18n.getMessage('1357902468');");
+  }
+
+  /**
+   * Test that messages are handled correctly if they contain the same
+   * placeholder twice.
+   */
+  public void testReplaceMessageWithDuplicatePlaceholders() {
+    String original = "" +
+        "/** @desc A message that contains two instances of the same placeholder. */\n" +
+        "var MSG_EXTERNAL_987654321 = goog.getMsg(" +
+        "'{$startDiv_1}You are signed in as{$endDiv}{$img}{$startDiv_2}{$name}{$endDiv}'," +
+        "{'startDiv_1': '<div>'," +
+        "'endDiv': '</div>'," +
+        "'img': '<img src=\"http://example.com/photo.png\">'," +
+        "'startDiv_2': '<div class=\"name\">'," +
+        "'name': name});";
+
+    String compiled = "" +
+        "var MSG_EXTERNAL_987654321 = chrome.i18n.getMessage('987654321', " +
+        "[" +
+        "'</div>', " +  // endDiv, only included once, even though it appears twice in the message.
+        "'<img src=\"http://example.com/photo.png\">', " +  // img
+        "name, " +  // name
+        "'<div>', " +  // startDiv_1
+        "'<div class=\"name\">'" +  // startDiv_2
+        "]);";
+
+    test(original, compiled);
   }
 }

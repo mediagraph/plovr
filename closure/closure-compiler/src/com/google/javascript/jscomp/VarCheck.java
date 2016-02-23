@@ -17,13 +17,15 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
+import com.google.javascript.jscomp.SyntacticScopeCreator.RedeclarationHandler;
 import com.google.javascript.rhino.IR;
+import com.google.javascript.rhino.JSDocInfo;
+import com.google.javascript.rhino.JSDocInfoBuilder;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -51,25 +53,46 @@ class VarCheck extends AbstractPostOrderCallback implements
 
   static final DiagnosticType STRICT_MODULE_DEP_ERROR = DiagnosticType.disabled(
       "JSC_STRICT_MODULE_DEPENDENCY",
-      "module {0} cannot reference {2}, defined in " +
-      "module {1}");
+      // The newline below causes the JS compiler not to complain when the
+      // referenced module's name changes because, for example, it's a
+      // synthetic module.
+      "cannot reference {2} because of a missing module dependency\n"
+      + "defined in module {1}, referenced from module {0}");
 
   static final DiagnosticType NAME_REFERENCE_IN_EXTERNS_ERROR =
     DiagnosticType.warning(
       "JSC_NAME_REFERENCE_IN_EXTERNS",
-      "accessing name {0} in externs has no effect");
+      "accessing name {0} in externs has no effect. " +
+      "Perhaps you forgot to add a var keyword?");
 
   static final DiagnosticType UNDEFINED_EXTERN_VAR_ERROR =
     DiagnosticType.warning(
       "JSC_UNDEFINED_EXTERN_VAR_ERROR",
-      "name {0} is not undefined in the externs.");
+      "name {0} is not defined in the externs.");
 
-  private Node synthesizedExternsRoot = null;
+  static final DiagnosticType VAR_MULTIPLY_DECLARED_ERROR =
+      DiagnosticType.error(
+          "JSC_VAR_MULTIPLY_DECLARED_ERROR",
+          "Variable {0} first declared in {1}");
+
+  static final DiagnosticType VAR_ARGUMENTS_SHADOWED_ERROR =
+    DiagnosticType.error(
+        "JSC_VAR_ARGUMENTS_SHADOWED_ERROR",
+        "Shadowing \"arguments\" is not allowed");
+
+  static final DiagnosticType LET_CONST_MULTIPLY_DECLARED_ERROR =
+      DiagnosticType.error(
+          "JSC_LET_CONST_MULTIPLY_DECLARED_ERROR",
+          "Duplicate let / const declaration in the same scope is not allowed.");
+
+  // The arguments variable is special, in that it's declared in every local
+  // scope, but not explicitly declared.
+  private static final String ARGUMENTS = "arguments";
 
   // Vars that still need to be declared in externs. These will be declared
   // at the end of the pass, or when we see the equivalent var declared
   // in the normal code.
-  private final Set<String> varsToDeclareInExterns = Sets.newHashSet();
+  private final Set<String> varsToDeclareInExterns = new HashSet<>();
 
   private final AbstractCompiler compiler;
 
@@ -90,17 +113,33 @@ class VarCheck extends AbstractPostOrderCallback implements
     this.sanityCheck = sanityCheck;
   }
 
+  /**
+   * Create a SyntacticScopeCreator. If not in sanity check mode, use a
+   * {@link RedeclarationCheckHandler} to check var redeclarations.
+   * @return the SyntacticScopeCreator
+   */
+  private ScopeCreator createScopeCreator() {
+    if (sanityCheck) {
+      return new Es6SyntacticScopeCreator(compiler);
+    } else {
+      return new Es6SyntacticScopeCreator(compiler, new RedeclarationCheckHandler());
+    }
+  }
+
   @Override
   public void process(Node externs, Node root) {
+    ScopeCreator scopeCreator = createScopeCreator();
     // Don't run externs-checking in sanity check mode. Normalization will
     // remove duplicate VAR declarations, which will make
     // externs look like they have assigns.
     if (!sanityCheck) {
-      NodeTraversal.traverse(compiler, externs, new NameRefInExternsCheck());
+      NodeTraversal traversal = new NodeTraversal(
+          compiler, new NameRefInExternsCheck(), scopeCreator);
+      traversal.traverse(externs);
     }
 
-    NodeTraversal.traverseRoots(
-        compiler, Lists.newArrayList(externs, root), this);
+    NodeTraversal t = new NodeTraversal(compiler, this, scopeCreator);
+    t.traverseRoots(externs, root);
     for (String varName : varsToDeclareInExterns) {
       createSynthesizedExternVar(varName);
     }
@@ -109,11 +148,12 @@ class VarCheck extends AbstractPostOrderCallback implements
   @Override
   public void hotSwapScript(Node scriptRoot, Node originalRoot) {
     Preconditions.checkState(scriptRoot.isScript());
-    NodeTraversal t = new NodeTraversal(compiler, this);
+    ScopeCreator scopeCreator = createScopeCreator();
+    NodeTraversal t = new NodeTraversal(compiler, this, scopeCreator);
     // Note we use the global scope to prevent wrong "undefined-var errors" on
     // variables that are defined in other JS files.
-    t.traverseWithScope(scriptRoot,
-        SyntacticScopeCreator.generateUntypedTopScope(compiler));
+    Scope topScope = scopeCreator.createScope(compiler.getRoot(), null);
+    t.traverseWithScope(scriptRoot, topScope);
     // TODO(bashir) Check if we need to createSynthesizedExternVar like process.
   }
 
@@ -139,19 +179,22 @@ class VarCheck extends AbstractPostOrderCallback implements
         varsToDeclareInExterns.contains(varName)) {
       createSynthesizedExternVar(varName);
 
-      n.addSuppression("duplicate");
+      JSDocInfoBuilder builder = JSDocInfoBuilder.maybeCopyFrom(n.getJSDocInfo());
+      builder.addSuppression("duplicate");
+      n.setJSDocInfo(builder.build());
     }
 
     // Check that the var has been declared.
     Scope scope = t.getScope();
-    Scope.Var var = scope.getVar(varName);
+    Var var = scope.getVar(varName);
     if (var == null) {
-      if (NodeUtil.isFunctionExpression(parent)) {
+      if (NodeUtil.isFunctionExpression(parent) || NodeUtil.isClassExpression(parent)) {
         // e.g. [ function foo() {} ], it's okay if "foo" isn't defined in the
         // current scope.
       } else {
+        boolean isArguments = scope.isLocal() && ARGUMENTS.equals(varName);
         // The extern checks are stricter, don't report a second error.
-        if (!strictExternCheck || !t.getInput().isExtern()) {
+        if (!isArguments && !(strictExternCheck && t.getInput().isExtern())) {
           t.report(n, UNDEFINED_VAR_ERROR, varName);
         }
 
@@ -159,8 +202,7 @@ class VarCheck extends AbstractPostOrderCallback implements
           throw new IllegalStateException("Unexpected variable " + varName);
         } else {
           createSynthesizedExternVar(varName);
-          scope.getGlobalScope().declare(varName, n,
-              null, getSynthesizedExternsInput());
+          scope.getGlobalScope().declare(varName, n, compiler.getSynthesizedExternsInput());
         }
       }
       return;
@@ -235,25 +277,41 @@ class VarCheck extends AbstractPostOrderCallback implements
       if (n.isName()) {
         switch (parent.getType()) {
           case Token.VAR:
+          case Token.LET:
+          case Token.CONST:
           case Token.FUNCTION:
+          case Token.CLASS:
           case Token.PARAM_LIST:
             // These are okay.
             break;
           case Token.GETPROP:
             if (n == parent.getFirstChild()) {
               Scope scope = t.getScope();
-              Scope.Var var = scope.getVar(n.getString());
+              Var var = scope.getVar(n.getString());
               if (var == null) {
                 t.report(n, UNDEFINED_EXTERN_VAR_ERROR, n.getString());
                 varsToDeclareInExterns.add(n.getString());
               }
             }
             break;
+         case Token.ASSIGN:
+            // Don't warn for the "window.foo = foo;" nodes added by
+            // DeclaredGlobalExternsOnWindow.
+            if (n == parent.getLastChild() && parent.getFirstChild().isGetProp()
+                && parent.getFirstChild().getLastChild().getString().equals(n.getString())) {
+              break;
+            }
+            // fall through
           default:
-            t.report(n, NAME_REFERENCE_IN_EXTERNS_ERROR, n.getString());
+            // Don't warn for simple var assignments "/** @const */ var foo = bar;"
+            // They are used to infer the types of namespace aliases.
+            if (parent.getType() != Token.NAME || parent.getParent() == null ||
+                !NodeUtil.isNameDeclaration(parent.getParent())) {
+              t.report(n, NAME_REFERENCE_IN_EXTERNS_ERROR, n.getString());
+            }
 
             Scope scope = t.getScope();
-            Scope.Var var = scope.getVar(n.getString());
+            Var var = scope.getVar(n.getString());
             if (var == null) {
               varsToDeclareInExterns.add(n.getString());
             }
@@ -263,17 +321,87 @@ class VarCheck extends AbstractPostOrderCallback implements
     }
   }
 
-  /** Lazily create a "new" externs input for undeclared variables. */
-  private CompilerInput getSynthesizedExternsInput() {
-    return compiler.getSynthesizedExternsInput();
+
+  /**
+   * @param n The name node to check.
+   * @param origVar The associated Var.
+   * @return Whether duplicated declarations warnings should be suppressed
+   *     for the given node.
+   */
+  static boolean hasDuplicateDeclarationSuppression(Node n, Var origVar) {
+    Preconditions.checkState(n.isName() || n.isRest() || n.isStringKey());
+    Node parent = n.getParent();
+    Node origParent = origVar.getParentNode();
+
+    if (isExternNamespace(n)) {
+      return true;
+    }
+
+    JSDocInfo info = parent.getJSDocInfo();
+    if (info != null && info.getSuppressions().contains("duplicate")) {
+      return true;
+    }
+
+    info = origParent.getJSDocInfo();
+    return (info != null && info.getSuppressions().contains("duplicate"));
+  }
+
+  private static boolean isExternNamespace(Node n) {
+    return n.getParent().isVar() && n.isFromExterns() && NodeUtil.isNamespaceDecl(n);
+  }
+
+  /**
+   * The handler for duplicate declarations.
+   */
+  private class RedeclarationCheckHandler implements RedeclarationHandler {
+    @Override
+    public void onRedeclaration(
+        Scope s, String name, Node n, CompilerInput input) {
+      Node parent = n.getParent();
+
+      // Don't allow multiple variables to be declared at the top-level scope
+      if (s.isGlobal()) {
+        Var origVar = s.getVar(name);
+        Node origParent = origVar.getParentNode();
+        if (origParent.isCatch() &&
+            parent.isCatch()) {
+          // Okay, both are 'catch(x)' variables.
+          return;
+        }
+
+        if (parent.isLet() || parent.isConst() ||
+            origParent.isLet() || origParent.isConst()) {
+          compiler.report(
+              JSError.make(n, LET_CONST_MULTIPLY_DECLARED_ERROR));
+          return;
+        }
+
+        boolean allowDupe = hasDuplicateDeclarationSuppression(n, origVar);
+        if (isExternNamespace(n)) {
+          parent.getParent().removeChild(parent);
+          compiler.reportCodeChange();
+          return;
+        }
+        if (!allowDupe) {
+          compiler.report(
+              JSError.make(n,
+                           VAR_MULTIPLY_DECLARED_ERROR,
+                           name,
+                           (origVar.input != null
+                            ? origVar.input.getName()
+                            : "??")));
+        }
+      } else if (name.equals(ARGUMENTS) && !NodeUtil.isVarDeclaration(n)) {
+        // Disallow shadowing "arguments" as we can't handle with our current
+        // scope modeling.
+        compiler.report(
+            JSError.make(n, VAR_ARGUMENTS_SHADOWED_ERROR));
+      }
+    }
   }
 
   /** Lazily create a "new" externs root for undeclared variables. */
   private Node getSynthesizedExternsRoot() {
-    if (synthesizedExternsRoot == null) {
-      CompilerInput synthesizedExterns = getSynthesizedExternsInput();
-      synthesizedExternsRoot = synthesizedExterns.getAstRoot(compiler);
-    }
-    return synthesizedExternsRoot;
+    return  compiler.getSynthesizedExternsInput().getAstRoot(compiler);
   }
 }

@@ -17,7 +17,6 @@
 package com.google.javascript.jscomp;
 
 import com.google.javascript.jscomp.DataFlowAnalysis.FlowState;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.rhino.InputId;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
@@ -29,7 +28,7 @@ import junit.framework.TestCase;
  * function and assertions are made at the instruction labeled with {@code X}.
  *
  */
-public class LiveVariableAnalysisTest extends TestCase {
+public final class LiveVariableAnalysisTest extends TestCase {
 
   private LiveVariablesAnalysis liveness = null;
 
@@ -287,32 +286,32 @@ public class LiveVariableAnalysisTest extends TestCase {
     FlowState<LiveVariablesAnalysis.LiveVariableLattice> state =
         getFlowStateAtX(src);
     assertNotNull(src + " should contain a label 'X:'", state);
-    assertTrue("Variable" + var + " should be live before X", state.getIn()
-        .isLive(liveness.getVarIndex(var)));
+    assertTrue("Variable" + var + " should be live before X",
+        state.getIn().isLive(liveness.getVarIndex(var)));
   }
 
   private void assertLiveAfterX(String src, String var) {
     FlowState<LiveVariablesAnalysis.LiveVariableLattice> state =
         getFlowStateAtX(src);
-    assertTrue("Label X should be in the input program.", state != null);
-    assertTrue("Variable" + var + " should be live after X", state.getOut()
-        .isLive(liveness.getVarIndex(var)));
+    assertNotNull("Label X should be in the input program.", state);
+    assertTrue("Variable" + var + " should be live after X",
+        state.getOut().isLive(liveness.getVarIndex(var)));
   }
 
   private void assertNotLiveAfterX(String src, String var) {
     FlowState<LiveVariablesAnalysis.LiveVariableLattice> state =
         getFlowStateAtX(src);
-    assertTrue("Label X should be in the input program.", state != null);
-    assertTrue("Variable" + var + " should not be live after X", !state
-        .getOut().isLive(liveness.getVarIndex(var)));
+    assertNotNull("Label X should be in the input program.", state);
+    assertFalse("Variable" + var + " should not be live after X",
+        state.getOut().isLive(liveness.getVarIndex(var)));
   }
 
   private void assertNotLiveBeforeX(String src, String var) {
     FlowState<LiveVariablesAnalysis.LiveVariableLattice> state =
         getFlowStateAtX(src);
-    assertTrue("Label X should be in the input program.", state != null);
-    assertTrue("Variable" + var + " should not be live before X", !state
-        .getIn().isLive(liveness.getVarIndex(var)));
+    assertNotNull("Label X should be in the input program.", state);
+    assertFalse("Variable" + var + " should not be live before X",
+        state.getIn().isLive(liveness.getVarIndex(var)));
   }
 
   private FlowState<LiveVariablesAnalysis.LiveVariableLattice> getFlowStateAtX(
@@ -364,8 +363,8 @@ public class LiveVariableAnalysisTest extends TestCase {
     Node script = new Node(Token.SCRIPT, n);
     script.setInputId(new InputId("test"));
     assertEquals(0, compiler.getErrorCount());
-    Scope scope = new SyntacticScopeCreator(compiler).createScope(
-        n, Scope.createGlobalScope(script));
+    Scope scope = SyntacticScopeCreator.makeUntyped(compiler)
+        .createScope(n, Scope.createGlobalScope(script));
     ControlFlowAnalysis cfa = new ControlFlowAnalysis(compiler, false, true);
     cfa.process(null, n);
     ControlFlowGraph<Node> cfg = cfa.getCfg();

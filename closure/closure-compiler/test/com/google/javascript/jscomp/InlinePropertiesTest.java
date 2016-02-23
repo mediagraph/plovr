@@ -20,7 +20,7 @@ package com.google.javascript.jscomp;
 /**
  * @author johnlenz@google.com (John Lenz)
  */
-public class InlinePropertiesTest extends CompilerTestCase {
+public final class InlinePropertiesTest extends CompilerTestCase {
 
   private static final String EXTERNS =
       "Function.prototype.call=function(){};" +
@@ -31,8 +31,10 @@ public class InlinePropertiesTest extends CompilerTestCase {
   public InlinePropertiesTest() {
     super(EXTERNS);
     enableNormalize();
-    enableTypeCheck(CheckLevel.WARNING);
+    enableTypeCheck();
     enableClosurePass();
+    enableGatherExternProperties();
+    compareJsDoc = false;
   }
 
   @Override
@@ -52,6 +54,22 @@ public class InlinePropertiesTest extends CompilerTestCase {
         "  this.foo = 1;\n" +
         "}\n" +
         "new C(), 1;");
+
+    test(LINE_JOINER.join(
+        "/** @constructor */",
+        "function C() {",
+        "  {",
+        "    this.foo = 1;",
+        "  }",
+        "}",
+        "new C().foo;"),
+        LINE_JOINER.join(
+        "function C() {",
+        "  {",
+        "    this.foo = 1;",
+        "  }",
+        "}",
+        "new C(), 1;"));
   }
 
   public void testConstInstanceProp2() {
@@ -196,5 +214,32 @@ public class InlinePropertiesTest extends CompilerTestCase {
         "C.prototype.foo = 1;\n" +
         "var x = new C();\n" +
         "1;\n");
+  }
+
+  public void testConstPrototypePropInGlobalBlockScope() {
+    test(LINE_JOINER.join(
+        "/** @constructor */",
+        "function C() {}",
+        "{",
+        "  C.prototype.foo = 1;",
+        "}",
+        "var x = new C();",
+        "x.foo;"),
+        LINE_JOINER.join(
+        "function C() {}",
+        "{",
+        "  C.prototype.foo = 1;",
+        "}",
+        "var x = new C();",
+        "1;"));
+  }
+
+  public void testGlobalThisNotInlined() {
+    testSame(LINE_JOINER.join(
+        "this.foo = 1;",
+        "/** @constructor */",
+        "function C() {",
+        "  foo;",
+        "}"));
   }
 }

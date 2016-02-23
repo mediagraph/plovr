@@ -66,7 +66,7 @@ class FunctionRewriter implements CompilerPass {
 
     // Accumulate possible reductions in the reduction multi-map.  They
     // will be applied in the loop below.
-    NodeTraversal.traverse(compiler, root,
+    NodeTraversal.traverseEs6(compiler, root,
                            new ReductionGatherer(reducers, reductionMap));
 
     // Apply reductions iff they will provide some savings.
@@ -109,8 +109,8 @@ class FunctionRewriter implements CompilerPass {
    * @return Helper code root.  If parse fails, return null.
    */
   public Node parseHelperCode(Reducer reducer) {
-    Node root = compiler.parseSyntheticCode(
-        reducer.getClass().toString() + ":helper", reducer.getHelperSource());
+    Node root =
+        compiler.parseSyntheticCode(reducer.getClass() + ":helper", reducer.getHelperSource());
     return (root != null) ? root.removeFirstChild() : null;
   }
 
@@ -327,12 +327,7 @@ class FunctionRewriter implements CompilerPass {
       }
 
       Node value = maybeGetSingleReturnRValue(functionNode);
-      if (value != null &&
-          value.isName() &&
-          value.getString().equals(paramNode.getString())) {
-        return true;
-      }
-      return false;
+      return value != null && value.isName() && value.getString().equals(paramNode.getString());
     }
   }
 

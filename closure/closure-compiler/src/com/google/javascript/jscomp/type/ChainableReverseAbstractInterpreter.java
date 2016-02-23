@@ -20,7 +20,6 @@ import static com.google.javascript.rhino.jstype.JSTypeNative.ALL_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.BOOLEAN_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.CHECKED_UNKNOWN_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.NO_OBJECT_TYPE;
-import static com.google.javascript.rhino.jstype.JSTypeNative.NO_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.NULL_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.NUMBER_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.OBJECT_TYPE;
@@ -30,7 +29,6 @@ import static com.google.javascript.rhino.jstype.JSTypeNative.UNKNOWN_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.VOID_TYPE;
 
 import com.google.common.base.Preconditions;
-import com.google.javascript.jscomp.CodingConvention;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 import com.google.javascript.rhino.jstype.EnumElementType;
@@ -38,8 +36,11 @@ import com.google.javascript.rhino.jstype.FunctionType;
 import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.JSTypeNative;
 import com.google.javascript.rhino.jstype.JSTypeRegistry;
+import com.google.javascript.rhino.jstype.NamedType;
+import com.google.javascript.rhino.jstype.NoType;
 import com.google.javascript.rhino.jstype.ObjectType;
-import com.google.javascript.rhino.jstype.StaticSlot;
+import com.google.javascript.rhino.jstype.ProxyObjectType;
+import com.google.javascript.rhino.jstype.StaticTypedSlot;
 import com.google.javascript.rhino.jstype.TemplateType;
 import com.google.javascript.rhino.jstype.TemplatizedType;
 import com.google.javascript.rhino.jstype.UnionType;
@@ -51,7 +52,6 @@ import com.google.javascript.rhino.jstype.Visitor;
  */
 public abstract class ChainableReverseAbstractInterpreter
     implements ReverseAbstractInterpreter {
-  protected final CodingConvention convention;
   final JSTypeRegistry typeRegistry;
   private ChainableReverseAbstractInterpreter firstLink;
   private ChainableReverseAbstractInterpreter nextLink;
@@ -60,10 +60,7 @@ public abstract class ChainableReverseAbstractInterpreter
    * Constructs an interpreter, which is the only link in a chain. Interpreters
    * can be appended using {@link #append}.
    */
-  public ChainableReverseAbstractInterpreter(CodingConvention convention,
-      JSTypeRegistry typeRegistry) {
-    Preconditions.checkNotNull(convention);
-    this.convention = convention;
+  public ChainableReverseAbstractInterpreter(JSTypeRegistry typeRegistry) {
     this.typeRegistry = typeRegistry;
     firstLink = this;
     nextLink = null;
@@ -119,7 +116,7 @@ public abstract class ChainableReverseAbstractInterpreter
   protected JSType getTypeIfRefinable(Node node, FlowScope scope) {
     switch (node.getType()) {
       case Token.NAME:
-        StaticSlot<JSType> nameVar = scope.getSlot(node.getString());
+        StaticTypedSlot<JSType> nameVar = scope.getSlot(node.getString());
         if (nameVar != null) {
           JSType nameVarType = nameVar.getType();
           if (nameVarType == null) {
@@ -134,7 +131,7 @@ public abstract class ChainableReverseAbstractInterpreter
         if (qualifiedName == null) {
           return null;
         }
-        StaticSlot<JSType> propVar = scope.getSlot(qualifiedName);
+        StaticTypedSlot<JSType> propVar = scope.getSlot(qualifiedName);
         JSType propVarType = null;
         if (propVar != null) {
           propVarType = propVar.getType();
@@ -167,7 +164,7 @@ public abstract class ChainableReverseAbstractInterpreter
 
         JSType origType = node.getJSType();
         origType = origType == null ? getNativeType(UNKNOWN_TYPE) : origType;
-        scope.inferQualifiedSlot(node, qualifiedName, origType, type);
+        scope.inferQualifiedSlot(node, qualifiedName, origType, type, false);
         break;
 
       case Token.THIS:
@@ -207,8 +204,8 @@ public abstract class ChainableReverseAbstractInterpreter
       }
 
       @Override
-      public JSType caseNoType() {
-        return getNativeType(NO_TYPE);
+      public JSType caseNoType(NoType type) {
+        return type;
       }
 
       @Override
@@ -265,6 +262,16 @@ public abstract class ChainableReverseAbstractInterpreter
       public JSType caseTemplateType(TemplateType templateType) {
         return caseObjectType(templateType);
       }
+
+      @Override
+      public JSType caseNamedType(NamedType type) {
+        return caseProxyObjectType(type);
+      }
+
+      @Override
+      public JSType caseProxyObjectType(ProxyObjectType type) {
+        return type.visitReferenceType(this);
+      }
     };
 
 
@@ -296,8 +303,8 @@ public abstract class ChainableReverseAbstractInterpreter
       }
 
       @Override
-      public JSType caseNoType() {
-        return getNativeType(NO_TYPE);
+      public JSType caseNoType(NoType type) {
+        return type;
       }
 
       @Override
@@ -354,6 +361,16 @@ public abstract class ChainableReverseAbstractInterpreter
       public JSType caseTemplateType(TemplateType templateType) {
         return caseObjectType(templateType);
       }
+
+      @Override
+      public JSType caseNamedType(NamedType type) {
+        return caseProxyObjectType(type);
+      }
+
+      @Override
+      public JSType caseProxyObjectType(ProxyObjectType type) {
+        return type.visitReferenceType(this);
+      }
     };
 
   /**
@@ -400,8 +417,8 @@ public abstract class ChainableReverseAbstractInterpreter
     }
 
     @Override
-    public JSType caseNoType() {
-      return getNativeType(NO_TYPE);
+    public JSType caseNoType(NoType type) {
+      return type;
     }
 
     @Override
@@ -432,6 +449,16 @@ public abstract class ChainableReverseAbstractInterpreter
     @Override
     public JSType caseTemplateType(TemplateType templateType) {
       return caseObjectType(templateType);
+    }
+
+    @Override
+    public JSType caseNamedType(NamedType type) {
+      return caseProxyObjectType(type);
+    }
+
+    @Override
+    public JSType caseProxyObjectType(ProxyObjectType type) {
+      return type.visitReferenceType(this);
     }
   }
 
@@ -701,18 +728,19 @@ public abstract class ChainableReverseAbstractInterpreter
    * the general case.
    */
   private JSType getNativeTypeForTypeOf(String value) {
-    if (value.equals("number")) {
-      return getNativeType(NUMBER_TYPE);
-    } else if (value.equals("boolean")) {
-      return getNativeType(BOOLEAN_TYPE);
-    } else if (value.equals("string")) {
-      return getNativeType(STRING_TYPE);
-    } else if (value.equals("undefined")) {
-      return getNativeType(VOID_TYPE);
-    } else if (value.equals("function")) {
-      return getNativeType(U2U_CONSTRUCTOR_TYPE);
-    } else {
-      return null;
+    switch (value) {
+      case "number":
+        return getNativeType(NUMBER_TYPE);
+      case "boolean":
+        return getNativeType(BOOLEAN_TYPE);
+      case "string":
+        return getNativeType(STRING_TYPE);
+      case "undefined":
+        return getNativeType(VOID_TYPE);
+      case "function":
+        return getNativeType(U2U_CONSTRUCTOR_TYPE);
+      default:
+        return null;
     }
   }
 }

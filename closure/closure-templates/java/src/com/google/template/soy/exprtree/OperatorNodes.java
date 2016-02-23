@@ -17,12 +17,14 @@
 package com.google.template.soy.exprtree;
 
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+
 /**
  * Container of nodes representing operators.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
 public class OperatorNodes {
 
@@ -32,255 +34,333 @@ public class OperatorNodes {
   /**
    * Node representing the unary '-' (negative) operator.
    */
-  public static class NegativeOpNode extends AbstractOperatorNode {
+  public final static class NegativeOpNode extends AbstractOperatorNode {
 
-    public NegativeOpNode() { super(Operator.NEGATIVE); }
+    public NegativeOpNode(SourceLocation sourceLocation) {
+      super(Operator.NEGATIVE, sourceLocation);
+    }
 
-    protected NegativeOpNode(NegativeOpNode orig) { super(orig); }
+    private NegativeOpNode(NegativeOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.NEGATIVE_OP_NODE; }
 
-    @Override public NegativeOpNode clone() { return new NegativeOpNode(this); }
+    @Override public NegativeOpNode copy(CopyState copyState) {
+      return new NegativeOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the 'not' operator.
    */
-  public static class NotOpNode extends AbstractOperatorNode {
+  public final static class NotOpNode extends AbstractOperatorNode {
 
-    public NotOpNode() { super(Operator.NOT); }
+    public NotOpNode(SourceLocation sourceLocation) {
+      super(Operator.NOT, sourceLocation);
+    }
 
-    protected NotOpNode(NotOpNode orig) { super(orig); }
+    private NotOpNode(NotOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.NOT_OP_NODE; }
 
-    @Override public NotOpNode clone() { return new NotOpNode(this); }
+    @Override public NotOpNode copy(CopyState copyState) { return new NotOpNode(this, copyState); }
   }
 
 
   /**
    * Node representing the '*' (times) operator.
    */
-  public static class TimesOpNode extends AbstractOperatorNode {
+  public final static class TimesOpNode extends AbstractOperatorNode {
 
-    public TimesOpNode() { super(Operator.TIMES); }
+    public TimesOpNode(SourceLocation sourceLocation) {
+      super(Operator.TIMES, sourceLocation);
+    }
 
-    protected TimesOpNode(TimesOpNode orig) { super(orig); }
+    private TimesOpNode(TimesOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.TIMES_OP_NODE; }
 
-    @Override public TimesOpNode clone() { return new TimesOpNode(this); }
+    @Override public TimesOpNode copy(CopyState copyState) {
+      return new TimesOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the '/' (divde by) operator.
    */
-  public static class DivideByOpNode extends AbstractOperatorNode {
+  public final static class DivideByOpNode extends AbstractOperatorNode {
 
-    public DivideByOpNode() { super(Operator.DIVIDE_BY); }
+    public DivideByOpNode(SourceLocation sourceLocation) {
+      super(Operator.DIVIDE_BY, sourceLocation);
+    }
 
-    protected DivideByOpNode(DivideByOpNode orig) { super(orig); }
+    private DivideByOpNode(DivideByOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.DIVIDE_BY_OP_NODE; }
 
-    @Override public DivideByOpNode clone() { return new DivideByOpNode(this); }
+    @Override public DivideByOpNode copy(CopyState copyState) {
+      return new DivideByOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the '%' (mod) operator.
    */
-  public static class ModOpNode extends AbstractOperatorNode {
+  public final static class ModOpNode extends AbstractOperatorNode {
 
-    public ModOpNode() { super(Operator.MOD); }
+    public ModOpNode(SourceLocation sourceLocation) {
+      super(Operator.MOD, sourceLocation);
+    }
 
-    protected ModOpNode(ModOpNode orig) { super(orig); }
+    private ModOpNode(ModOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.MOD_OP_NODE; }
 
-    @Override public ModOpNode clone() { return new ModOpNode(this); }
+    @Override public ModOpNode copy(CopyState copyState) { return new ModOpNode(this, copyState); }
   }
 
 
   /**
    * Node representing the '+' (plus) operator.
    */
-  public static class PlusOpNode extends AbstractOperatorNode {
+  public final static class PlusOpNode extends AbstractOperatorNode {
 
-    public PlusOpNode() { super(Operator.PLUS); }
+    public PlusOpNode(SourceLocation sourceLocation) {
+      super(Operator.PLUS, sourceLocation);
+    }
 
-    protected PlusOpNode(PlusOpNode orig) { super(orig); }
+    private PlusOpNode(PlusOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.PLUS_OP_NODE; }
 
-    @Override public PlusOpNode clone() { return new PlusOpNode(this); }
+    @Override public PlusOpNode copy(CopyState copyState) {
+      return new PlusOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the binary '-' (minus) operator.
    */
-  public static class MinusOpNode extends AbstractOperatorNode {
+  public final static class MinusOpNode extends AbstractOperatorNode {
 
-    public MinusOpNode() { super(Operator.MINUS); }
+    public MinusOpNode(SourceLocation sourceLocation) {
+      super(Operator.MINUS, sourceLocation);
+    }
 
-    protected MinusOpNode(MinusOpNode orig) { super(orig); }
+    private MinusOpNode(MinusOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.MINUS_OP_NODE; }
 
-    @Override public MinusOpNode clone() { return new MinusOpNode(this); }
+    @Override public MinusOpNode copy(CopyState copyState) {
+      return new MinusOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the '&lt;' (less than) operator.
    */
-  public static class LessThanOpNode extends AbstractOperatorNode {
+  public final static class LessThanOpNode extends AbstractOperatorNode {
 
-    public LessThanOpNode() { super(Operator.LESS_THAN); }
+    public LessThanOpNode(SourceLocation sourceLocation) {
+      super(Operator.LESS_THAN, sourceLocation);
+    }
 
-    protected LessThanOpNode(LessThanOpNode orig) { super(orig); }
+    private LessThanOpNode(LessThanOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.LESS_THAN_OP_NODE; }
 
-    @Override public LessThanOpNode clone() { return new LessThanOpNode(this); }
+    @Override public LessThanOpNode copy(CopyState copyState) {
+      return new LessThanOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the '&gt;' (greater than) operator.
    */
-  public static class GreaterThanOpNode extends AbstractOperatorNode {
+  public final static class GreaterThanOpNode extends AbstractOperatorNode {
 
-    public GreaterThanOpNode() { super(Operator.GREATER_THAN); }
+    public GreaterThanOpNode(SourceLocation sourceLocation) {
+      super(Operator.GREATER_THAN, sourceLocation);
+    }
 
-    protected GreaterThanOpNode(GreaterThanOpNode orig) { super(orig); }
+    private GreaterThanOpNode(GreaterThanOpNode orig, CopyState copyState) {
+      super(orig, copyState);
+    }
 
     @Override public Kind getKind() { return Kind.GREATER_THAN_OP_NODE; }
 
-    @Override public GreaterThanOpNode clone() { return new GreaterThanOpNode(this); }
+    @Override public GreaterThanOpNode copy(CopyState copyState) {
+      return new GreaterThanOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the '&lt;=' (less than or equal) operator.
    */
-  public static class LessThanOrEqualOpNode extends AbstractOperatorNode {
+  public final static class LessThanOrEqualOpNode extends AbstractOperatorNode {
 
-    public LessThanOrEqualOpNode() { super(Operator.LESS_THAN_OR_EQUAL); }
+    public LessThanOrEqualOpNode(SourceLocation sourceLocation) {
+      super(Operator.LESS_THAN_OR_EQUAL, sourceLocation);
+    }
 
-    protected LessThanOrEqualOpNode(LessThanOrEqualOpNode orig) { super(orig); }
+    private LessThanOrEqualOpNode(LessThanOrEqualOpNode orig, CopyState copyState) {
+      super(orig, copyState);
+    }
 
     @Override public Kind getKind() { return Kind.LESS_THAN_OR_EQUAL_OP_NODE; }
 
-    @Override public LessThanOrEqualOpNode clone() { return new LessThanOrEqualOpNode(this); }
+    @Override public LessThanOrEqualOpNode copy(CopyState copyState) {
+      return new LessThanOrEqualOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the '&gt;=' (greater than or equal) operator.
    */
-  public static class GreaterThanOrEqualOpNode extends AbstractOperatorNode {
+  public final static class GreaterThanOrEqualOpNode extends AbstractOperatorNode {
 
-    public GreaterThanOrEqualOpNode() { super(Operator.GREATER_THAN_OR_EQUAL); }
+    public GreaterThanOrEqualOpNode(SourceLocation sourceLocation) {
+      super(Operator.GREATER_THAN_OR_EQUAL, sourceLocation);
+    }
 
-    protected GreaterThanOrEqualOpNode(GreaterThanOrEqualOpNode orig) { super(orig); }
+    private GreaterThanOrEqualOpNode(GreaterThanOrEqualOpNode orig, CopyState copyState) {
+      super(orig, copyState);
+    }
 
     @Override public Kind getKind() { return Kind.GREATER_THAN_OR_EQUAL_OP_NODE; }
 
-    @Override public GreaterThanOrEqualOpNode clone() { return new GreaterThanOrEqualOpNode(this); }
+    @Override public GreaterThanOrEqualOpNode copy(CopyState copyState) {
+      return new GreaterThanOrEqualOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the '==' (equal) operator.
    */
-  public static class EqualOpNode extends AbstractOperatorNode {
+  public final static class EqualOpNode extends AbstractOperatorNode {
 
-    public EqualOpNode() { super(Operator.EQUAL); }
+    public EqualOpNode(SourceLocation sourceLocation) {
+      super(Operator.EQUAL, sourceLocation);
+    }
 
-    protected EqualOpNode(EqualOpNode orig) { super(orig); }
+    private EqualOpNode(EqualOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.EQUAL_OP_NODE; }
 
-    @Override public EqualOpNode clone() { return new EqualOpNode(this); }
+    @Override public EqualOpNode copy(CopyState copyState) {
+      return new EqualOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the '!=' (not equal) operator.
    */
-  public static class NotEqualOpNode extends AbstractOperatorNode {
+  public final static class NotEqualOpNode extends AbstractOperatorNode {
 
-    public NotEqualOpNode() { super(Operator.NOT_EQUAL); }
+    public NotEqualOpNode(SourceLocation sourceLocation) {
+      super(Operator.NOT_EQUAL, sourceLocation);
+    }
 
-    protected NotEqualOpNode(NotEqualOpNode orig) { super(orig); }
+    private NotEqualOpNode(NotEqualOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.NOT_EQUAL_OP_NODE; }
 
-    @Override public NotEqualOpNode clone() { return new NotEqualOpNode(this); }
+    @Override public NotEqualOpNode copy(CopyState copyState) {
+      return new NotEqualOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the 'and' operator.
    */
-  public static class AndOpNode extends AbstractOperatorNode {
+  public final static class AndOpNode extends AbstractOperatorNode {
 
-    public AndOpNode() { super(Operator.AND); }
+    public AndOpNode(SourceLocation sourceLocation) {
+      super(Operator.AND, sourceLocation);
+    }
 
-    protected AndOpNode(AndOpNode orig) { super(orig); }
+    private AndOpNode(AndOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.AND_OP_NODE; }
 
-    @Override public AndOpNode clone() { return new AndOpNode(this); }
+    @Override public AndOpNode copy(CopyState copyState) { return new AndOpNode(this, copyState); }
   }
 
 
   /**
    * Node representing the 'or' operator.
    */
-  public static class OrOpNode extends AbstractOperatorNode {
+  public final static class OrOpNode extends AbstractOperatorNode {
 
-    public OrOpNode() { super(Operator.OR); }
+    public OrOpNode(SourceLocation sourceLocation) {
+      super(Operator.OR, sourceLocation);
+    }
 
-    protected OrOpNode(OrOpNode orig) { super(orig); }
+    private OrOpNode(OrOpNode orig, CopyState copyState) { super(orig, copyState); }
 
     @Override public Kind getKind() { return Kind.OR_OP_NODE; }
 
-    @Override public OrOpNode clone() { return new OrOpNode(this); }
+    @Override public OrOpNode copy(CopyState copyState) { return new OrOpNode(this, copyState); }
   }
 
 
   /**
    * Node representing the '?:' (null-coalescing) operator.
    */
-  public static class NullCoalescingOpNode extends AbstractOperatorNode {
+  public final static class NullCoalescingOpNode extends AbstractOperatorNode {
 
-    public NullCoalescingOpNode() { super(Operator.NULL_COALESCING); }
+    public NullCoalescingOpNode(SourceLocation sourceLocation) {
+      super(Operator.NULL_COALESCING, sourceLocation);
+    }
 
-    protected NullCoalescingOpNode(NullCoalescingOpNode orig) { super(orig); }
+    private NullCoalescingOpNode(NullCoalescingOpNode orig, CopyState copyState) {
+      super(orig, copyState);
+    }
+
+    public ExprNode getLeftChild() {
+      return getChild(0);
+    }
+
+    public ExprNode getRightChild() {
+      return getChild(1);
+    }
 
     @Override public Kind getKind() { return Kind.NULL_COALESCING_OP_NODE; }
 
-    @Override public NullCoalescingOpNode clone() { return new NullCoalescingOpNode(this); }
+    @Override public NullCoalescingOpNode copy(CopyState copyState) {
+      return new NullCoalescingOpNode(this, copyState);
+    }
   }
 
 
   /**
    * Node representing the ternary '? :' (conditional) operator.
    */
-  public static class ConditionalOpNode extends AbstractOperatorNode {
+  public final static class ConditionalOpNode extends AbstractOperatorNode {
 
-    public ConditionalOpNode() { super(Operator.CONDITIONAL); }
+    public ConditionalOpNode(SourceLocation sourceLocation) {
+      super(Operator.CONDITIONAL, sourceLocation);
+    }
 
-    protected ConditionalOpNode(ConditionalOpNode orig) { super(orig); }
+    private ConditionalOpNode(ConditionalOpNode orig, CopyState copyState) {
+      super(orig, copyState);
+    }
 
     @Override public Kind getKind() { return Kind.CONDITIONAL_OP_NODE; }
 
-    @Override public ConditionalOpNode clone() { return new ConditionalOpNode(this); }
+    @Override public ConditionalOpNode copy(CopyState copyState) {
+      return new ConditionalOpNode(this, copyState);
+    }
   }
 
 }

@@ -16,17 +16,16 @@
 
 package com.google.javascript.jscomp.testing;
 
+import com.google.debugging.sourcemap.proto.Mapping.OriginalMapping;
 import com.google.javascript.jscomp.Region;
 import com.google.javascript.jscomp.SourceExcerptProvider;
 import com.google.javascript.jscomp.SourceFile;
-
-
 
 /**
  * A simple source excerpt provider for testing.
  * @author nicksantos@google.com (Nick Santos)
  */
-public class SimpleSourceExcerptProvider implements SourceExcerptProvider {
+public final class SimpleSourceExcerptProvider implements SourceExcerptProvider {
 
   private final SourceFile sourceFile;
 
@@ -42,5 +41,11 @@ public class SimpleSourceExcerptProvider implements SourceExcerptProvider {
   @Override
   public Region getSourceRegion(String sourceName, int lineNumber) {
     return sourceFile.getRegion(lineNumber);
+  }
+
+  @Override
+  public OriginalMapping getSourceMapping(String sourceName, int lineNumber,
+                                          int columnNumber) {
+    return null;
   }
 }

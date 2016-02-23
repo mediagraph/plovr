@@ -5,6 +5,7 @@ syntax = "proto2";
 
 package jscomp;
 
+option java_generate_equals_and_hash = true;
 option java_package = "com.google.javascript.jscomp";
 option java_multiple_files = true;
 
@@ -17,10 +18,5 @@ message FunctionInformationMap {
     required int32 size = 6;
     required string name = 7;
     required string compiled_source = 8;
-  }
-
-  repeated group Module = 101 {
-    required string name = 102;
-    required string compiled_source = 103;
   }
 }

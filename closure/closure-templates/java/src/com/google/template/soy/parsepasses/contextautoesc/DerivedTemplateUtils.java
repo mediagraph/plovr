@@ -66,7 +66,6 @@ package com.google.template.soy.parsepasses.contextautoesc;
  * As shown above, the suffix is optional.  The suffix is omitted for any template whose context
  * is the default starting context: {@link Context#HTML_PCDATA pcdata}.
  *
- * @author Mike Samuel
  */
 public final class DerivedTemplateUtils {
 
@@ -93,13 +92,6 @@ public final class DerivedTemplateUtils {
   public static String getBaseName(String templateName) {
     int separatorIndex = templateName.lastIndexOf(CONTEXT_SEPARATOR);
     return separatorIndex < 0 ? templateName : templateName.substring(0, separatorIndex);
-  }
-
-  /**
-   * A derived name for a template derived from the given base template and the given start context.
-   */
-  public static String getQualifiedName(String baseName, Context startContext) {
-    return getBaseName(baseName) + getSuffix(startContext);
   }
 
   private DerivedTemplateUtils() {

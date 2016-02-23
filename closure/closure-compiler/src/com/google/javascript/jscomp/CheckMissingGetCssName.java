@@ -15,6 +15,7 @@
  */
 package com.google.javascript.jscomp;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.Node;
 
@@ -27,6 +28,7 @@ import java.util.regex.Pattern;
  *
  * @author mkretzschmar@google.com (Martin Kretzschmar)
  */
+@GwtIncompatible("java.util.regex")
 class CheckMissingGetCssName
     extends AbstractPostOrderCallback implements CompilerPass {
   private final AbstractCompiler compiler;
@@ -51,7 +53,7 @@ class CheckMissingGetCssName
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, root, this);
+    NodeTraversal.traverseEs6(compiler, root, this);
   }
 
   @Override
@@ -62,6 +64,14 @@ class CheckMissingGetCssName
       String s = n.getString();
 
       for (blacklist.reset(s); blacklist.find();) {
+        if (parent.isTemplateLit()) {
+          if (parent.getChildCount() > 1) {
+            // Ignore template string with substitutions
+            continue;
+          } else {
+            n = parent;
+          }
+        }
         if (insideGetCssNameCall(n)) {
           continue;
         }
@@ -78,11 +88,10 @@ class CheckMissingGetCssName
   }
 
   /** Returns whether the node is an argument of a goog.getCssName call. */
-  private boolean insideGetCssNameCall(Node n) {
+  private static boolean insideGetCssNameCall(Node n) {
     Node parent = n.getParent();
     return parent.isCall() &&
-        GET_CSS_NAME_FUNCTION.equals(
-            parent.getFirstChild().getQualifiedName());
+        parent.getFirstChild().matchesQualifiedName(GET_CSS_NAME_FUNCTION);
   }
 
   /**
@@ -90,7 +99,7 @@ class CheckMissingGetCssName
    * a unique id (the last part of the qualified name matches
    * GET_UNIQUE_ID_FUNCTION).
    */
-  private boolean insideGetUniqueIdCall(Node n) {
+  private static boolean insideGetUniqueIdCall(Node n) {
     Node parent = n.getParent();
     String name = parent.isCall() ?
         parent.getFirstChild().getQualifiedName() : null;
@@ -109,7 +118,7 @@ class CheckMissingGetCssName
       return qname != null && isIdName(qname);
     } else if (parent.isName()) {
       Node grandParent = parent.getParent();
-      if (grandParent != null && grandParent.isVar()) {
+      if (grandParent != null && NodeUtil.isNameDeclaration(grandParent)) {
         String name = parent.getString();
         return isIdName(name);
       } else {
@@ -120,7 +129,7 @@ class CheckMissingGetCssName
     }
   }
 
-  private boolean isIdName(String name) {
+  private static boolean isIdName(String name) {
     return name.endsWith("ID") || name.endsWith("ID_");
   }
 }

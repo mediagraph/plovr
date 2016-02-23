@@ -16,18 +16,18 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.basetree.MixinParentNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 
 import java.util.List;
-
 
 /**
  * Abstract implementation of a ParentSoyNode.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
 public abstract class AbstractParentSoyNode<N extends SoyNode> extends AbstractSoyNode
     implements ParentSoyNode<N> {
@@ -39,10 +39,11 @@ public abstract class AbstractParentSoyNode<N extends SoyNode> extends AbstractS
 
   /**
    * @param id The id for this node.
+   * @param sourceLocation The node's source location.
    */
-  public AbstractParentSoyNode(int id) {
-    super(id);
-    parentMixin = new MixinParentNode<N>(this);
+  public AbstractParentSoyNode(int id, SourceLocation sourceLocation) {
+    super(id, sourceLocation);
+    parentMixin = new MixinParentNode<>(this);
   }
 
 
@@ -50,18 +51,9 @@ public abstract class AbstractParentSoyNode<N extends SoyNode> extends AbstractS
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected AbstractParentSoyNode(AbstractParentSoyNode<N> orig) {
-    super(orig);
-    this.parentMixin = new MixinParentNode<N>(orig.parentMixin, this);
-  }
-
-
-  @Override public void setNeedsEnvFrameDuringInterp(Boolean needsEnvFrameDuringInterp) {
-    parentMixin.setNeedsEnvFrameDuringInterp(needsEnvFrameDuringInterp);
-  }
-
-  @Override public Boolean needsEnvFrameDuringInterp() {
-    return parentMixin.needsEnvFrameDuringInterp();
+  protected AbstractParentSoyNode(AbstractParentSoyNode<N> orig, CopyState copyState) {
+    super(orig, copyState);
+    this.parentMixin = new MixinParentNode<N>(orig.parentMixin, this, copyState);
   }
 
   @Override public int numChildren() {

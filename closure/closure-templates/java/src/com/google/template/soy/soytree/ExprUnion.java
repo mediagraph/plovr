@@ -17,12 +17,13 @@
 package com.google.template.soy.soytree;
 
 import com.google.common.collect.Lists;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 
 import java.util.List;
 
 import javax.annotation.Nullable;
-
 
 /**
  * Represents a Soy expression in either V2 or V1 syntax.
@@ -33,9 +34,8 @@ import javax.annotation.Nullable;
  * tree. If this expression is in V1 syntax, then {@code #getExpr()} will return null. In either
  * case, the expression text can be obtained from {@link #getExprText()}.
  *
- * @author Kai Huang
  */
-public class ExprUnion {
+public final class ExprUnion {
 
 
   /**
@@ -43,9 +43,9 @@ public class ExprUnion {
    * @param exprs The list of expression trees.
    * @return A new list of corresponding {@code ExprUnion}s.
    */
-  public static List<ExprUnion> createList(List<? extends ExprRootNode<?>> exprs) {
+  public static List<ExprUnion> createList(List<? extends ExprRootNode> exprs) {
     List<ExprUnion> exprUnions = Lists.newArrayListWithCapacity(exprs.size());
-    for (ExprRootNode<?> expr : exprs) {
+    for (ExprRootNode expr : exprs) {
       exprUnions.add(new ExprUnion(expr));
     }
     return exprUnions;
@@ -53,17 +53,24 @@ public class ExprUnion {
 
 
   /** The expression tree, or null if the expression is in V1 syntax. */
-  @Nullable private final ExprRootNode<?> expr;
+  @Nullable private final ExprRootNode expr;
 
   /** The V1 expression text, or null if the expression is in V2 syntax. */
   @Nullable private final String exprText;
-
 
   /**
    * Constructor for an instance that represents a V2 expression.
    * @param expr The expression tree.
    */
-  public ExprUnion(ExprRootNode<?> expr) {
+  public ExprUnion(ExprNode expr) {
+    this(new ExprRootNode(expr));
+  }
+
+  /**
+   * Constructor for an instance that represents a V2 expression.
+   * @param expr The expression tree.
+   */
+  public ExprUnion(ExprRootNode expr) {
     this.expr = expr;
     this.exprText = null;
   }
@@ -78,11 +85,15 @@ public class ExprUnion {
     this.exprText = exprTextV1;
   }
 
+  private ExprUnion(ExprUnion orig, CopyState copyState) {
+    this.expr = orig.expr != null ? orig.expr.copy(copyState) : null;
+    this.exprText = orig.exprText;
+  }
 
   /**
    * Returns the expression tree if the expression is in V2 syntax, else null.
    */
-  public ExprRootNode<?> getExpr() {
+  public ExprRootNode getExpr() {
     return expr;
   }
 
@@ -98,8 +109,8 @@ public class ExprUnion {
   /**
    * Returns a (deep) clone of this object.
    */
-  @Override public ExprUnion clone() {
-    return (expr != null) ? new ExprUnion(expr.clone()) : new ExprUnion(exprText);
+  public ExprUnion copy(CopyState copyState) {
+    return new ExprUnion(this, copyState);
   }
 
 }

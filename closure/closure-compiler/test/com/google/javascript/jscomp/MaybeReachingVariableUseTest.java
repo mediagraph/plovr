@@ -16,11 +16,14 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.Node;
+
 import junit.framework.TestCase;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -28,7 +31,7 @@ import java.util.List;
  * Tests for {@link MaybeReachingVariableUse}.
  *
  */
-public class MaybeReachingVariableUseTest extends TestCase {
+public final class MaybeReachingVariableUseTest extends TestCase {
 
   private MaybeReachingVariableUse useDef = null;
   private Node def = null;
@@ -58,7 +61,9 @@ public class MaybeReachingVariableUseTest extends TestCase {
 
   public void testLoops() {
     assertMatch("var x=0; while(a){ D:x=1 }; U:x");
-    assertMatch("var x=0; for(;;) { D:x=1 }; U:x");
+    assertNotMatch("var x=0; for(;;) { D:x=1 }; U:x");
+    assertNotMatch("var x=0; for(;true;) { D:x=1 }; U:x");
+    assertNotMatch("var x=0; while (true) { D:x=1 }; U:x");
 
     assertMatch("D:var x=1; while(a) { U:x }");
     assertMatch("D:var x=1; for(;;)  { U:x }");
@@ -121,7 +126,7 @@ public class MaybeReachingVariableUseTest extends TestCase {
   private void assertMatch(String src) {
     computeUseDef(src);
     Collection<Node> result = useDef.getUses("x", def);
-    assertTrue(result.size() == uses.size());
+    assertThat(result).hasSize(uses.size());
     assertTrue(result.containsAll(uses));
   }
 
@@ -130,7 +135,7 @@ public class MaybeReachingVariableUseTest extends TestCase {
    */
   private void assertNotMatch(String src) {
     computeUseDef(src);
-    assertFalse(useDef.getUses("x", def).contains(uses));
+    assertThat(useDef.getUses("x", def)).doesNotContain(uses);
   }
 
   /**
@@ -141,14 +146,14 @@ public class MaybeReachingVariableUseTest extends TestCase {
     src = "function _FUNCTION(param1, param2){" + src + "}";
     Node n = compiler.parseTestCode(src).getFirstChild();
     assertEquals(0, compiler.getErrorCount());
-    Scope scope = new SyntacticScopeCreator(compiler).createScope(n, null);
+    Scope scope = SyntacticScopeCreator.makeUntyped(compiler).createScope(n, null);
     ControlFlowAnalysis cfa = new ControlFlowAnalysis(compiler, false, true);
     cfa.process(null, n);
     ControlFlowGraph<Node> cfg = cfa.getCfg();
     useDef = new MaybeReachingVariableUse(cfg, scope, compiler);
     useDef.analyze();
     def = null;
-    uses = Lists.newArrayList();
+    uses = new ArrayList<>();
     new NodeTraversal(compiler,new LabelFinder()).traverse(n);
     assertNotNull("Code should have an instruction labeled D", def);
     assertFalse("Code should have an instruction labeled starting withing U",

@@ -17,55 +17,45 @@
 package com.google.template.soy.soytree;
 
 import com.google.common.collect.ImmutableList;
-import com.google.template.soy.base.SoySyntaxException;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.error.ErrorReporter.Checkpoint;
+import com.google.template.soy.error.ExplodingErrorReporter;
+import com.google.template.soy.error.SoyError;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 
 import java.util.List;
-
 
 /**
  * Node representing a 'let' statement with a value expression.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class LetValueNode extends LetNode implements ExprHolderNode {
+public final class LetValueNode extends LetNode implements ExprHolderNode {
 
+  public static final SoyError SELF_ENDING_WITHOUT_VALUE
+      = SoyError.of("A ''let'' tag should be self-ending (with a trailing ''/'') if and only if "
+          + "it also contains a value (invalid tag is '{'let {0} /'}').");
+  private static final SoyError KIND_ATTRIBUTE_NOT_ALLOWED_WITH_VALUE
+      = SoyError.of("The ''kind'' attribute is not allowed on self-ending ''let'' tags that "
+          + "contain a value (invalid tag is '{'let {0} /'}').");
 
-  /** The local variable name (without preceding '$'). */
-  private final String varName;
 
   /** The value expression that the variable is set to. */
-  private final ExprRootNode<?> valueExpr;
+  private final ExprRootNode valueExpr;
 
 
-  /**
-   * @param id The id for this node.
-   * @param isLocalVarNameUniquified Whether the local var name is already uniquified (e.g. by
-   *     appending node id).
-   * @param commandText The command text.
-   * @throws SoySyntaxException If a syntax error is found.
-   */
-  public LetValueNode(int id, boolean isLocalVarNameUniquified, String commandText) {
-    super(id, isLocalVarNameUniquified, commandText);
-
-    CommandTextParseResult parseResult = parseCommandTextHelper(commandText);
-    varName = parseResult.localVarName;
-    valueExpr = parseResult.valueExpr;
-
-    if (valueExpr == null) {
-      throw SoySyntaxException.createWithoutMetaInfo(
-          "A 'let' tag should be self-ending (with a trailing '/') if and only if it also" +
-              " contains a value (invalid tag is {let " + commandText + " /}).");
-    }
-
-    if (parseResult.contentKind != null) {
-      throw SoySyntaxException.createWithoutMetaInfo(
-          "The 'kind' attribute is not allowed on self-ending 'let' tags that " +
-              " contain a value (invalid tag is {let " + commandText + " /}).");
-    }
+  private LetValueNode(
+      int id,
+      SourceLocation sourceLocation,
+      String localVarName,
+      String commandText,
+      ExprRootNode valueExpr) {
+    super(id, sourceLocation, localVarName, commandText);
+    this.valueExpr = valueExpr;
   }
 
 
@@ -73,10 +63,9 @@ public class LetValueNode extends LetNode implements ExprHolderNode {
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected LetValueNode(LetValueNode orig) {
-    super(orig);
-    this.varName = orig.varName;
-    this.valueExpr = orig.valueExpr.clone();
+  private LetValueNode(LetValueNode orig, CopyState copyState) {
+    super(orig, copyState);
+    this.valueExpr = orig.valueExpr.copy(copyState);
   }
 
 
@@ -85,15 +74,18 @@ public class LetValueNode extends LetNode implements ExprHolderNode {
   }
 
 
-  @Override public String getVarName() {
-    return varName;
+  /**
+   * Return The local variable name (without preceding '$').
+   */
+  @Override public final String getVarName() {
+    return var.name();
   }
 
 
   /**
    * Returns the value expression that the variable is set to.
    */
-  public ExprRootNode<?> getValueExpr() {
+  public ExprRootNode getValueExpr() {
     return valueExpr;
   }
 
@@ -103,8 +95,57 @@ public class LetValueNode extends LetNode implements ExprHolderNode {
   }
 
 
-  @Override public SoyNode clone() {
-    return new LetValueNode(this);
+  @Override public LetValueNode copy(CopyState copyState) {
+    return new LetValueNode(this, copyState);
   }
 
+  /**
+   * Builder for {@link LetValueNode}.
+   */
+  public static final class Builder {
+    private static LetValueNode error() {
+      return new Builder(-1, "$error: 1", SourceLocation.UNKNOWN)
+          .build(ExplodingErrorReporter.get()); // guaranteed to be valid
+    }
+
+    private final int id;
+    private final String commandText;
+    private final SourceLocation sourceLocation;
+
+    /**
+     * @param id The node's id.
+     * @param commandText The node's command text.
+     * @param sourceLocation The node's source location.
+     */
+    public Builder(int id, String commandText, SourceLocation sourceLocation) {
+      this.id = id;
+      this.commandText = commandText;
+      this.sourceLocation = sourceLocation;
+    }
+
+    /**
+     * Returns a new {@link LetValueNode} built from the builder's state. If the builder's state
+     * is invalid, errors are reported to the {@code errorManager} and {Builder#error} is returned.
+     */
+    public LetValueNode build(ErrorReporter errorReporter) {
+      Checkpoint checkpoint = errorReporter.checkpoint();
+      CommandTextParseResult parseResult
+          = parseCommandTextHelper(commandText, errorReporter, sourceLocation);
+
+      if (parseResult.valueExpr == null) {
+        errorReporter.report(sourceLocation, SELF_ENDING_WITHOUT_VALUE, commandText);
+      }
+
+      if (parseResult.contentKind != null) {
+        errorReporter.report(sourceLocation, KIND_ATTRIBUTE_NOT_ALLOWED_WITH_VALUE, commandText);
+      }
+
+      if (errorReporter.errorsSince(checkpoint)) {
+        return error();
+      }
+
+      return new LetValueNode(
+          id, sourceLocation, parseResult.localVarName, commandText, parseResult.valueExpr);
+    }
+  }
 }

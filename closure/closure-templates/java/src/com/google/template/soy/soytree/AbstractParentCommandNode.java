@@ -16,20 +16,20 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.basetree.MixinParentNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 
 import java.util.List;
-
 
 /**
  * Abstract implementation of a ParentNode and CommandNode.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public abstract class AbstractParentCommandNode<N extends SoyNode>
+abstract class AbstractParentCommandNode<N extends SoyNode>
     extends AbstractCommandNode implements ParentSoyNode<N> {
 
 
@@ -39,12 +39,14 @@ public abstract class AbstractParentCommandNode<N extends SoyNode>
 
   /**
    * @param id The id for this node.
+   * @param sourceLocation The node's source location.
    * @param commandName The name of the Soy command.
    * @param commandText The command text, or empty string if none.
    */
-  public AbstractParentCommandNode(int id, String commandName, String commandText) {
-    super(id, commandName, commandText);
-    parentMixin = new MixinParentNode<N>(this);
+  public AbstractParentCommandNode(
+      int id, SourceLocation sourceLocation, String commandName, String commandText) {
+    super(id, sourceLocation, commandName, commandText);
+    parentMixin = new MixinParentNode<>(this);
   }
 
 
@@ -52,9 +54,9 @@ public abstract class AbstractParentCommandNode<N extends SoyNode>
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected AbstractParentCommandNode(AbstractParentCommandNode<N> orig) {
-    super(orig);
-    this.parentMixin = new MixinParentNode<N>(orig.parentMixin, this);
+  protected AbstractParentCommandNode(AbstractParentCommandNode<N> orig, CopyState copyState) {
+    super(orig, copyState);
+    this.parentMixin = new MixinParentNode<>(orig.parentMixin, this, copyState);
   }
 
 
@@ -64,15 +66,6 @@ public abstract class AbstractParentCommandNode<N extends SoyNode>
     appendSourceStringForChildren(sb);
     sb.append("{/").append(getCommandName()).append('}');
     return sb.toString();
-  }
-
-
-  @Override public void setNeedsEnvFrameDuringInterp(Boolean needsEnvFrameDuringInterp) {
-    parentMixin.setNeedsEnvFrameDuringInterp(needsEnvFrameDuringInterp);
-  }
-
-  @Override public Boolean needsEnvFrameDuringInterp() {
-    return parentMixin.needsEnvFrameDuringInterp();
   }
 
   @Override public int numChildren() {
@@ -138,5 +131,4 @@ public abstract class AbstractParentCommandNode<N extends SoyNode>
   @Override public String toTreeString(int indent) {
     return parentMixin.toTreeString(indent);
   }
-
 }

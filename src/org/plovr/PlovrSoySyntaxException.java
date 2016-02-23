@@ -14,7 +14,7 @@ import com.google.template.soy.base.SoySyntaxException;
  *
  * @author bolinfest@gmail.com (Michael Bolin)
  */
-public final class PlovrSoySyntaxException extends RuntimeException {
+public final class PlovrSoySyntaxException extends UncheckedCompilationException {
 
   private static final long serialVersionUID = 1L;
 
@@ -32,7 +32,7 @@ public final class PlovrSoySyntaxException extends RuntimeException {
     this.soySyntaxException = e;
     this.input = input;
 
-    String soyErrorMsg = soySyntaxException.getOriginalMessage();
+    String soyErrorMsg = soySyntaxException.getMessage();
     Matcher matcher = PlovrSoySyntaxException.LINE_AND_CHAR_NO.matcher(
         soyErrorMsg);
     if (matcher.find()) {
@@ -47,7 +47,12 @@ public final class PlovrSoySyntaxException extends RuntimeException {
   @Override
   public String getMessage() {
     String templateName = getTemplateName();
-    String soyErrorMsg = soySyntaxException.getOriginalMessage();
+    String soyErrorMsg = soySyntaxException.getMessage();
+    if (soyErrorMsg.startsWith("In file ")) {
+      // New-style soy errors already have the line data.
+      return soyErrorMsg.substring("In file ".length());
+    }
+
     String message;
     if (templateName == null) {
       message = soyErrorMsg;
@@ -83,5 +88,9 @@ public final class PlovrSoySyntaxException extends RuntimeException {
 
   public JsInput getInput() {
     return input;
+  }
+
+  @Override public CompilationException toCheckedException() {
+    return new CheckedSoySyntaxException(this);
   }
 }

@@ -16,18 +16,23 @@
 
 package com.google.javascript.jscomp;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Maps;
+import com.google.common.collect.ImmutableSet;
 import com.google.javascript.rhino.IR;
+import com.google.javascript.rhino.JSDocInfoBuilder;
 import com.google.javascript.rhino.Node;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * This code implements the instrumentation pass over the AST
  * (returned by JSCompiler).
+ * @author praveenk@google.com (Praveen Kumashi)
  *
  */
+@GwtIncompatible("FileInstrumentationData")
 class CoverageInstrumentationPass implements CompilerPass {
 
   final AbstractCompiler compiler;
@@ -52,7 +57,7 @@ class CoverageInstrumentationPass implements CompilerPass {
       CoverageReach reach) {
     this.compiler = compiler;
     this.reach = reach;
-    instrumentationData = Maps.newLinkedHashMap();
+    instrumentationData = new LinkedHashMap<>();
   }
 
   /**
@@ -83,7 +88,7 @@ class CoverageInstrumentationPass implements CompilerPass {
   @Override
   public void process(Node externsNode, Node rootNode) {
     if (rootNode.hasChildren()) {
-      NodeTraversal.traverse(compiler, rootNode,
+      NodeTraversal.traverseEs6(compiler, rootNode,
           new CoverageInstrumentationCallback(instrumentationData, reach));
 
       Node firstScript = rootNode.getFirstChild();
@@ -94,13 +99,16 @@ class CoverageInstrumentationPass implements CompilerPass {
     externsNode.addChildToBack(getInstrumentationExternsNode());
   }
 
-  private Node createConditionalVarDecl(String name) {
+  private static Node createConditionalVarDecl(String name) {
     Node var = IR.var(
         IR.name(name),
         IR.or(
             IR.name(name),
             IR.arraylit()));
-    var.addSuppression("duplicate");
+
+    JSDocInfoBuilder builder = new JSDocInfoBuilder(false);
+    builder.recordSuppressions(ImmutableSet.of("duplicate"));
+    var.setJSDocInfo(builder.build());
     return var;
   }
 }

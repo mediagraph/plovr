@@ -18,11 +18,12 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
+import com.google.javascript.jscomp.testing.BlackHoleErrorManager;
 import com.google.javascript.rhino.Node;
 
 import junit.framework.TestCase;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -46,7 +47,17 @@ abstract class IntegrationTestCase extends TestCase {
         + "/** @return {string} */ var widgetToken = function() {};\n"
         + "function alert(message) {}"
         + "function Object() {}"
-        + "Object.seal;"));
+        + "Object.seal;"
+        + "Object.defineProperties;"
+        + "/**\n"
+        + " * @param {...*} var_args\n"
+        + " * @constructor\n"
+        + " */\n"
+        + "function Function(var_args) {}\n"
+        + "/** @param {...*} var_args */\n"
+        + "Function.prototype.call = function (var_args) {};\n"
+        + "/** @constructor */\n"
+        + "function Arguments() {}"));
 
   protected List<SourceFile> externs = DEFAULT_EXTERNS;
 
@@ -92,7 +103,7 @@ abstract class IntegrationTestCase extends TestCase {
         0, compiler.getErrors().length + compiler.getWarnings().length);
 
     Node root = compiler.getRoot().getLastChild();
-    Node expectedRoot = parse(compiled, options, normalizeResults);
+    Node expectedRoot = parseExpectedCode(compiled, options, normalizeResults);
     String explanation = expectedRoot.checkTreeEquals(root);
     assertNull("\nExpected: " + compiler.toSource(expectedRoot) +
         "\nResult: " + compiler.toSource(root) +
@@ -137,7 +148,40 @@ abstract class IntegrationTestCase extends TestCase {
 
     if (compiled != null) {
       Node root = compiler.getRoot().getLastChild();
-      Node expectedRoot = parse(compiled, options, normalizeResults);
+      Node expectedRoot = parseExpectedCode(compiled, options, normalizeResults);
+      String explanation = expectedRoot.checkTreeEquals(root);
+      assertNull("\nExpected: " + compiler.toSource(expectedRoot) +
+          "\nResult: " + compiler.toSource(root) +
+          "\n" + explanation, explanation);
+    }
+  }
+
+  /**
+   * Asserts that there is at least one parse error.
+   */
+  protected void testParseError(CompilerOptions options, String original) {
+    testParseError(options, original, null);
+  }
+
+  /**
+   * Asserts that there is at least one parse error.
+   */
+  protected void testParseError(CompilerOptions options,
+      String original, String compiled) {
+    Compiler compiler = compile(options, original);
+    for (JSError error : compiler.getErrors()) {
+      if (!error.getType().equals(RhinoErrorReporter.PARSE_ERROR)) {
+        fail("Found unexpected error type " + error.getType() + ":\n" + error);
+      }
+    }
+    assertEquals("Unexpected warnings: " +
+        Joiner.on("\n").join(compiler.getWarnings()),
+        0, compiler.getWarnings().length);
+
+    if (compiled != null) {
+      Node root = compiler.getRoot().getLastChild();
+      Node expectedRoot = parseExpectedCode(
+          new String[] {compiled}, options, normalizeResults);
       String explanation = expectedRoot.checkTreeEquals(root);
       assertNull("\nExpected: " + compiler.toSource(expectedRoot) +
           "\nResult: " + compiler.toSource(root) +
@@ -156,7 +200,7 @@ abstract class IntegrationTestCase extends TestCase {
 
     if (compiled != null) {
       Node root = compiler.getRoot().getLastChild();
-      Node expectedRoot = parse(compiled, options, normalizeResults);
+      Node expectedRoot = parseExpectedCode(compiled, options, normalizeResults);
       String explanation = expectedRoot.checkTreeEquals(root);
       assertNull("\nExpected: " + compiler.toSource(expectedRoot) +
           "\nResult: " + compiler.toSource(root) +
@@ -170,10 +214,10 @@ abstract class IntegrationTestCase extends TestCase {
     if (actual != expected) {
       String msg = "";
       for (JSError err : compiler.getErrors()) {
-        msg += "Error:" + err.toString() + "\n";
+        msg += "Error:" + err + "\n";
       }
       for (JSError err : compiler.getWarnings()) {
-        msg += "Warning:" + err.toString() + "\n";
+        msg += "Warning:" + err + "\n";
       }
       assertEquals("Unexpected warnings or errors.\n " + msg,
         expected, actual);
@@ -186,20 +230,36 @@ abstract class IntegrationTestCase extends TestCase {
 
   protected Compiler compile(CompilerOptions options, String[] original) {
     Compiler compiler = lastCompiler = new Compiler();
-    List<SourceFile> inputs = Lists.newArrayList();
+    BlackHoleErrorManager.silence(compiler);
+    List<SourceFile> inputs = new ArrayList<>();
     for (int i = 0; i < original.length; i++) {
       inputs.add(SourceFile.fromCode("input" + i, original[i]));
     }
     compiler.compileModules(
-        externs, Lists.newArrayList(CompilerTestCase.createModuleChain(original)),
+        externs, ImmutableList.copyOf(CompilerTestCase.createModuleChain(original)),
         options);
     return compiler;
+  }
+
+  /**
+   * Parse the expected code to compare against.
+   * We want to run this with similar parsing options, but don't
+   * want to run the commonjs preprocessing passes (so that we can use this
+   * to test the commonjs code).
+   */
+  protected Node parseExpectedCode(
+      String[] original, CompilerOptions options, boolean normalize) {
+    boolean oldProcessCommonJsModules = options.processCommonJSModules;
+    options.processCommonJSModules = false;
+    Node expectedRoot = parse(original, options, normalize);
+    options.processCommonJSModules = oldProcessCommonJsModules;
+    return expectedRoot;
   }
 
   protected Node parse(
       String[] original, CompilerOptions options, boolean normalize) {
     Compiler compiler = new Compiler();
-    List<SourceFile> inputs = Lists.newArrayList();
+    List<SourceFile> inputs = new ArrayList<>();
     for (int i = 0; i < original.length; i++) {
       inputs.add(SourceFile.fromCode("input" + i, original[i]));
     }

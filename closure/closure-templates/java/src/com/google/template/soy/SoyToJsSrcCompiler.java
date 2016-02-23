@@ -19,10 +19,9 @@ package com.google.template.soy;
 import com.google.common.base.Function;
 import com.google.common.collect.Lists;
 import com.google.inject.Injector;
+import com.google.template.soy.MainClassUtils.Main;
 import com.google.template.soy.base.SoySyntaxException;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
-import com.google.template.soy.jssrc.SoyJsSrcOptions.CodeStyle;
-import com.google.template.soy.shared.SoyGeneralOptions.CssHandlingScheme;
 import com.google.template.soy.xliffmsgplugin.XliffMsgPluginModule;
 
 import org.kohsuke.args4j.Argument;
@@ -33,11 +32,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
-
 /**
  * Executable for compiling a set of Soy files into corresponding JS source files.
  *
- * @author Kai Huang
  */
 public final class SoyToJsSrcCompiler {
 
@@ -67,6 +64,11 @@ public final class SoyToJsSrcCompiler {
           handler = MainClassUtils.StringListOptionHandler.class)
   private List<String> deps = Lists.newArrayList();
 
+  @Option(name = "--indirectDeps",
+          usage = "Soy files required by deps, but which may not be used by srcs.",
+          handler = MainClassUtils.StringListOptionHandler.class)
+  private List<String> indirectDeps = Lists.newArrayList();
+
   @Option(name = "--allowExternalCalls",
           usage = "Whether to allow external calls. New projects should set this to false, and" +
                   " existing projects should remove existing external calls and then set this" +
@@ -88,14 +90,19 @@ public final class SoyToJsSrcCompiler {
                   " pt_br.")
   private String outputPathFormat = "";
 
+  @Option(name = "--syntaxVersion",
+          usage = "User-declared syntax version for the Soy file bundle (e.g. 2.0, 2.3).")
+  private String syntaxVersion = "";
+
   @Option(name = "--isUsingIjData",
           usage = "Whether to enable use of injected data (syntax is '$ij.*').",
           handler = MainClassUtils.BooleanOptionHandler.class)
   private boolean isUsingIjData = false;
 
+  // TODO(user): remove
   @Option(name = "--codeStyle",
           usage = "The code style to use when generating JS code ('stringbuilder' or 'concat').")
-  private CodeStyle codeStyle = CodeStyle.CONCAT;
+  private String codeStyle = "concat";
 
   @Option(name = "--shouldGenerateJsdoc",
           usage = "Whether we should generate JSDoc with type info for the Closure Compiler." +
@@ -179,14 +186,6 @@ public final class SoyToJsSrcCompiler {
                   " evaluating goog.i18n.bidi.IS_RTL. Do not combine with --bidiGlobalDir.")
   private boolean useGoogIsRtlForBidiGlobalDir = false;
 
-  @Option(name = "--cssHandlingScheme",
-          usage = "The scheme to use for handling 'css' commands. Specifying 'literal' will" +
-                  " cause command text to be inserted as literal text. Specifying 'reference'" +
-                  " will cause command text to be evaluated as a data or global reference." +
-                  " Specifying 'goog' will cause generation of calls goog.getCssName. This" +
-                  " option has no effect if the Soy code does not contain 'css' commands.")
-  private String cssHandlingScheme = "literal";
-
   @Option(name = "--compileTimeGlobalsFile",
           usage = "The path to a file containing the mappings for global names to be substituted" +
                   " at compile time. Each line of the file should have the format" +
@@ -210,6 +209,15 @@ public final class SoyToJsSrcCompiler {
                   " print directive plugins (comma-delimited list).")
   private String pluginModules = "";
 
+  @Option(name = "--supportContentSecurityPolicy",
+          usage = "Adds attributes so that browsers that support the Content Security Policy" +
+                  " (CSP) can distinguish inline scripts written by the template author from" +
+                  " any injected via XSS.  If true, the parameter {$ij.csp_nonce} should" +
+                  " contain an unpredictable per-page-render secret consisting of ASCII" +
+                  " alpha-numerics, plus (+), and solidus (/).  Off by default.",
+          handler = MainClassUtils.BooleanOptionHandler.class)
+  private boolean supportContentSecurityPolicy = false;
+
   /** The remaining arguments after parsing command-line flags. */
   @Argument
   private List<String> arguments = Lists.newArrayList();
@@ -222,15 +230,18 @@ public final class SoyToJsSrcCompiler {
    * @throws IOException If there are problems reading the input files or writing the output file.
    * @throws SoySyntaxException If a syntax error is detected.
    */
-  public static void main(String[] args) throws IOException, SoySyntaxException {
-    (new SoyToJsSrcCompiler()).execMain(args);
+  public static void main(final String[] args) throws IOException, SoySyntaxException {
+    MainClassUtils.run(new Main() {
+      @Override
+      public CompilationResult main() throws IOException {
+        return new SoyToJsSrcCompiler().execMain(args);
+      }
+    });
   }
-
 
   private SoyToJsSrcCompiler() {}
 
-
-  private void execMain(String[] args) throws IOException, SoySyntaxException {
+  private CompilationResult execMain(String[] args) throws IOException {
 
     final CmdLineParser cmdLineParser = MainClassUtils.parseFlags(this, args, USAGE_PREFIX);
 
@@ -241,31 +252,32 @@ public final class SoyToJsSrcCompiler {
       }
     };
 
-    if (outputPathFormat.length() == 0) {
-      MainClassUtils.exitWithError(
-          "Must provide the output path format.", cmdLineParser, USAGE_PREFIX);
+    if (outputPathFormat.isEmpty()) {
+      exitWithErrorFn.apply("Must provide the output path format.");
     }
 
     Injector injector = MainClassUtils.createInjector(messagePluginModule, pluginModules);
 
     // Create SoyFileSet.
     SoyFileSet.Builder sfsBuilder = injector.getInstance(SoyFileSet.Builder.class);
-    MainClassUtils.addSoyFilesToBuilder(sfsBuilder, inputPrefix, srcs, arguments, deps,
-        exitWithErrorFn);
+    MainClassUtils.addSoyFilesToBuilder(
+        sfsBuilder, inputPrefix, srcs, arguments, deps, indirectDeps, exitWithErrorFn);
+    if (!syntaxVersion.isEmpty()) {
+      if (syntaxVersion.equals("1.0")) {
+        exitWithErrorFn.apply("Declared syntax version must be 2.0 or greater.");
+      }
+      sfsBuilder.setDeclaredSyntaxVersionName(syntaxVersion);
+    }
     sfsBuilder.setAllowExternalCalls(allowExternalCalls);
-    String cssHandlingSchemeUc = cssHandlingScheme.toUpperCase();
-    sfsBuilder.setCssHandlingScheme(
-        cssHandlingSchemeUc.equals("GOOG") ?
-        CssHandlingScheme.BACKEND_SPECIFIC : CssHandlingScheme.valueOf(cssHandlingSchemeUc));
-    if (compileTimeGlobalsFile.length() > 0) {
+    if (!compileTimeGlobalsFile.isEmpty()) {
       sfsBuilder.setCompileTimeGlobals(new File(compileTimeGlobalsFile));
     }
+    sfsBuilder.setSupportContentSecurityPolicy(supportContentSecurityPolicy);
     SoyFileSet sfs = sfsBuilder.build();
 
     // Create SoyJsSrcOptions.
     SoyJsSrcOptions jsSrcOptions = new SoyJsSrcOptions();
     jsSrcOptions.setIsUsingIjData(isUsingIjData);
-    jsSrcOptions.setCodeStyle(codeStyle);
     jsSrcOptions.setShouldGenerateJsdoc(shouldGenerateJsdoc);
     jsSrcOptions.setShouldProvideRequireSoyNamespaces(shouldProvideRequireSoyNamespaces);
     jsSrcOptions.setShouldDeclareTopLevelNamespaces(shouldDeclareTopLevelNamespaces);
@@ -275,15 +287,11 @@ public final class SoyToJsSrcCompiler {
     jsSrcOptions.setUseGoogIsRtlForBidiGlobalDir(useGoogIsRtlForBidiGlobalDir);
 
     // Compile.
-    if (locales.size() == 0) {
-      // Not generating localized JS.
-      sfs.compileToJsSrcFiles(outputPathFormat, inputPrefix, jsSrcOptions, locales, null);
-
-    } else {
-      // Generating localized JS.
-      sfs.compileToJsSrcFiles(
-          outputPathFormat, inputPrefix, jsSrcOptions, locales, messageFilePathFormat);
-    }
+    boolean generateLocalizedJs = !locales.isEmpty();
+    return generateLocalizedJs
+        ? sfs.compileToJsSrcFiles(
+        outputPathFormat, inputPrefix, jsSrcOptions, locales, messageFilePathFormat)
+        : sfs.compileToJsSrcFiles(
+            outputPathFormat, inputPrefix, jsSrcOptions, locales, null);
   }
-
 }

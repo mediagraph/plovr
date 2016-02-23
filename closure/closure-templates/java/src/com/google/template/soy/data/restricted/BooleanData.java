@@ -16,24 +16,26 @@
 
 package com.google.template.soy.data.restricted;
 
-import javax.annotation.concurrent.Immutable;
+import com.google.common.primitives.Booleans;
 
+import javax.annotation.concurrent.Immutable;
 
 /**
  * Boolean data.
  *
  * <p> Important: This class may only be used in implementing plugins (e.g. functions, directives).
  *
- * @author Kai Huang
  */
 @Immutable
-public class BooleanData extends PrimitiveData {
+public final class BooleanData extends PrimitiveData {
 
 
   /** Static instance of BooleanData with value 'true'. */
+  @SuppressWarnings("deprecation")
   public static final BooleanData TRUE = new BooleanData(true);
 
   /** Static instance of BooleanData with value 'false'. */
+  @SuppressWarnings("deprecation")
   public static final BooleanData FALSE = new BooleanData(false);
 
 
@@ -78,6 +80,7 @@ public class BooleanData extends PrimitiveData {
   }
 
 
+  @Deprecated
   @Override public boolean toBoolean() {
     return value;
   }
@@ -88,9 +91,7 @@ public class BooleanData extends PrimitiveData {
            ((BooleanData) other).getValue() == value;
   }
 
-
   @Override public int hashCode() {
-    return (new Boolean(value)).hashCode();
+    return Booleans.hashCode(value);
   }
-
 }

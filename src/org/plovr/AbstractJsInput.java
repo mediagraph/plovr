@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.io.LineReader;
@@ -28,16 +29,30 @@ public abstract class AbstractJsInput implements JsInput {
 
   private final String name;
 
-  protected List<String> provides;
-
-  protected List<String> requires;
+  private String code;
+  private List<String> provides;
+  private List<String> requires;
 
   AbstractJsInput(String name) {
     this.name = name;
   }
 
+  /**
+   * If the underlying file changes, then remove all cached information.
+   */
+  synchronized void markDirty() {
+    provides = null;
+    requires = null;
+    code = null;
+  }
+
   @Override
-  public abstract String getCode();
+  public final String getCode() {
+    cacheExpensiveValuesIfNecessary();
+    return Preconditions.checkNotNull(code, getName());
+  }
+
+  protected abstract String generateCode();
 
   @Override
   public boolean supportsEtags() {
@@ -79,18 +94,14 @@ public abstract class AbstractJsInput implements JsInput {
 
   @Override
   public List<String> getProvides() {
-    if (provides == null || hasInputChanged()) {
-      processProvidesAndRequires();
-    }
-    return provides;
+    cacheExpensiveValuesIfNecessary();
+    return Preconditions.checkNotNull(provides, getName());
   }
 
   @Override
   public List<String> getRequires() {
-    if (requires == null || hasInputChanged()) {
-      processProvidesAndRequires();
-    }
-    return requires;
+    cacheExpensiveValuesIfNecessary();
+    return Preconditions.checkNotNull(requires, getName());
   }
 
   protected boolean hasInputChanged() {
@@ -107,10 +118,16 @@ public abstract class AbstractJsInput implements JsInput {
     throw new UnsupportedOperationException("This does not represent a Soy file");
   }
 
-  protected void processProvidesAndRequires() {
+  private synchronized void cacheExpensiveValuesIfNecessary() {
+    if (code != null && !hasInputChanged()) {
+      return;
+    }
+
+    code = generateCode();
+
     List<String> provides = Lists.newArrayList();
     List<String> requires = Lists.newArrayList();
-    StringLineReader lineReader = new StringLineReader(getCode());
+    StringLineReader lineReader = new StringLineReader(code);
     String line;
     while ((line = lineReader.readLine()) != null) {
       Matcher matcher = GOOG_PROVIDE_OR_REQUIRE.matcher(line);

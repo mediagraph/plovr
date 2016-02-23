@@ -16,8 +16,6 @@
 
 package com.google.template.soy.xliffmsgplugin;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.msgs.SoyMsgBundleHandler.OutputFileOptions;
 import com.google.template.soy.msgs.SoyMsgException;
@@ -25,11 +23,12 @@ import com.google.template.soy.msgs.SoyMsgPlugin;
 
 import org.xml.sax.SAXException;
 
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 /**
  * Message plugin for XLIFF format.
  *
- * @author Kai Huang
  */
 @Singleton
 public class XliffMsgPlugin implements SoyMsgPlugin {
@@ -48,11 +47,11 @@ public class XliffMsgPlugin implements SoyMsgPlugin {
   }
 
 
-  @Override public SoyMsgBundle parseTranslatedMsgsFile(String inputFileContent)
+  @Override public SoyMsgBundle parseTranslatedMsgsFile(String translatedMsgsFileContent)
       throws SoyMsgException {
 
     try {
-      return XliffParser.parseXliffTargetMsgs(inputFileContent);
+      return XliffParser.parseXliffTargetMsgs(translatedMsgsFileContent);
     } catch (SAXException e) {
       throw new SoyMsgException(e);
     }

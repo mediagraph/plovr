@@ -16,12 +16,12 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
@@ -31,15 +31,16 @@ import javax.annotation.Nullable;
  * Creates synthetic blocks to optimizations from moving code
  * past markers in the source.
  *
+ * @author johnlenz@google.com (John Lenz)
  */
 class CreateSyntheticBlocks implements CompilerPass {
-  static final DiagnosticType UNMATCHED_START_MARKER = DiagnosticType.warning(
+  static final DiagnosticType UNMATCHED_START_MARKER = DiagnosticType.error(
       "JSC_UNMATCHED_START_MARKER", "Unmatched {0}");
 
-  static final DiagnosticType UNMATCHED_END_MARKER = DiagnosticType.warning(
+  static final DiagnosticType UNMATCHED_END_MARKER = DiagnosticType.error(
       "JSC_UNMATCHED_END_MARKER", "Unmatched {1} - {0} not in the same block");
 
-  static final DiagnosticType INVALID_MARKER_USAGE = DiagnosticType.warning(
+  static final DiagnosticType INVALID_MARKER_USAGE = DiagnosticType.error(
       "JSC_INVALID_MARKER_USAGE", "Marker {0} can only be used in a simple "
            + "call expression");
 
@@ -54,11 +55,11 @@ class CreateSyntheticBlocks implements CompilerPass {
   /**
    * Markers can be nested.
    */
-  private final Deque<Node> markerStack = new ArrayDeque<Node>();
+  private final Deque<Node> markerStack = new ArrayDeque<>();
 
-  private final List<Marker> validMarkers = Lists.newArrayList();
+  private final List<Marker> validMarkers = new ArrayList<>();
 
-  private class Marker {
+  private static class Marker {
     final Node startMarker;
     final Node endMarker;
     public Marker(Node startMarker, Node endMarker) {
@@ -77,14 +78,12 @@ class CreateSyntheticBlocks implements CompilerPass {
   @Override
   public void process(Node externs, Node root) {
     // Find and validate the markers.
-    NodeTraversal.traverse(compiler, root, new Callback());
+    NodeTraversal.traverseEs6(compiler, root, new Callback());
 
     // Complain about any unmatched markers.
     for (Node node : markerStack) {
       compiler.report(
-          JSError.make(NodeUtil.getSourceName(node),
-          node,
-          UNMATCHED_START_MARKER, startMarkerName));
+          JSError.make(node, UNMATCHED_START_MARKER, startMarkerName));
     }
 
     // Add the block for the valid marker sets.
@@ -147,7 +146,7 @@ class CreateSyntheticBlocks implements CompilerPass {
    * Like Node.getNext, that null is used to signal the child before the
    * block.
    */
-  private Node childAfter(Node parent, @Nullable Node siblingBefore) {
+  private static Node childAfter(Node parent, @Nullable Node siblingBefore) {
     if (siblingBefore == null) {
       return parent.getFirstChild();
     } else {
@@ -158,7 +157,7 @@ class CreateSyntheticBlocks implements CompilerPass {
   /**
    * Like removeChildAfter, the firstChild is removed
    */
-  private Node removeChildAfter(Node parent, @Nullable Node siblingBefore) {
+  private static Node removeChildAfter(Node parent, @Nullable Node siblingBefore) {
     if (siblingBefore == null) {
       return parent.removeFirstChild();
     } else {

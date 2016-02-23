@@ -17,10 +17,10 @@
 package com.google.javascript.jscomp;
 
 /**
- * Unit test for {@ReorderConstantExpression}
+ * Unit test for {@link ReorderConstantExpression}
  *
  */
-public class ReorderConstantExpressionTest extends CompilerTestCase {
+public final class ReorderConstantExpressionTest extends CompilerTestCase {
 
   @Override
   protected CompilerPass getProcessor(final Compiler compiler) {
@@ -31,7 +31,6 @@ public class ReorderConstantExpressionTest extends CompilerTestCase {
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    super.enableLineNumberCheck(true);
     disableTypeCheck();
   }
 
@@ -119,5 +118,10 @@ public class ReorderConstantExpressionTest extends CompilerTestCase {
     testSame("0 " + op + " 1");
 
     testSame("a " + op + " b");
+  }
+
+  public void testReorderConstantDoesntAddParens() {
+    testSame("a % b * 4");
+    testSame("a * b * 4");
   }
 }

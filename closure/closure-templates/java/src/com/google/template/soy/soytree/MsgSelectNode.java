@@ -17,42 +17,81 @@
 package com.google.template.soy.soytree;
 
 import com.google.common.collect.ImmutableList;
-import com.google.template.soy.base.SoySyntaxException;
-import com.google.template.soy.exprparse.ExprParseUtils;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.exprparse.ExpressionParser;
+import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
+import com.google.template.soy.soytree.SoyNode.MsgSubstUnitNode;
 import com.google.template.soy.soytree.SoyNode.SplitLevelTopNode;
-import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 
 import java.util.List;
 
+import javax.annotation.Nullable;
 
 /**
  * Node representing a 'select' block.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
- * @author Mohamed Eldawy
  */
-public class MsgSelectNode extends AbstractParentCommandNode<CaseOrDefaultNode>
-    implements StandaloneNode, SplitLevelTopNode<CaseOrDefaultNode>, ExprHolderNode {
+public final class MsgSelectNode extends AbstractParentCommandNode<CaseOrDefaultNode>
+    implements MsgSubstUnitNode, SplitLevelTopNode<CaseOrDefaultNode>, ExprHolderNode {
 
 
-  /** The parsed expression. */
-  private final ExprRootNode<?> selectExpr;
+  /** Fallback base select var name. */
+  public static final String FALLBACK_BASE_SELECT_VAR_NAME = "STATUS";
+
+
+  /** The expression for the value to select on. */
+  private final ExprRootNode selectExpr;
+
+  /** The base select var name (what the translator sees). */
+  private final String baseSelectVarName;
+
+
+  private MsgSelectNode(
+      int id,
+      String commandText,
+      ExprRootNode selectExpr,
+      SourceLocation sourceLocation) {
+    super(id, sourceLocation, "select", commandText);
+
+    this.selectExpr = selectExpr;
+
+    // TODO: Maybe allow user to write 'phname' attribute in 'select' tag.
+    // Note: If we do add support for 'phname' for 'select', it would also be a good time to clean
+    // up how 'phname' is parsed for 'call'. Right now, it's parsed in TemplateParser.jj because
+    // 'print' needs it to be parsed in TemplateParser.jj (due to print directives possibly
+    // appearing between the expression and the 'phname' attribute). But for 'call', it should
+    // really be parsed in CallNode.
+    baseSelectVarName =
+        MsgSubstUnitBaseVarNameUtils.genNaiveBaseNameForExpr(
+            selectExpr.getRoot(), FALLBACK_BASE_SELECT_VAR_NAME);
+  }
 
 
   /**
    * @param id The id for this node.
-   * @param commandText The command text.
-   * @throws SoySyntaxException If a syntax error is found.
+   * @param sourceLocation The node's source location.
+   * @param selectExpr The expression for the value to select on.
+   * @param baseSelectVarName The base select var name to use (what the translator sees), or null if
+   *     it should be generated from the select expression.
    */
-  public MsgSelectNode(int id, String commandText) throws SoySyntaxException {
-    super(id, "select", commandText);
-
-    selectExpr = ExprParseUtils.parseExprElseThrowSoySyntaxException(
-        commandText, "Invalid data reference in 'select' command text \"" + commandText + "\".");
+  public MsgSelectNode(
+      int id,
+      SourceLocation sourceLocation,
+      ExprRootNode selectExpr,
+      @Nullable String baseSelectVarName) {
+    super(id, sourceLocation, "select",
+        selectExpr.toSourceString() +
+            ((baseSelectVarName != null) ? " phname=\"" + baseSelectVarName + "\"" : ""));
+    this.selectExpr = selectExpr;
+    this.baseSelectVarName = (baseSelectVarName != null) ? baseSelectVarName :
+        MsgSubstUnitBaseVarNameUtils.genNaiveBaseNameForExpr(
+            selectExpr.getRoot(), FALLBACK_BASE_SELECT_VAR_NAME);
   }
 
 
@@ -60,9 +99,10 @@ public class MsgSelectNode extends AbstractParentCommandNode<CaseOrDefaultNode>
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected MsgSelectNode(MsgSelectNode orig) {
-    super(orig);
-    this.selectExpr = orig.selectExpr.clone();
+  private MsgSelectNode(MsgSelectNode orig, CopyState copyState) {
+    super(orig, copyState);
+    this.selectExpr = orig.selectExpr.copy(copyState);
+    this.baseSelectVarName = orig.baseSelectVarName;
   }
 
 
@@ -71,15 +111,21 @@ public class MsgSelectNode extends AbstractParentCommandNode<CaseOrDefaultNode>
   }
 
 
-  /** Returns the expression text. */
-  public String getExprText() {
-    return selectExpr.toSourceString();
+  /** Returns the expression for the value to select on. */
+  public ExprRootNode getExpr() {
+    return selectExpr;
   }
 
-  
-  /** Returns the parsed expression. */
-  public ExprRootNode<?> getExpr() {
-    return selectExpr;
+
+  /** Returns the base select var name (what the translator sees). */
+  @Override public String getBaseVarName() {
+    return baseSelectVarName;
+  }
+
+
+  @Override public boolean shouldUseSameVarNameAs(MsgSubstUnitNode other) {
+    return (other instanceof MsgSelectNode) &&
+        this.getCommandText().equals(((MsgSelectNode) other).getCommandText());
   }
 
 
@@ -88,13 +134,43 @@ public class MsgSelectNode extends AbstractParentCommandNode<CaseOrDefaultNode>
   }
 
 
-  @Override public BlockNode getParent() {
-    return (BlockNode) super.getParent();
+  @Override public MsgBlockNode getParent() {
+    return (MsgBlockNode) super.getParent();
   }
 
 
-  @Override public MsgSelectNode clone() {
-    return new MsgSelectNode(this);
+  @Override public MsgSelectNode copy(CopyState copyState) {
+    return new MsgSelectNode(this, copyState);
+  }
+
+  /**
+   * Builder for {@link MsgSelectNode}.
+   */
+  public static final class Builder {
+    private final int id;
+    private final String commandText;
+    private final SourceLocation sourceLocation;
+
+    /**
+     * @param id The node's id.
+     * @param commandText The node's command text.
+     * @param sourceLocation The node's source location.
+     */
+    public Builder(int id, String commandText, SourceLocation sourceLocation) {
+      this.id = id;
+      this.commandText = commandText;
+      this.sourceLocation = sourceLocation;
+    }
+
+    /**
+     * Returns a new {@link MsgSelectNode} built from this builder's state, reporting syntax errors
+     * to the given {@link ErrorReporter}.
+     */
+    public MsgSelectNode build(ErrorReporter errorReporter) {
+      ExprNode selectExpr = new ExpressionParser(commandText, sourceLocation, errorReporter)
+          .parseExpression();
+      return new MsgSelectNode(id, commandText, new ExprRootNode(selectExpr), sourceLocation);
+    }
   }
 
 }

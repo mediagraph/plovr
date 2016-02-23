@@ -16,24 +16,26 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.ConditionalBlockNode;
-
 
 /**
  * Node representing the 'ifempty' portion of a 'foreach' statement.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class ForeachIfemptyNode extends AbstractBlockCommandNode implements ConditionalBlockNode {
+public final class ForeachIfemptyNode extends AbstractBlockCommandNode
+    implements ConditionalBlockNode {
 
 
   /**
    * @param id The id for this node.
+   * @param sourceLocation The node's source location.
    */
-  public ForeachIfemptyNode(int id) {
-    super(id, "ifempty", "");
+  public ForeachIfemptyNode(int id, SourceLocation sourceLocation) {
+    super(id, sourceLocation, "ifempty", "");
   }
 
 
@@ -41,8 +43,8 @@ public class ForeachIfemptyNode extends AbstractBlockCommandNode implements Cond
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected ForeachIfemptyNode(ForeachIfemptyNode orig) {
-    super(orig);
+  private ForeachIfemptyNode(ForeachIfemptyNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
 
 
@@ -65,8 +67,8 @@ public class ForeachIfemptyNode extends AbstractBlockCommandNode implements Cond
   }
 
 
-  @Override public ForeachIfemptyNode clone() {
-    return new ForeachIfemptyNode(this);
+  @Override public ForeachIfemptyNode copy(CopyState copyState) {
+    return new ForeachIfemptyNode(this, copyState);
   }
 
 }

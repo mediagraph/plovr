@@ -20,14 +20,13 @@ package com.google.javascript.jscomp;
  * Unit tests for {@link StatementFusion}.
  *
  */
-public class StatementFusionTest extends CompilerTestCase  {
+public final class StatementFusionTest extends CompilerTestCase  {
 
   private boolean favorsCommas = false;
 
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    enableLineNumberCheck(true);
     favorsCommas = false;
   }
 
@@ -83,8 +82,12 @@ public class StatementFusionTest extends CompilerTestCase  {
     fuse("a;b;c;switch(x){}", "switch(a,b,c,x){}");
   }
 
-  public void testFuseIntoForIn() {
+  public void testFuseIntoForIn1() {
     fuse("a;b;c;for(x in y){}", "for(x in a,b,c,y){}");
+  }
+
+  public void testFuseIntoForIn2() {
+    setExpectParseWarningsThisTest();
     fuseSame("a();for(var x = b() in y){}");
   }
 

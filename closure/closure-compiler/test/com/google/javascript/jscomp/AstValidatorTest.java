@@ -17,27 +17,27 @@
 package com.google.javascript.jscomp;
 
 import com.google.javascript.jscomp.AstValidator.ViolationHandler;
+import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.InputId;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.SimpleSourceFile;
 import com.google.javascript.rhino.Token;
-import com.google.javascript.rhino.jstype.SimpleSourceFile;
-
 
 /**
  * @author johnlenz@google.com (John Lenz)
  */
-public class AstValidatorTest extends CompilerTestCase {
+public final class AstValidatorTest extends CompilerTestCase {
 
   private boolean lastCheckWasValid = true;
 
   @Override
   protected CompilerPass getProcessor(Compiler compiler) {
-    return createValidator();
+    return createValidator(compiler);
   }
 
-  private AstValidator createValidator() {
+  private AstValidator createValidator(Compiler compiler) {
     lastCheckWasValid = true;
-    return new AstValidator(new ViolationHandler() {
+    return new AstValidator(compiler, new ViolationHandler() {
       @Override
       public void handleViolation(String message, Node n) {
         lastCheckWasValid = false;
@@ -60,10 +60,14 @@ public class AstValidatorTest extends CompilerTestCase {
 
   public void testForIn() {
     valid("for(var a in b);");
-    valid("for(var a = 1 in b);");
     valid("for(a in b);");
     valid("for(a in []);");
     valid("for(a in {});");
+  }
+
+  public void testQuestionableForIn() {
+    setExpectParseWarningsThisTest();
+    valid("for(var a = 1 in b);");
   }
 
   public void testDebugger() {
@@ -108,6 +112,13 @@ public class AstValidatorTest extends CompilerTestCase {
     expectValid(n, Check.STATEMENT);
   }
 
+  public void testInvalidNumberStatement() {
+    Node n = IR.number(1);
+    expectInvalid(n, Check.STATEMENT);
+    n = IR.exprResult(n);
+    expectValid(n, Check.STATEMENT);
+  }
+
   private void valid(String code) {
     testSame(code);
     assertTrue(lastCheckWasValid);
@@ -120,7 +131,7 @@ public class AstValidatorTest extends CompilerTestCase {
   }
 
   private boolean doCheck(Node n, Check level) {
-    AstValidator validator = createValidator();
+    AstValidator validator = createValidator(createCompiler());
     switch (level) {
       case SCRIPT:
         validator.validateScript(n);

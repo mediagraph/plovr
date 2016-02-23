@@ -16,31 +16,30 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.base.SoySyntaxException;
-import com.google.template.soy.shared.internal.SharedTestUtils;
 
 import junit.framework.TestCase;
-
 
 /**
  * Unit tests for SoySyntaxExceptionUtils.
  *
- * @author Kai Huang
  */
-public class SoySyntaxExceptionUtilsTest extends TestCase {
+public final class SoySyntaxExceptionUtilsTest extends TestCase {
 
 
   public void testCreateWithNode() {
 
     String testFileContent =
-        "{namespace boo}\n" +
+        "{namespace boo autoescape=\"deprecated-noncontextual\"}\n" +
         "\n" +
         "/** @param goo */\n" +
-        "{template name=\".foo\"}\n" +
+        "{template .foo}\n" +
         "  {$goo}\n" +
         "{/template}\n";
 
-    SoyFileSetNode soyTree = SharedTestUtils.parseSoyFiles(testFileContent);
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(testFileContent).parse().fileSet();
 
     String message = "Some error happened.";
     Throwable cause = new Throwable();
@@ -60,13 +59,14 @@ public class SoySyntaxExceptionUtilsTest extends TestCase {
     SoySyntaxException sse = SoySyntaxException.createCausedWithoutMetaInfo(message, cause);
 
     String testFileContent =
-        "{namespace boo}\n" +
+        "{namespace boo autoescape=\"deprecated-noncontextual\"}\n" +
         "\n" +
         "/** @param goo */\n" +
-        "{template name=\".foo\"}\n" +
+        "{template .foo}\n" +
         "  {$goo}\n" +
         "{/template}\n";
-    SoyFileSetNode soyTree = SharedTestUtils.parseSoyFiles(testFileContent);
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(testFileContent).parse().fileSet();
     PrintNode pn = (PrintNode) soyTree.getChild(0).getChild(0).getChild(0);
 
     // Before.

@@ -18,18 +18,17 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
+import com.google.common.collect.Iterables;
 import com.google.javascript.jscomp.NodeTraversal.AbstractShallowCallback;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.Reference;
 import com.google.javascript.jscomp.ReferenceCollectingCallback.ReferenceCollection;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.jscomp.VariableVisibilityAnalysis.VariableVisibility;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -206,13 +205,9 @@ import java.util.Set;
     // source across the environment could cause some later code that reads
     // a modified location to get an incorrect value.
 
-    if (!environmentModSet.intersectsLocation(sourceRefSet)
+    return !environmentModSet.intersectsLocation(sourceRefSet)
         && !environmentRefSet.intersectsLocation(sourceModSet)
-        && !environmentModSet.intersectsLocation(sourceModSet)) {
-      return true;
-    }
-
-    return false;
+        && !environmentModSet.intersectsLocation(sourceModSet);
   }
 
   /**
@@ -220,7 +215,7 @@ import java.util.Set;
    * not depend on its environment?
    * @param node node to check.
    */
-  private boolean isPure(Node node) {
+  private static boolean isPure(Node node) {
     // For now, we conservatively assume all code is not pure.
     // TODO(dcc): Implement isPure().
     return false;
@@ -335,26 +330,24 @@ import java.util.Set;
       return false;
     }
 
-    ArrayList<Node> siblings = Lists.newArrayList(parent.children());
+    ArrayList<Node> siblings = new ArrayList<>();
+    Iterables.addAll(siblings, parent.children());
 
     int indexOfChildInParent = siblings.indexOf(child);
 
-    switch(parent.getType()) {
+    switch (parent.getType()) {
       case Token.IF:
       case Token.HOOK:
         return (indexOfChildInParent == 1 || indexOfChildInParent == 2);
-      case Token.WHILE:
-      case Token.DO:
-        return true;
       case Token.FOR:
         // Only initializer is not control dependent
         return indexOfChildInParent != 0;
       case Token.SWITCH:
-          return indexOfChildInParent > 0;
+        return indexOfChildInParent > 0;
+      case Token.WHILE:
+      case Token.DO:
       case Token.AND:
-        return true;
       case Token.OR:
-        return true;
       case Token.FUNCTION:
         return true;
 
@@ -397,11 +390,11 @@ import java.util.Set;
   /**
    * Returns true if a node has a CALL or a NEW descendant.
    */
-  private boolean nodeHasCall(Node node) {
+  private static boolean nodeHasCall(Node node) {
     return NodeUtil.has(node, new Predicate<Node>() {
       @Override
       public boolean apply(Node input) {
-        return input.isCall() || input.isNew();
+        return input.isCall() || input.isNew() || input.isTaggedTemplateLit();
       }},
       NOT_FUNCTION_PREDICATE);
   }
@@ -642,7 +635,7 @@ import java.util.Set;
       return new LocationSummary(calculateModSet(node), calculateRefSet(node));
     }
 
-    EffectLocation calculateRefSet(Node node) {
+    static EffectLocation calculateRefSet(Node node) {
       if (NodeUtil.canBeSideEffected(node)) {
         return EVERY_LOCATION;
       } else {
@@ -650,7 +643,7 @@ import java.util.Set;
       }
     }
 
-    EffectLocation calculateModSet(Node node) {
+    static EffectLocation calculateModSet(Node node) {
       if (NodeUtil.mayHaveSideEffects(node)) {
         return EVERY_LOCATION;
       } else {
@@ -778,9 +771,9 @@ import java.util.Set;
      * and the heap) under {@code root}.
      */
     private Set<Node> findStorageLocationReferences(Node root) {
-      final Set<Node> references = Sets.newHashSet();
+      final Set<Node> references = new HashSet<>();
 
-      NodeTraversal.traverse(compiler, root, new AbstractShallowCallback() {
+      NodeTraversal.traverseEs6(compiler, root, new AbstractShallowCallback() {
         @Override
         public void visit(NodeTraversal t, Node n, Node parent) {
           if (NodeUtil.isGet(n)
@@ -958,13 +951,13 @@ import java.util.Set;
      * not be added to the map.
      */
     public void mapUses(Node root) {
-      referencesByNameNode = Maps.newHashMap();
+      referencesByNameNode = new HashMap<>();
 
       ReferenceCollectingCallback callback =
         new ReferenceCollectingCallback(compiler,
             ReferenceCollectingCallback.DO_NOTHING_BEHAVIOR);
 
-      NodeTraversal.traverse(compiler, root, callback);
+      NodeTraversal.traverseEs6(compiler, root, callback);
 
       for (Var variable : callback.getAllSymbols()) {
         ReferenceCollection referenceCollection =

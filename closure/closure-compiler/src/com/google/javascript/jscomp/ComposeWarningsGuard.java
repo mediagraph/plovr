@@ -17,11 +17,14 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.base.Joiner;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
+import com.google.common.collect.ImmutableList;
 
 import java.io.Serializable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 
@@ -41,7 +44,7 @@ public class ComposeWarningsGuard extends WarningsGuard {
   private static final long serialVersionUID = 1L;
 
   // The order that the guards were added in.
-  private final Map<WarningsGuard, Integer> orderOfAddition = Maps.newHashMap();
+  private final Map<WarningsGuard, Integer> orderOfAddition = new HashMap<>();
   private int numberOfAdds = 0;
 
   private final Comparator<WarningsGuard> guardComparator =
@@ -66,21 +69,20 @@ public class ComposeWarningsGuard extends WarningsGuard {
 
       // If the warnings guards have the same priority, the one that
       // was added last wins.
-      return orderOfAddition.get(b).intValue() -
-          orderOfAddition.get(a).intValue();
+      return orderOfAddition.get(b).intValue() - orderOfAddition.get(a).intValue();
     }
   }
 
   // The order that the guards are applied in.
   private final TreeSet<WarningsGuard> guards =
-      new TreeSet<WarningsGuard>(guardComparator);
+      new TreeSet<>(guardComparator);
 
   public ComposeWarningsGuard(List<WarningsGuard> guards) {
     addGuards(guards);
   }
 
   public ComposeWarningsGuard(WarningsGuard... guards) {
-    this(Lists.newArrayList(guards));
+    this(ImmutableList.copyOf(guards));
   }
 
   void addGuard(WarningsGuard guard) {
@@ -91,7 +93,7 @@ public class ComposeWarningsGuard extends WarningsGuard {
       }
 
       // Reverse the guards, so that they have the same order in the result.
-      addGuards(Lists.newArrayList(composeGuard.guards.descendingSet()));
+      addGuards(new ArrayList<>(composeGuard.guards.descendingSet()));
     } else {
       numberOfAdds++;
       orderOfAddition.put(guard, numberOfAdds);
@@ -158,12 +160,12 @@ public class ComposeWarningsGuard extends WarningsGuard {
   }
 
   List<WarningsGuard> getGuards() {
-    return Collections.unmodifiableList(Lists.newArrayList(guards));
+    return Collections.unmodifiableList(new ArrayList<>(guards));
   }
 
   /**
-   * Make a warnings guard that's the same as this one but with
-   * all escalating guards turned down.
+   * Make a warnings guard that's the same as this one but demotes all
+   * errors to warnings.
    */
   ComposeWarningsGuard makeEmergencyFailSafeGuard() {
     ComposeWarningsGuard safeGuard = new ComposeWarningsGuard();
@@ -172,6 +174,17 @@ public class ComposeWarningsGuard extends WarningsGuard {
       safeGuard.addGuard(guard);
     }
     return safeGuard;
+  }
+
+  @Override
+  protected ComposeWarningsGuard makeNonStrict() {
+    ComposeWarningsGuard nonStrictGuard = new ComposeWarningsGuard();
+    for (WarningsGuard guard : guards.descendingSet()) {
+      if (!(guard instanceof StrictWarningsGuard)) {
+        nonStrictGuard.addGuard(guard.makeNonStrict());
+      }
+    }
+    return nonStrictGuard;
   }
 
   @Override

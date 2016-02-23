@@ -16,10 +16,10 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.javascript.jscomp.graph.FixedPointGraphTraversal;
-import com.google.javascript.jscomp.graph.LinkedDirectedGraph;
-import com.google.javascript.jscomp.graph.FixedPointGraphTraversal.EdgeCallback;
 import com.google.javascript.jscomp.graph.DiGraph;
+import com.google.javascript.jscomp.graph.FixedPointGraphTraversal;
+import com.google.javascript.jscomp.graph.FixedPointGraphTraversal.EdgeCallback;
+import com.google.javascript.jscomp.graph.LinkedDirectedGraph;
 
 import junit.framework.TestCase;
 
@@ -27,7 +27,7 @@ import junit.framework.TestCase;
  * Test for FixedPointGraphTraversal.
  * @author nicksantos@google.com (Nick Santos)
  */
-public class FixedPointGraphTraversalTest extends TestCase {
+public final class FixedPointGraphTraversalTest extends TestCase {
 
   // The maximum value of a counter that counts as a "change"
   // to the state of the graph, for the purposes of fixed-point
@@ -51,7 +51,7 @@ public class FixedPointGraphTraversalTest extends TestCase {
   private Counter A, B, C, D, E;
   private CounterIncrementer callback = new CounterIncrementer();
   private FixedPointGraphTraversal<Counter, String> traversal =
-      new FixedPointGraphTraversal<Counter, String>(callback);
+      new FixedPointGraphTraversal<>(callback);
 
   // Create a new graph of the following form:
   //
@@ -159,7 +159,7 @@ public class FixedPointGraphTraversalTest extends TestCase {
     traversal.computeFixedPoint(graph, A);
 
     try {
-      traversal = new FixedPointGraphTraversal<Counter, String>(
+      traversal = new FixedPointGraphTraversal<>(
         new EdgeCallback<Counter, String>() {
           @Override
           public boolean traverseEdge(Counter source, String e, Counter dest) {

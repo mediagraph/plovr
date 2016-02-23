@@ -16,12 +16,13 @@
 
 package com.google.javascript.jscomp.deps;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.CharMatcher;
-import com.google.common.collect.Lists;
 import com.google.javascript.jscomp.ErrorManager;
 
 import java.io.Reader;
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -31,9 +32,9 @@ import java.util.regex.Pattern;
  * A parser that can extract dependency information from a .js file.
  *
  * @author agrieve@google.com (Andrew Grieve)
- * @author ielashi@google.com (Islam El-Ashi)
  */
-public class JsFunctionParser extends JsFileLineParser {
+@GwtIncompatible("java.util.regex")
+public final class JsFunctionParser extends JsFileLineParser {
 
   public static class SymbolInfo {
     public final String functionName;
@@ -80,7 +81,7 @@ public class JsFunctionParser extends JsFileLineParser {
    * @param functions Functions to parse.
    * @return A pattern to extract {@code functions}' arguments.
    */
-  private Pattern getPattern(Collection<String> functions) {
+  private static Pattern getPattern(Collection<String> functions) {
     StringBuilder sb = new StringBuilder("(?:^|;)\\s*(");
 
     for (String function : functions) {
@@ -110,7 +111,7 @@ public class JsFunctionParser extends JsFileLineParser {
 
   private Collection<SymbolInfo> parseReader(
       String filePath, Reader fileContents) {
-    symbols = Lists.newArrayList();
+    symbols = new ArrayList<>();
 
     logger.fine("Parsing Source: " + filePath);
     doParse(filePath, fileContents);
@@ -129,7 +130,7 @@ public class JsFunctionParser extends JsFileLineParser {
     // Quick sanity check that will catch most cases. This is a performance
     // win for people with a lot of JS.
     for (String function : functionsToParse) {
-      if (line.indexOf(function) != -1) {
+      if (line.contains(function)) {
         parseLine = true;
         break;
       }

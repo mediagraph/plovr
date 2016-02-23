@@ -16,25 +16,24 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.MsgBlockNode;
-
 
 /**
  * Node representing the 'default' block in a 'select' block.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
- * @author Mohamed Eldawy
  */
-public class MsgSelectDefaultNode extends CaseOrDefaultNode implements MsgBlockNode {
+public final class MsgSelectDefaultNode extends CaseOrDefaultNode implements MsgBlockNode {
 
 
   /**
    * @param id The id for this node.
    */
-  public MsgSelectDefaultNode(int id) {
-    super(id, "default", "");
+  public MsgSelectDefaultNode(int id, SourceLocation sourceLocation) {
+    super(id, sourceLocation, "default", "");
   }
 
 
@@ -42,8 +41,8 @@ public class MsgSelectDefaultNode extends CaseOrDefaultNode implements MsgBlockN
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected MsgSelectDefaultNode(MsgSelectDefaultNode orig) {
-    super(orig);
+  private MsgSelectDefaultNode(MsgSelectDefaultNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
 
 
@@ -52,8 +51,8 @@ public class MsgSelectDefaultNode extends CaseOrDefaultNode implements MsgBlockN
   }
 
 
-  @Override public MsgSelectDefaultNode clone() {
-    return new MsgSelectDefaultNode(this);
+  @Override public MsgSelectDefaultNode copy(CopyState copyState) {
+    return new MsgSelectDefaultNode(this, copyState);
   }
 
 }

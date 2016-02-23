@@ -22,7 +22,6 @@ import com.google.template.soy.soytree.PrintDirectiveNode;
 /**
  * Utilities for common operations related to core directives (|escapeHtml, |noAutoescape, |id).
  *
- * @author Kai Huang
  */
 public class CoreDirectiveUtils {
 
@@ -35,20 +34,6 @@ public class CoreDirectiveUtils {
     return directiveName.equals(IdDirective.NAME) ||
            directiveName.equals(NoAutoescapeDirective.NAME) ||
            directiveName.equals(EscapeHtmlDirective.NAME);
-  }
-
-
-  public static boolean isNoAutoescapeOrIdDirective(PrintDirectiveNode directiveNode) {
-
-    String directiveName = directiveNode.getName();
-    return directiveName.equals(IdDirective.NAME) ||
-           directiveName.equals(NoAutoescapeDirective.NAME);
-  }
-
-
-  public static boolean isEscapeHtmlDirective(PrintDirectiveNode directiveNode) {
-
-    return directiveNode.getName().equals(EscapeHtmlDirective.NAME);
   }
 
 }

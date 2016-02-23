@@ -21,17 +21,18 @@ package com.google.javascript.jscomp;
  *
  *
  */
-public class ShadowVariablesTest extends CompilerTestCase{
+public final class ShadowVariablesTest extends CompilerTestCase{
   // Use pseudo names to make test easier to read.
   private boolean generatePseudoNames = false;
   private RenameVars pass = null;
 
   @Override
   protected CompilerPass getProcessor(Compiler compiler) {
-      pass = new RenameVars(
-          compiler, "", false, false,
-          generatePseudoNames, true, null, null, null, null);
-      return  pass;
+    pass = new RenameVars(
+        compiler, "", false, false,
+        generatePseudoNames, true, false, null, null, null,
+        new DefaultNameGenerator());
+    return  pass;
   }
 
   @Override
@@ -256,8 +257,7 @@ public class ShadowVariablesTest extends CompilerTestCase{
     try {
       vm.getNewNameToOriginalNameMap();
     } catch (java.lang.IllegalArgumentException unexpected) {
-      fail("Invalid VariableMap generated: " +
-           vm.getOriginalNameToNewNameMap().toString());
+      fail("Invalid VariableMap generated: " + vm.getOriginalNameToNewNameMap());
     }
   }
 

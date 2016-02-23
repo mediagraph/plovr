@@ -16,33 +16,32 @@
 
 package com.google.template.soy.basicfunctions;
 
-import static com.google.template.soy.shared.restricted.SoyJavaRuntimeFunctionUtils.toSoyData;
-
 import com.google.common.collect.ImmutableSet;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
-import com.google.template.soy.data.SoyData;
+import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.restricted.FloatData;
 import com.google.template.soy.data.restricted.IntegerData;
-import com.google.template.soy.javasrc.restricted.JavaCodeUtils;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcFunction;
+import com.google.template.soy.data.restricted.NumberData;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
+import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuFunction;
 
 import java.util.List;
 import java.util.Set;
 
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 /**
  * Soy function that takes the min of two numbers.
  *
- * @author Kai Huang
  */
 @Singleton
 @SoyPureFunction
-class MinFunction extends SoyAbstractTofuFunction implements SoyJsSrcFunction, SoyJavaSrcFunction {
+public final class MinFunction implements SoyJavaFunction, SoyJsSrcFunction, SoyPySrcFunction {
 
 
   @Inject
@@ -53,23 +52,25 @@ class MinFunction extends SoyAbstractTofuFunction implements SoyJsSrcFunction, S
     return "min";
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(2);
   }
 
+  @Override public SoyValue computeForJava(List<SoyValue> args) {
+    SoyValue arg0 = args.get(0);
+    SoyValue arg1 = args.get(1);
 
-  @Override public SoyData compute(List<SoyData> args) {
-    SoyData arg0 = args.get(0);
-    SoyData arg1 = args.get(1);
-
-    if (arg0 instanceof IntegerData && arg1 instanceof IntegerData) {
-      return toSoyData(Math.min(arg0.integerValue(), arg1.integerValue()));
-    } else {
-      return toSoyData(Math.min(arg0.numberValue(), arg1.numberValue()));
-    }
+    return min(arg0, arg1);
   }
 
+  /** Returns the numeric minimum of the two arguments. */
+  public static NumberData min(SoyValue arg0, SoyValue arg1) {
+    if (arg0 instanceof IntegerData && arg1 instanceof IntegerData) {
+      return IntegerData.forValue(Math.min(arg0.longValue(), arg1.longValue()));
+    } else {
+      return FloatData.forValue(Math.min(arg0.numberValue(), arg1.numberValue()));
+    }
+  }
 
   @Override public JsExpr computeForJsSrc(List<JsExpr> args) {
     JsExpr arg0 = args.get(0);
@@ -79,13 +80,11 @@ class MinFunction extends SoyAbstractTofuFunction implements SoyJsSrcFunction, S
         "Math.min(" + arg0.getText() + ", " + arg1.getText() + ")", Integer.MAX_VALUE);
   }
 
+  @Override public PyExpr computeForPySrc(List<PyExpr> args) {
+    PyExpr arg0 = args.get(0);
+    PyExpr arg1 = args.get(1);
 
-  @Override public JavaExpr computeForJavaSrc(List<JavaExpr> args) {
-    JavaExpr arg0 = args.get(0);
-    JavaExpr arg1 = args.get(1);
-
-    return JavaCodeUtils.genJavaExprForNumberToNumberBinaryFunction(
-        "Math.min", "$$min", arg0, arg1);
+    PyFunctionExprBuilder fnBuilder = new PyFunctionExprBuilder("min");
+    return fnBuilder.addArg(arg0).addArg(arg1).asPyExpr();
   }
-
 }

@@ -21,12 +21,12 @@ package com.google.javascript.jscomp;
  *
  * @author nicksantos@google.com (Nick Santos)
  */
-public class CrossModuleMethodMotionTest extends CompilerTestCase {
+public final class CrossModuleMethodMotionTest extends CompilerTestCase {
   private static final String EXTERNS =
       "IFoo.prototype.bar; var mExtern; mExtern.bExtern; mExtern['cExtern'];";
 
   private boolean canMoveExterns = false;
-
+  private boolean noStubs = false;
   private final String STUB_DECLARATIONS =
       CrossModuleMethodMotion.STUB_DECLARATIONS;
 
@@ -37,13 +37,14 @@ public class CrossModuleMethodMotionTest extends CompilerTestCase {
   @Override
   protected CompilerPass getProcessor(Compiler compiler) {
     return new CrossModuleMethodMotion(
-        compiler, new CrossModuleMethodMotion.IdGenerator(), canMoveExterns);
+        compiler, new CrossModuleMethodMotion.IdGenerator(), canMoveExterns,
+        noStubs);
   }
 
   @Override
   public void setUp() {
-    super.enableLineNumberCheck(true);
     canMoveExterns = false;
+    noStubs = false;
   }
 
   public void testMovePrototypeMethod1() {
@@ -91,6 +92,61 @@ public class CrossModuleMethodMotionTest extends CompilerTestCase {
              "function Foo() {}" +
              "Foo.prototype = { get method() {} };",
              // Module 2
+             "(new Foo).method()"));
+  }
+
+  public void testMovePrototypeMethodWithoutStub() {
+    testSame(createModuleChain(
+        "function Foo() {}" +
+            "Foo.prototype.bar = function() {};",
+        // Module 2
+        "(new Foo).bar()"));
+
+    canMoveExterns = true;
+    noStubs = true;
+    test(createModuleChain(
+            "function Foo() {}" +
+                "Foo.prototype.bar = function() {};",
+            // Module 2
+            "(new Foo).bar()"),
+        new String[] {
+                "function Foo() {}",
+            // Module 2
+            "Foo.prototype.bar = function() {};" +
+                "(new Foo).bar()"
+        });
+  }
+  public void testNoMovePrototypeMethodRedeclaration1() {
+    // don't move if it can be overwritten when a sibling module is loaded.
+    testSame(createModuleStar(
+             "function Foo() {}" +
+             "Foo.prototype.method = function() {};",
+             // Module 2
+             "Foo.prototype.method = function() {};",
+             // Module 3
+             "(new Foo).method()"));
+  }
+
+  public void testNoMovePrototypeMethodRedeclaration2() {
+    // don't move if it can be overwritten when a later module is loaded.
+    testSame(createModuleChain(
+             "function Foo() {}" +
+             "Foo.prototype.method = function() {};",
+             // Module 2
+             "(new Foo).method()",
+             // Module 3
+             "Foo.prototype.method = function() {};"));
+  }
+
+  public void testNoMovePrototypeMethodRedeclaration3() {
+    // Note: it is reasonable to move the method in this case,
+    // but it is difficult enough to prove that we don't.
+    testSame(createModuleChain(
+             "function Foo() {}" +
+             "Foo.prototype.method = function() {};",
+             // Module 2
+             "Foo.prototype.method = function() {};",
+             // Module 3
              "(new Foo).method()"));
   }
 
@@ -231,13 +287,13 @@ public class CrossModuleMethodMotionTest extends CompilerTestCase {
          new String[] {
              STUB_DECLARATIONS +
              "function Foo() {}" +
-             "Foo.prototype.baz = JSCompiler_stubMethod(1);",
+             "Foo.prototype.baz = JSCompiler_stubMethod(0);",
              // Module 2
-             "Foo.prototype.callBaz = JSCompiler_stubMethod(0);",
+             "Foo.prototype.callBaz = JSCompiler_stubMethod(1);",
              // Module 3
-             "Foo.prototype.baz = JSCompiler_unstubMethod(1, function() {});" +
              "Foo.prototype.callBaz = " +
-             "  JSCompiler_unstubMethod(0, function() { this.baz(); });" +
+             "  JSCompiler_unstubMethod(1, function() { this.baz(); });" +
+             "Foo.prototype.baz = JSCompiler_unstubMethod(0, function() {});" +
              "(new Foo).callBaz()"
          });
   }

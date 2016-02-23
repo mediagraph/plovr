@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp.deps;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.javascript.jscomp.ErrorManager;
 import com.google.javascript.jscomp.PrintStreamErrorManager;
 
@@ -28,7 +30,7 @@ import java.io.StringReader;
  *
  * @author nicksantos@google.com (Nick Santos)
  */
-public class JsFileLineParserTest extends TestCase {
+public final class JsFileLineParserTest extends TestCase {
 
   TestParser parser;
   private ErrorManager errorManager;
@@ -81,7 +83,7 @@ public class JsFileLineParserTest extends TestCase {
 
   private void assertStrip(String expected, String input) {
     parser.doParse("file", new StringReader(input));
-    assertEquals(expected, parser.toString());
+    assertThat(parser.toString()).isEqualTo(expected);
   }
 
   private static class TestParser extends JsFileLineParser {

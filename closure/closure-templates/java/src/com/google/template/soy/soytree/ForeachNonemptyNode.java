@@ -16,28 +16,33 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.soytree.SoyNode.ConditionalBlockNode;
 import com.google.template.soy.soytree.SoyNode.LocalVarBlockNode;
 import com.google.template.soy.soytree.SoyNode.LoopNode;
-
+import com.google.template.soy.soytree.defn.LoopVar;
 
 /**
  * Node representing the loop portion of a 'foreach' statement.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class ForeachNonemptyNode extends AbstractBlockNode
+public final class ForeachNonemptyNode extends AbstractBlockNode
     implements ConditionalBlockNode, LoopNode, LocalVarBlockNode {
 
+  private final LoopVar var;
 
   /**
    * @param id The id for this node.
+   * @param varName The variable name of the loop index variable
+   * @param sourceLocation The node's source location.
    */
-  public ForeachNonemptyNode(int id) {
-    super(id);
+  public ForeachNonemptyNode(int id, String varName, SourceLocation sourceLocation) {
+    super(id, sourceLocation);
+    this.var = new LoopVar(varName, this, null);
   }
 
 
@@ -45,8 +50,9 @@ public class ForeachNonemptyNode extends AbstractBlockNode
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected ForeachNonemptyNode(ForeachNonemptyNode orig) {
-    super(orig);
+  private ForeachNonemptyNode(ForeachNonemptyNode orig, CopyState copyState) {
+    super(orig, copyState);
+    this.var = new LoopVar(orig.var, this);
   }
 
 
@@ -60,8 +66,13 @@ public class ForeachNonemptyNode extends AbstractBlockNode
   }
 
 
-  @Override public String getVarName() {
-    return getParent().getVarName();
+  @Override public final LoopVar getVar() {
+    return var;
+  }
+
+
+  @Override public final String getVarName() {
+    return var.name();
   }
 
 
@@ -72,7 +83,7 @@ public class ForeachNonemptyNode extends AbstractBlockNode
 
 
   /** Returns the expression we're iterating over. */
-  public ExprRootNode<?> getExpr() {
+  public ExprRootNode getExpr() {
     return getParent().getExpr();
   }
 
@@ -89,8 +100,8 @@ public class ForeachNonemptyNode extends AbstractBlockNode
   }
 
 
-  @Override public ForeachNonemptyNode clone() {
-    return new ForeachNonemptyNode(this);
+  @Override public ForeachNonemptyNode copy(CopyState copyState) {
+    return new ForeachNonemptyNode(this, copyState);
   }
 
 }

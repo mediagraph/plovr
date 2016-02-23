@@ -17,8 +17,11 @@
 package com.google.template.soy.soytree;
 
 import com.google.common.collect.ImmutableList;
-import com.google.template.soy.base.SoySyntaxException;
-import com.google.template.soy.exprparse.ExprParseUtils;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.exprparse.ExpressionParser;
+import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.SoyNode.SplitLevelTopNode;
@@ -27,32 +30,23 @@ import com.google.template.soy.soytree.SoyNode.StatementNode;
 
 import java.util.List;
 
-
 /**
  * Node representing a 'switch' statement.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class SwitchNode extends AbstractParentCommandNode<SoyNode>
+public final class SwitchNode extends AbstractParentCommandNode<SoyNode>
     implements StandaloneNode, SplitLevelTopNode<SoyNode>, StatementNode, ExprHolderNode {
 
 
   /** The parsed expression. */
-  private final ExprRootNode<?> expr;
+  private final ExprRootNode expr;
 
-
-  /**
-   * @param id The id for this node.
-   * @param commandText The command text.
-   * @throws SoySyntaxException If a syntax error is found.
-   */
-  public SwitchNode(int id, String commandText) throws SoySyntaxException {
-    super(id, "switch", commandText);
-
-    expr = ExprParseUtils.parseExprElseThrowSoySyntaxException(
-        commandText, "Invalid expression in 'switch' command text \"" + commandText + "\".");
+  private SwitchNode(
+      int id, String commandText, ExprRootNode expr, SourceLocation sourceLocation) {
+    super(id, sourceLocation, "switch", commandText);
+    this.expr = expr;
   }
 
 
@@ -60,9 +54,9 @@ public class SwitchNode extends AbstractParentCommandNode<SoyNode>
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected SwitchNode(SwitchNode orig) {
-    super(orig);
-    this.expr = orig.expr.clone();
+  private SwitchNode(SwitchNode orig, CopyState copyState) {
+    super(orig, copyState);
+    this.expr = orig.expr.copy(copyState);
   }
 
 
@@ -78,7 +72,7 @@ public class SwitchNode extends AbstractParentCommandNode<SoyNode>
 
 
   /** Returns the parsed expression, or null if the expression is not in V2 syntax. */
-  public ExprRootNode<?> getExpr() {
+  public ExprRootNode getExpr() {
     return expr;
   }
 
@@ -98,8 +92,37 @@ public class SwitchNode extends AbstractParentCommandNode<SoyNode>
   }
 
 
-  @Override public SwitchNode clone() {
-    return new SwitchNode(this);
+  @Override public SwitchNode copy(CopyState copyState) {
+    return new SwitchNode(this, copyState);
   }
 
+  /**
+   * Builder for {@link SwitchNode}.
+   */
+  public static final class Builder {
+    private final int id;
+    private final String commandText;
+    private final SourceLocation sourceLocation;
+
+    /**
+     * @param id The node's id.
+     * @param commandText The node's command text.
+     * @param sourceLocation The node's source location.
+     */
+    public Builder(int id, String commandText, SourceLocation sourceLocation) {
+      this.id = id;
+      this.commandText = commandText;
+      this.sourceLocation = sourceLocation;
+    }
+
+    /**
+     * Returns a new {@link SwitchNode} built from this builder's state, reporting syntax errors
+     * to the given {@link ErrorReporter}.
+     */
+    public SwitchNode build(ErrorReporter errorReporter) {
+      ExprNode expr = new ExpressionParser(commandText, sourceLocation, errorReporter)
+          .parseExpression();
+      return new SwitchNode(id, commandText, new ExprRootNode(expr), sourceLocation);
+    }
+  }
 }

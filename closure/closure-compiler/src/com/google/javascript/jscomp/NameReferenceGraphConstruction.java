@@ -22,7 +22,6 @@ import com.google.common.collect.Multimap;
 import com.google.javascript.jscomp.NameReferenceGraph.Name;
 import com.google.javascript.jscomp.NameReferenceGraph.Reference;
 import com.google.javascript.jscomp.NodeTraversal.ScopedCallback;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.jscomp.graph.GraphNode;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
@@ -61,7 +60,7 @@ class NameReferenceGraphConstruction implements CompilerPass {
   // The symbol for the current function so we can quickly create a reference
   // edge when we see a call: Example when this symbol is foo() and we see
   // bar(), we connect foo -> bar.
-  private final ArrayList<Name> currentFunctionStack = new ArrayList<Name>();
+  private final ArrayList<Name> currentFunctionStack = new ArrayList<>();
 
   NameReferenceGraphConstruction(AbstractCompiler compiler) {
     this.compiler = compiler;
@@ -74,16 +73,7 @@ class NameReferenceGraphConstruction implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
-    // Use the MemoizedScopeCreator instance from TypeCheck if available
-    // as FunctionTypeBuilder warns about existing types if TypedScopeCreator is
-    // ran a second time.
-    ScopeCreator scopeCreator = compiler.getTypedScopeCreator();
-    if (scopeCreator == null) {
-      // The TypedScopeCreator gives us correct handling of namespaces,
-      // while the default NodeTraversal only gives us a
-      // SyntacticScopeCreator.
-      scopeCreator = new MemoizedScopeCreator(new TypedScopeCreator(compiler));
-    }
+    ScopeCreator scopeCreator = new MemoizedScopeCreator(new TypedScopeCreator(compiler));
     NodeTraversal externsTraversal = new NodeTraversal(compiler,
         new Traversal(true), scopeCreator);
     NodeTraversal codeTraversal = new NodeTraversal(compiler,
@@ -408,8 +398,8 @@ class NameReferenceGraphConstruction implements CompilerPass {
         className = classType.getReferenceName();
       } else {
         // We'll guess it is a constructor even if it didn't have @constructor
-        classType = compiler.getTypeRegistry().getNativeFunctionType(
-            JSTypeNative.U2U_CONSTRUCTOR_TYPE);
+        classType = compiler.getTypeIRegistry()
+            .getNativeFunctionType(JSTypeNative.U2U_CONSTRUCTOR_TYPE);
         className = NodeUtil.getPrototypeClassName(qName).getQualifiedName();
       }
       // In case we haven't seen the function yet.
@@ -434,7 +424,7 @@ class NameReferenceGraphConstruction implements CompilerPass {
         // Don't count reference in extern as a use.
         return null;
       } else {
-        Reference reference = new Reference(n, parent);
+        Reference reference = new Reference(n);
         Name name = graph.defineNameIfNotExists(n.getQualifiedName(), isExtern);
         name.setType(getType(n));
         graph.connect(getNamedContainingFunction(), reference, name);
@@ -455,7 +445,7 @@ class NameReferenceGraphConstruction implements CompilerPass {
 
       if (!isExtern) {
         // Don't count reference in extern as a use.
-        Reference ref = new Reference(n, parent);
+        Reference ref = new Reference(n);
 
         FunctionType constructor = objType.getConstructor();
         if (constructor != null) {
@@ -514,8 +504,7 @@ class NameReferenceGraphConstruction implements CompilerPass {
         return;
       } else {
         Preconditions.checkArgument(n.isGetProp());
-        Reference ref = new Reference(n, parent);
-        ref.setUnknown(true);
+        Reference ref = new Reference(n);
         unknownNameUse.put(n.getLastChild().getString(),
             new NameUse(getNamedContainingFunction(), ref));
       }
@@ -572,8 +561,7 @@ class NameReferenceGraphConstruction implements CompilerPass {
       if (CONSERVATIVE) {
         throw new RuntimeException("Type system failed us :(");
       } else {
-        return compiler.getTypeRegistry().getNativeType(
-            JSTypeNative.UNKNOWN_TYPE);
+        return compiler.getTypeIRegistry().getNativeType(JSTypeNative.UNKNOWN_TYPE);
       }
     }
     // Null-ability does not affect the name graph's result.

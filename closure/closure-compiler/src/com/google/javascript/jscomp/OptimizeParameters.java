@@ -18,14 +18,13 @@ package com.google.javascript.jscomp;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 import com.google.javascript.jscomp.AbstractCompiler.LifeCycleStage;
 import com.google.javascript.jscomp.DefinitionsRemover.Definition;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -40,12 +39,13 @@ import java.util.List;
  *     </li>
  * </ul>
  *
+ * @author johnlenz@google.com (John Lenz)
  */
 class OptimizeParameters
     implements CompilerPass, OptimizeCalls.CallGraphCompilerPass {
 
   private final AbstractCompiler compiler;
-  private final List<Node> removedNodes = Lists.newArrayList();
+  private final List<Node> removedNodes = new ArrayList<>();
 
   OptimizeParameters(AbstractCompiler compiler) {
     this.compiler = compiler;
@@ -82,7 +82,7 @@ class OptimizeParameters
    * @return Whether the definitionSite represents a function whose call
    *      signature can be modified.
    */
-  private boolean canChangeSignature(
+  private static boolean canChangeSignature(
       DefinitionSite definitionSite, SimpleDefinitionFinder defFinder) {
     Definition definition = definitionSite.definition;
 
@@ -184,7 +184,7 @@ class OptimizeParameters
   private void tryEliminateConstantArgs(
       DefinitionSite defSite, SimpleDefinitionFinder defFinder) {
 
-    List<Parameter> parameters = Lists.newArrayList();
+    List<Parameter> parameters = new ArrayList<>();
     boolean firstCall = true;
 
     // Build a list of parameters to remove
@@ -234,7 +234,7 @@ class OptimizeParameters
    * Adjust the parameters to move based on the side-effects seen.
    * @return Whether there are any movable parameters.
    */
-  private boolean adjustForSideEffects(List<Parameter> parameters) {
+  private static boolean adjustForSideEffects(List<Parameter> parameters) {
     // If a parameter is moved, that has side-effect no parameters that
     // can be effected by side-effects can be left.
 
@@ -342,7 +342,7 @@ class OptimizeParameters
    * @return Whether the expression can be safely moved to another function
    *   in another scope.
    */
-  private boolean isMovableValue(Node n, Scope s) {
+  private static boolean isMovableValue(Node n, Scope s) {
     // Things that can change value or are inaccessible can't be moved, these
     // are "this", "arguments", local names, and functions that capture local
     // values.
@@ -502,7 +502,7 @@ class OptimizeParameters
       // Keep the args in the same order, do the last first.
       eliminateParamsAfter(fnNode, argNode.getNext());
       argNode.detachFromParent();
-      Node var = IR.var(argNode).copyInformationFrom(argNode);
+      Node var = IR.var(argNode).useSourceInfoIfMissingFrom(argNode);
       fnNode.getLastChild().addChildrenToFront(var);
       compiler.reportCodeChange();
       return true;
@@ -516,7 +516,7 @@ class OptimizeParameters
    * @param argIndex The index of the the argument to remove.
    * @return The Node of the argument removed.
    */
-  private Node eliminateFunctionParamAt(Node function, int argIndex) {
+  private static Node eliminateFunctionParamAt(Node function, int argIndex) {
     Preconditions.checkArgument(function.isFunction(),
         "Node must be a function.");
 

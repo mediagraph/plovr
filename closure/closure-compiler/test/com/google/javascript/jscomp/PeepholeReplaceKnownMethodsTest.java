@@ -16,21 +16,18 @@
 
 package com.google.javascript.jscomp;
 
+import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
+
 /**
  * Unit tests for {#link {@link PeepholeReplaceKnownMethods}
  *
  */
-public class PeepholeReplaceKnownMethodsTest extends CompilerTestCase {
+public final class PeepholeReplaceKnownMethodsTest extends CompilerTestCase {
 
   private boolean late = true;
 
   public PeepholeReplaceKnownMethodsTest() {
     super("");
-  }
-
-  @Override
-  public void setUp() {
-    enableLineNumberCheck(true);
   }
 
   @Override
@@ -256,7 +253,7 @@ public class PeepholeReplaceKnownMethodsTest extends CompilerTestCase {
 
   public void testFoldParseNumbers() {
     enableNormalize();
-    enableEcmaScript5(true);
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT5);
 
     fold("x = parseInt('123')", "x = 123");
     fold("x = parseInt(' 123')", "x = 123");
@@ -280,7 +277,6 @@ public class PeepholeReplaceKnownMethodsTest extends CompilerTestCase {
     fold("x = parseInt('015', 10)", "x = 15");
     fold("x = parseInt('1111', 2)", "x = 15");
     fold("x = parseInt('12', 13)", "x = 15");
-    fold("x = parseInt(021, 8)", "x = 15");
     fold("x = parseInt(15.99, 10)", "x = 15");
     fold("x = parseFloat('3.14')", "x = 3.14");
     fold("x = parseFloat(3.14)", "x = 3.14");
@@ -301,8 +297,15 @@ public class PeepholeReplaceKnownMethodsTest extends CompilerTestCase {
     foldSame("x = parseInt('0xa', 10)");
     foldSame("x = parseInt('')");
 
-    enableEcmaScript5(false);
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT3);
     foldSame("x = parseInt('08')");
+  }
+
+  public void testFoldParseOctalNumbers() {
+    enableNormalize();
+    setExpectParseWarningsThisTest();
+
+    fold("x = parseInt(021, 8)", "x = 15");
   }
 
   @Override

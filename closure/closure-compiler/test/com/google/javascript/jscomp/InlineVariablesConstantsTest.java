@@ -21,7 +21,7 @@ package com.google.javascript.jscomp;
  * Ensures that the InlineVariables pass in constants-only mode
  * is functionally equivalent to the old InlineVariablesConstants pass.
  */
-public class InlineVariablesConstantsTest extends CompilerTestCase {
+public final class InlineVariablesConstantsTest extends CompilerTestCase {
 
   private boolean inlineAllStrings = false;
 
@@ -49,9 +49,6 @@ public class InlineVariablesConstantsTest extends CompilerTestCase {
     test("var AA; if (false) AA=1; AA;", "if (false) 1; 1;");
     testSame("var AA; if (false) AA=1; else AA=2; AA;");
 
-    test("var AA;(function () {AA=1})()",
-         "(function () {1})()");
-
     // Make sure that nothing explodes if there are undeclared variables.
     testSame("var x = AA;");
 
@@ -75,9 +72,6 @@ public class InlineVariablesConstantsTest extends CompilerTestCase {
     test("/** @const */var a_a=10; a_a + a_a;", "10+10");
     test("/** @const */var aa=1;", "");
     test("/** @const */var aa; aa=1;", "1");
-    test("/** @const */var aa;(function () {aa=1})()", "(function () {1})()");
-    test("/** @const */var aa;(function () {aa=1})(); var z=aa",
-         "(function () {1})(); var z=1");
     testSame("/** @const */var aa;(function () {var y; aa=y})(); var z=aa");
 
     // Don't inline if it will make the output larger.
@@ -91,7 +85,7 @@ public class InlineVariablesConstantsTest extends CompilerTestCase {
     // Note that inlining conditionally defined constants can change the
     // run-time behavior of code (e.g. when y is true and x is false in the
     // example below). We inline them anyway because if the code author didn't
-    // want one inlined, he/she could define it as a non-const variable instead.
+    // want one inlined, they could define it as a non-const variable instead.
     test("if (x) var ABC = 2; if (y) f(ABC);",
          "if (x); if (y) f(2);");
   }

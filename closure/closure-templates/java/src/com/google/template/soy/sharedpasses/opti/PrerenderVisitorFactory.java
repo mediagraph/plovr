@@ -16,42 +16,34 @@
 
 package com.google.template.soy.sharedpasses.opti;
 
-import com.google.inject.Inject;
-import com.google.template.soy.data.SoyData;
-import com.google.template.soy.data.SoyMapData;
-import com.google.template.soy.shared.restricted.SoyJavaRuntimePrintDirective;
+import com.google.common.collect.ImmutableMap;
+import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.soytree.TemplateRegistry;
 
-import java.util.Deque;
-import java.util.Map;
-
-import javax.annotation.Nullable;
+import javax.inject.Inject;
 import javax.inject.Singleton;
-
 
 /**
  * A factory for creating PrerenderVisitor objects.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
 @Singleton
-public class PrerenderVisitorFactory {
+public final class PrerenderVisitorFactory {
 
 
-  /** Map of all SoyJavaRuntimePrintDirectives (name to directive). */
-  private final Map<String, SoyJavaRuntimePrintDirective> soyJavaRuntimeDirectivesMap;
+  /** Map of all SoyJavaPrintDirectives (name to directive). */
+  private final ImmutableMap<String, ? extends SoyJavaPrintDirective> soyJavaDirectivesMap;
 
   /** Factory for creating an instance of PreevalVisitor. */
   private final PreevalVisitorFactory preevalVisitorFactory;
 
-
   @Inject
   public PrerenderVisitorFactory(
-      Map<String, SoyJavaRuntimePrintDirective> soyJavaRuntimeDirectivesMap,
+      ImmutableMap<String, ? extends SoyJavaPrintDirective> soyJavaDirectivesMap,
       PreevalVisitorFactory preevalVisitorFactory) {
-    this.soyJavaRuntimeDirectivesMap = soyJavaRuntimeDirectivesMap;
+    this.soyJavaDirectivesMap = soyJavaDirectivesMap;
     this.preevalVisitorFactory = preevalVisitorFactory;
   }
 
@@ -61,16 +53,11 @@ public class PrerenderVisitorFactory {
    *
    * @param outputBuf The Appendable to append the output to.
    * @param templateRegistry A registry of all templates.
-   * @param data The current template data.
-   * @param env The current environment, or null if this is the initial call.
    * @return The newly created PrerenderVisitor instance.
    */
   public PrerenderVisitor create(
-      Appendable outputBuf, TemplateRegistry templateRegistry, SoyMapData data,
-      @Nullable Deque<Map<String, SoyData>> env) {
-
+      Appendable outputBuf, TemplateRegistry templateRegistry) {
     return new PrerenderVisitor(
-        soyJavaRuntimeDirectivesMap, preevalVisitorFactory, outputBuf, templateRegistry, data, env);
+        soyJavaDirectivesMap, preevalVisitorFactory, outputBuf, templateRegistry);
   }
-
 }

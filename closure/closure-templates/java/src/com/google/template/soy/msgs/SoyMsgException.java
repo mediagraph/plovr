@@ -20,7 +20,6 @@ package com.google.template.soy.msgs;
 /**
  * Exception for errors related to messages/translation.
  *
- * @author Kai Huang
  */
 public class SoyMsgException extends RuntimeException {
 
@@ -60,14 +59,6 @@ public class SoyMsgException extends RuntimeException {
    */
   public void setFileOrResourceName(String fileOrResourceName) {
     this.fileOrResourceName = fileOrResourceName;
-  }
-
-
-  /**
-   * Returns the name of the file or resource associated with this error.
-   */
-  public String getFileOrResourceName() {
-    return fileOrResourceName;
   }
 
 

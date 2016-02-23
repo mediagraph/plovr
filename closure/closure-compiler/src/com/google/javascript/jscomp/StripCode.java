@@ -16,13 +16,13 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.CodingConvention.SubclassRelationship;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
+import java.util.HashSet;
 import java.util.Set;
 
 import javax.annotation.Nullable;
@@ -51,7 +51,7 @@ class StripCode implements CompilerPass {
   private final Set<String> stripNameSuffixes;
   private final Set<String> stripTypePrefixes;
   private final Set<String> stripNamePrefixes;
-  private final Set<Scope.Var> varsToRemove;
+  private final Set<Var> varsToRemove;
 
   static final DiagnosticType STRIP_TYPE_INHERIT_ERROR = DiagnosticType.error(
       "JSC_STRIP_TYPE_INHERIT_ERROR",
@@ -73,11 +73,11 @@ class StripCode implements CompilerPass {
             Set<String> stripNamePrefixes) {
 
     this.compiler = compiler;
-    this.stripTypes = Sets.newHashSet(stripTypes);
-    this.stripNameSuffixes = Sets.newHashSet(stripNameSuffixes);
-    this.stripTypePrefixes = Sets.newHashSet(stripTypePrefixes);
-    this.stripNamePrefixes = Sets.newHashSet(stripNamePrefixes);
-    this.varsToRemove = Sets.newHashSet();
+    this.stripTypes = new HashSet<>(stripTypes);
+    this.stripNameSuffixes = new HashSet<>(stripNameSuffixes);
+    this.stripTypePrefixes = new HashSet<>(stripTypePrefixes);
+    this.stripNamePrefixes = new HashSet<>(stripNamePrefixes);
+    this.varsToRemove = new HashSet<>();
   }
 
   /**
@@ -89,7 +89,15 @@ class StripCode implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, root, new Strip());
+    // Always strip types that defined on a type that is being stripped, otherwise the
+    // resulting code will be invalid, so add "prefix" stripping that isn't a partial name.
+    // TODO(johnlenz): I'm not sure what the original intent of "type prefix" stripping was.
+    // Verify that we can always assume a complete namespace and simplify this logic.
+    for (String type : stripTypes) {
+      stripTypePrefixes.add(type + ".");
+    }
+
+    NodeTraversal.traverseEs6(compiler, root, new Strip());
   }
 
   // -------------------------------------------------------------------------
@@ -211,17 +219,17 @@ class StripCode implements CompilerPass {
         case Token.ASSIGN_MOD:
           if (isReferenceToRemovedVar(t, n)) {
             if (parent.getFirstChild() == n) {
-              Node gramps = parent.getParent();
-              if (gramps.isExprResult()) {
+              Node grandparent = parent.getParent();
+              if (grandparent.isExprResult()) {
                 // Remove the assignment.
-                Node greatGramps = gramps.getParent();
-                replaceWithEmpty(gramps, greatGramps);
+                Node greatGrandparent = grandparent.getParent();
+                replaceWithEmpty(grandparent, greatGrandparent);
                 compiler.reportCodeChange();
               } else {
                 // Substitute the r-value for the assignment.
                 Node rvalue = n.getNext();
                 parent.removeChild(rvalue);
-                gramps.replaceChild(parent, rvalue);
+                grandparent.replaceChild(parent, rvalue);
                 compiler.reportCodeChange();
               }
             } else {
@@ -300,8 +308,8 @@ class StripCode implements CompilerPass {
         // safe to eliminate assignment in complex expressions,
         // e.g. in ((x = 7) + 8)
         if (parent.isExprResult()) {
-          Node gramps = parent.getParent();
-          replaceWithEmpty(parent, gramps);
+          Node grandparent = parent.getParent();
+          replaceWithEmpty(parent, grandparent);
           compiler.reportCodeChange();
         } else {
           t.report(n, STRIP_ASSIGNMENT_ERROR, lvalue.getQualifiedName());
@@ -329,8 +337,8 @@ class StripCode implements CompilerPass {
       if (nameIncludesFieldNameToStrip(expression) ||
           qualifiedNameBeginsWithStripType(expression)) {
         if (parent.isExprResult()) {
-          Node gramps = parent.getParent();
-          replaceWithEmpty(parent, gramps);
+          Node grandparent = parent.getParent();
+          replaceWithEmpty(parent, grandparent);
         } else {
           replaceWithEmpty(n, parent);
         }
@@ -429,7 +437,7 @@ class StripCode implements CompilerPass {
     boolean qualifiedNameBeginsWithStripType(String name) {
       if (name != null) {
         for (String type : stripTypes) {
-          if (name.equals(type) || name.startsWith(type + ".")) {
+          if (name.equals(type)) {
             return true;
           }
         }
@@ -453,7 +461,7 @@ class StripCode implements CompilerPass {
     boolean isReferenceToRemovedVar(NodeTraversal t, Node n) {
       String name = n.getString();
       Scope scope = t.getScope();
-      Scope.Var var = scope.getVar(name);
+      Var var = scope.getVar(name);
       return varsToRemove.contains(var);
     }
 
@@ -488,8 +496,8 @@ class StripCode implements CompilerPass {
       }
 
       if (parent != null && parent.isName()) {
-        Node gramps = parent.getParent();
-        if (gramps != null && gramps.isVar()) {
+        Node grandparent = parent.getParent();
+        if (grandparent != null && grandparent.isVar()) {
           // The call's return value is being used to initialize a newly
           // declared variable. We should leave the call intact for now.
           // That way, when the traversal reaches the variable declaration,
@@ -563,7 +571,7 @@ class StripCode implements CompilerPass {
         return true;
       }
 
-      if ((name.length() == 0) || Character.isUpperCase(name.charAt(0))) {
+      if (name.isEmpty() || Character.isUpperCase(name.charAt(0))) {
         return false;
       }
 

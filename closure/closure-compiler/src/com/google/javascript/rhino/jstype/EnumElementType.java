@@ -64,12 +64,19 @@ public class EnumElementType extends ObjectType {
 
   private final String name;
 
+  private final EnumType enumType;
+
   EnumElementType(JSTypeRegistry registry, JSType elementType,
-      String name) {
+      String name, EnumType enumType) {
     super(registry);
     this.primitiveType = elementType;
     this.primitiveObjectType = elementType.toObjectType();
     this.name = name;
+    this.enumType = enumType;
+  }
+
+  public EnumType getEnumType() {
+    return enumType;
   }
 
   @Override public PropertyMap getPropertyMap() {
@@ -146,7 +153,7 @@ public class EnumElementType extends ObjectType {
   String toStringHelper(boolean forAnnotations) {
     return forAnnotations ?
         primitiveType.toString() :
-        (getReferenceName() + ".<" + primitiveType + ">");
+        (getReferenceName() + "<" + primitiveType + ">");
   }
 
   @Override
@@ -161,10 +168,16 @@ public class EnumElementType extends ObjectType {
 
   @Override
   public boolean isSubtype(JSType that) {
-    if (JSType.isSubtypeHelper(this, that)) {
+    return isSubtype(that, ImplCache.create());
+  }
+
+  @Override
+  protected boolean isSubtype(JSType that,
+      ImplCache implicitImplCache) {
+    if (JSType.isSubtypeHelper(this, that, implicitImplCache)) {
       return true;
     } else {
-      return primitiveType.isSubtype(that);
+      return primitiveType.isSubtype(that, implicitImplCache);
     }
   }
 
@@ -233,12 +246,12 @@ public class EnumElementType extends ObjectType {
     if (meetPrimitive.isEmptyType()) {
       return null;
     } else {
-      return new EnumElementType(registry, meetPrimitive, name);
+      return new EnumElementType(registry, meetPrimitive, name, getEnumType());
     }
   }
 
   @Override
-  JSType resolveInternal(ErrorReporter t, StaticScope<JSType> scope) {
+  JSType resolveInternal(ErrorReporter t, StaticTypedScope<JSType> scope) {
     primitiveType = primitiveType.resolve(t, scope);
     primitiveObjectType = ObjectType.cast(primitiveType);
     return this;

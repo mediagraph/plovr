@@ -16,12 +16,14 @@
 
 package com.google.template.soy.basicfunctions;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
-import com.google.template.soy.data.SoyData;
+import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.restricted.IntegerData;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
 import com.google.template.soy.jssrc.restricted.JsExpr;
+import com.google.template.soy.pysrc.restricted.PyExpr;
 
 import junit.framework.TestCase;
 
@@ -31,23 +33,20 @@ import java.util.Set;
 /**
  * Unit tests for RandomIntFunction.
  *
- * @author Kai Huang
  */
 public class RandomIntFunctionTest extends TestCase {
 
-
-  public void testComputeForTofu() {
-
+  public void testComputeForJava() {
     RandomIntFunction randomIntFunction = new RandomIntFunction();
 
-    SoyData arg = IntegerData.ONE;
+    SoyValue arg = IntegerData.ONE;
     assertEquals(IntegerData.ZERO,
-                 randomIntFunction.computeForTofu(ImmutableList.of(arg)));
+                 randomIntFunction.computeForJava(ImmutableList.of(arg)));
 
     arg = IntegerData.forValue(3);
     Set<Integer> seenResults = Sets.newHashSetWithExpectedSize(3);
     for (int i = 0; i < 100; i++) {
-      int result = randomIntFunction.computeForTofu(ImmutableList.of(arg)).integerValue();
+      int result = randomIntFunction.computeForJava(ImmutableList.of(arg)).integerValue();
       assertTrue(0 <= result && result <= 2);
       seenResults.add(result);
       if (seenResults.size() == 3) {
@@ -57,26 +56,17 @@ public class RandomIntFunctionTest extends TestCase {
     assertEquals(3, seenResults.size());
   }
 
-
   public void testComputeForJsSrc() {
-
     RandomIntFunction randomIntFunction = new RandomIntFunction();
     JsExpr argExpr = new JsExpr("JS_CODE", Integer.MAX_VALUE);
     assertEquals(new JsExpr("Math.floor(Math.random() * JS_CODE)", Integer.MAX_VALUE),
                  randomIntFunction.computeForJsSrc(ImmutableList.of(argExpr)));
   }
 
-
-  public void testComputeForJavaSrc() {
-
+  public void testComputeForPySrc() {
     RandomIntFunction randomIntFunction = new RandomIntFunction();
-    JavaExpr argExpr = new JavaExpr("JAVA_CODE", SoyData.class, Integer.MAX_VALUE);
-    assertEquals(
-        new JavaExpr(
-            "com.google.template.soy.data.restricted.IntegerData.forValue(" +
-                "(int) Math.floor(Math.random() * JAVA_CODE.integerValue()))",
-            IntegerData.class, Integer.MAX_VALUE),
-        randomIntFunction.computeForJavaSrc(ImmutableList.of(argExpr)));
+    PyExpr argExpr = new PyExpr("upper", Integer.MAX_VALUE);
+    assertThat(randomIntFunction.computeForPySrc(ImmutableList.of(argExpr)))
+        .isEqualTo(new PyExpr("random.randint(0, upper - 1)", Integer.MAX_VALUE));
   }
-
 }

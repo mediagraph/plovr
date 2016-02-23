@@ -59,9 +59,9 @@ public class TemplateTypeMapReplacer extends ModificationVisitor {
 
   public TemplateTypeMapReplacer(
       JSTypeRegistry registry, TemplateTypeMap replacements) {
-    super(registry);
+    super(registry, false);
     this.replacements = replacements;
-    this.visitedTypes = new ArrayDeque<TemplateType>();
+    this.visitedTypes = new ArrayDeque<>();
   }
 
   @Override
@@ -73,7 +73,7 @@ public class TemplateTypeMapReplacer extends ModificationVisitor {
         // for the TemplateType, return the TemplateType type itself.
         return type;
       } else {
-        JSType replacement = replacements.getTemplateType(type);
+        JSType replacement = replacements.getUnresolvedOriginalTemplateType(type);
 
         visitedTypes.push(type);
         JSType visitedReplacement = replacement.visit(this);

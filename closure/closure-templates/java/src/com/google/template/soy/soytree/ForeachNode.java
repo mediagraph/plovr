@@ -17,8 +17,8 @@
 package com.google.template.soy.soytree;
 
 import com.google.common.collect.ImmutableList;
-import com.google.template.soy.base.SoySyntaxException;
-import com.google.template.soy.exprparse.ExprParseUtils;
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.SoyNode.SplitLevelTopNode;
@@ -26,9 +26,6 @@ import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 import com.google.template.soy.soytree.SoyNode.StatementNode;
 
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 
 /**
  * Node representing a 'foreach' statement. Should always contain a ForeachNonemptyNode as the
@@ -36,45 +33,23 @@ import java.util.regex.Pattern;
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class ForeachNode extends AbstractParentCommandNode<SoyNode>
+public final class ForeachNode extends AbstractParentCommandNode<SoyNode>
     implements StandaloneNode, SplitLevelTopNode<SoyNode>, StatementNode, ExprHolderNode {
 
-
-  /** Regex pattern for the command text. */
-  // 2 capturing groups: local var name, expression
-  private static final Pattern COMMAND_TEXT_PATTERN =
-      Pattern.compile("( [$] \\w+ ) \\s+ in \\s+ (\\S .*)", Pattern.COMMENTS | Pattern.DOTALL);
-
-
-  /** The loop variable name. */
-  private final String varName;
-
   /** The parsed expression for the list that we're iterating over. */
-  private final ExprRootNode<?> expr;
-
+  private final ExprRootNode expr;
 
   /**
    * @param id The id for this node.
+   * @param expr The loop collection expression
    * @param commandText The command text.
-   * @throws SoySyntaxException If a syntax error is found.
+   * @param sourceLocation The node's source location.
    */
-  public ForeachNode(int id, String commandText) throws SoySyntaxException {
-    super(id, "foreach", commandText);
-
-    Matcher matcher = COMMAND_TEXT_PATTERN.matcher(commandText);
-    if (!matcher.matches()) {
-      throw SoySyntaxException.createWithoutMetaInfo(
-          "Invalid 'foreach' command text \"" + commandText + "\".");
-    }
-
-    varName = ExprParseUtils.parseVarNameElseThrowSoySyntaxException(
-        matcher.group(1),
-        "Invalid variable name in 'foreach' command text \"" + commandText + "\".");
-
-    expr = ExprParseUtils.parseExprElseThrowSoySyntaxException(
-        matcher.group(2), "Invalid expression in 'foreach' command text \"" + commandText + "\".");
+  public ForeachNode(
+      int id, ExprRootNode expr, String commandText, SourceLocation sourceLocation) {
+    super(id, sourceLocation, "foreach", commandText);
+    this.expr = expr;
   }
 
 
@@ -82,21 +57,14 @@ public class ForeachNode extends AbstractParentCommandNode<SoyNode>
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected ForeachNode(ForeachNode orig) {
-    super(orig);
-    this.varName = orig.varName;
-    this.expr = orig.expr.clone();
+  private ForeachNode(ForeachNode orig, CopyState copyState) {
+    super(orig, copyState);
+    this.expr = orig.expr.copy(copyState);
   }
 
 
   @Override public Kind getKind() {
     return Kind.FOREACH_NODE;
-  }
-
-
-  /** Returns the foreach-loop variable name. */
-  public String getVarName() {
-    return varName;
   }
 
 
@@ -107,7 +75,7 @@ public class ForeachNode extends AbstractParentCommandNode<SoyNode>
 
 
   /** Returns the parsed expression. */
-  public ExprRootNode<?> getExpr() {
+  public ExprRootNode getExpr() {
     return expr;
   }
 
@@ -122,8 +90,8 @@ public class ForeachNode extends AbstractParentCommandNode<SoyNode>
   }
 
 
-  @Override public ForeachNode clone() {
-    return new ForeachNode(this);
+  @Override public ForeachNode copy(CopyState copyState) {
+    return new ForeachNode(this, copyState);
   }
 
 }

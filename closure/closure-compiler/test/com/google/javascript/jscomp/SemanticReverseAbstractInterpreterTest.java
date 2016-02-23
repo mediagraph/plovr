@@ -16,7 +16,7 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Sets;
+import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.type.FlowScope;
 import com.google.javascript.jscomp.type.ReverseAbstractInterpreter;
 import com.google.javascript.jscomp.type.SemanticReverseAbstractInterpreter;
@@ -27,23 +27,21 @@ import com.google.javascript.rhino.jstype.JSType;
 import java.util.Arrays;
 import java.util.Collection;
 
-public class SemanticReverseAbstractInterpreterTest
+public final class SemanticReverseAbstractInterpreterTest
     extends CompilerTypeTestCase {
-  private CodingConvention codingConvention = new GoogleCodingConvention();
-  private ReverseAbstractInterpreter interpreter;
-  private Scope functionScope;
+{ new GoogleCodingConvention(); }  private ReverseAbstractInterpreter interpreter;
+  private TypedScope functionScope;
 
   @Override
-  protected void setUp() throws Exception {
+  protected void setUp() {
     super.setUp();
 
-    interpreter = new SemanticReverseAbstractInterpreter(
-        codingConvention, registry);
+    interpreter = new SemanticReverseAbstractInterpreter(registry);
   }
 
   public FlowScope newScope() {
-    Scope globalScope = Scope.createGlobalScope(new Node(Token.EMPTY));
-    functionScope = new Scope(globalScope, new Node(Token.EMPTY));
+    TypedScope globalScope = TypedScope.createGlobalScope(new Node(Token.EMPTY));
+    functionScope = new TypedScope(globalScope, new Node(Token.EMPTY));
     return LinkedFlowScope.createEntryLattice(functionScope);
   }
 
@@ -97,10 +95,10 @@ public class SemanticReverseAbstractInterpreterTest
         Token.ASSIGN,
         createVar(blind, "a", createNullableType(OBJECT_TYPE)),
         createVar(blind, "b", createNullableType(OBJECT_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", OBJECT_TYPE),
             new TypedName("b", OBJECT_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", NULL_TYPE),
             new TypedName("b", NULL_TYPE)));
   }
@@ -115,8 +113,8 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHEQ,
         createVar(blind, "a", createUnionType(STRING_TYPE, NUMBER_TYPE)),
         createNumber(56),
-        Sets.newHashSet(new TypedName("a", NUMBER_TYPE)),
-        Sets.newHashSet(new TypedName("a",
+        ImmutableSet.of(new TypedName("a", NUMBER_TYPE)),
+        ImmutableSet.of(new TypedName("a",
             createUnionType(STRING_TYPE, NUMBER_TYPE))));
   }
 
@@ -130,8 +128,8 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHEQ,
         createNumber(56),
         createVar(blind, "a", createUnionType(STRING_TYPE, NUMBER_TYPE)),
-        Sets.newHashSet(new TypedName("a", NUMBER_TYPE)),
-        Sets.newHashSet(new TypedName("a",
+        ImmutableSet.of(new TypedName("a", NUMBER_TYPE)),
+        ImmutableSet.of(new TypedName("a",
             createUnionType(STRING_TYPE, NUMBER_TYPE))));
   }
 
@@ -145,9 +143,9 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHEQ,
         createVar(blind, "b", createUnionType(STRING_TYPE, BOOLEAN_TYPE)),
         createVar(blind, "a", createUnionType(STRING_TYPE, NUMBER_TYPE)),
-        Sets.newHashSet(new TypedName("a", STRING_TYPE),
+        ImmutableSet.of(new TypedName("a", STRING_TYPE),
             new TypedName("b", STRING_TYPE)),
-        Sets.newHashSet(new TypedName("a",
+        ImmutableSet.of(new TypedName("a",
             createUnionType(STRING_TYPE, NUMBER_TYPE)),
             new TypedName("b",
                 createUnionType(STRING_TYPE, BOOLEAN_TYPE))));
@@ -160,9 +158,9 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHEQ,
         createVar(blind, "a", createUnionType(STRING_TYPE, VOID_TYPE)),
         createVar(blind, "b", createUnionType(VOID_TYPE)),
-        Sets.newHashSet(new TypedName("a", VOID_TYPE),
+        ImmutableSet.of(new TypedName("a", VOID_TYPE),
             new TypedName("b", VOID_TYPE)),
-        Sets.newHashSet(new TypedName("a", STRING_TYPE),
+        ImmutableSet.of(new TypedName("a", STRING_TYPE),
             new TypedName("b", VOID_TYPE)));
   }
 
@@ -173,9 +171,9 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHEQ,
         createVar(blind, "a", createUnionType(NULL_TYPE, VOID_TYPE)),
         createVar(blind, "b", createUnionType(VOID_TYPE)),
-        Sets.newHashSet(new TypedName("a", VOID_TYPE),
+        ImmutableSet.of(new TypedName("a", VOID_TYPE),
             new TypedName("b", VOID_TYPE)),
-        Sets.newHashSet(new TypedName("a", NULL_TYPE),
+        ImmutableSet.of(new TypedName("a", NULL_TYPE),
             new TypedName("b", VOID_TYPE)));
   }
 
@@ -186,10 +184,10 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHEQ,
         createVar(blind, "a", createUnionType(STRING_TYPE, VOID_TYPE)),
         createVar(blind, "b", createUnionType(NUMBER_TYPE, VOID_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", VOID_TYPE),
             new TypedName("b", VOID_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a",
                 createUnionType(STRING_TYPE, VOID_TYPE)),
             new TypedName("b",
@@ -206,9 +204,9 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHNE,
         createVar(blind, "a", createUnionType(STRING_TYPE, NUMBER_TYPE)),
         createNumber(56),
-        Sets.newHashSet(new TypedName("a",
+        ImmutableSet.of(new TypedName("a",
             createUnionType(STRING_TYPE, NUMBER_TYPE))),
-        Sets.newHashSet(new TypedName("a", NUMBER_TYPE)));
+        ImmutableSet.of(new TypedName("a", NUMBER_TYPE)));
   }
 
   /**
@@ -221,9 +219,9 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHNE,
         createNumber(56),
         createVar(blind, "a", createUnionType(STRING_TYPE, NUMBER_TYPE)),
-        Sets.newHashSet(new TypedName("a",
+        ImmutableSet.of(new TypedName("a",
             createUnionType(STRING_TYPE, NUMBER_TYPE))),
-        Sets.newHashSet(new TypedName("a", NUMBER_TYPE)));
+        ImmutableSet.of(new TypedName("a", NUMBER_TYPE)));
   }
 
   /**
@@ -236,11 +234,11 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHNE,
         createVar(blind, "b", createUnionType(STRING_TYPE, BOOLEAN_TYPE)),
         createVar(blind, "a", createUnionType(STRING_TYPE, NUMBER_TYPE)),
-        Sets.newHashSet(new TypedName("a",
+        ImmutableSet.of(new TypedName("a",
             createUnionType(STRING_TYPE, NUMBER_TYPE)),
             new TypedName("b",
                 createUnionType(STRING_TYPE, BOOLEAN_TYPE))),
-        Sets.newHashSet(new TypedName("a", STRING_TYPE),
+        ImmutableSet.of(new TypedName("a", STRING_TYPE),
             new TypedName("b", STRING_TYPE)));
   }
 
@@ -251,9 +249,9 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHNE,
         createVar(blind, "a", createUnionType(STRING_TYPE, VOID_TYPE)),
         createVar(blind, "b", createUnionType(VOID_TYPE)),
-        Sets.newHashSet(new TypedName("a", STRING_TYPE),
+        ImmutableSet.of(new TypedName("a", STRING_TYPE),
             new TypedName("b", VOID_TYPE)),
-        Sets.newHashSet(new TypedName("a", VOID_TYPE),
+        ImmutableSet.of(new TypedName("a", VOID_TYPE),
             new TypedName("b", VOID_TYPE)));
   }
 
@@ -264,9 +262,9 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHNE,
         createVar(blind, "a", createUnionType(NULL_TYPE, VOID_TYPE)),
         createVar(blind, "b", createUnionType(NULL_TYPE)),
-        Sets.newHashSet(new TypedName("a", VOID_TYPE),
+        ImmutableSet.of(new TypedName("a", VOID_TYPE),
             new TypedName("b", NULL_TYPE)),
-        Sets.newHashSet(new TypedName("a", NULL_TYPE),
+        ImmutableSet.of(new TypedName("a", NULL_TYPE),
             new TypedName("b", NULL_TYPE)));
   }
 
@@ -277,12 +275,12 @@ public class SemanticReverseAbstractInterpreterTest
         Token.SHNE,
         createVar(blind, "a", createUnionType(STRING_TYPE, VOID_TYPE)),
         createVar(blind, "b", createUnionType(NUMBER_TYPE, VOID_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a",
                 createUnionType(STRING_TYPE, VOID_TYPE)),
             new TypedName("b",
                 createUnionType(NUMBER_TYPE, VOID_TYPE))),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", VOID_TYPE),
             new TypedName("b", VOID_TYPE)));
   }
@@ -297,8 +295,8 @@ public class SemanticReverseAbstractInterpreterTest
         Token.EQ,
         createVar(blind, "a", createUnionType(BOOLEAN_TYPE, VOID_TYPE)),
         createNull(),
-        Sets.newHashSet(new TypedName("a", VOID_TYPE)),
-        Sets.newHashSet(new TypedName("a", BOOLEAN_TYPE)));
+        ImmutableSet.of(new TypedName("a", VOID_TYPE)),
+        ImmutableSet.of(new TypedName("a", BOOLEAN_TYPE)));
   }
 
   /**
@@ -311,8 +309,8 @@ public class SemanticReverseAbstractInterpreterTest
         Token.NE,
         createNull(),
         createVar(blind, "a", createUnionType(BOOLEAN_TYPE, VOID_TYPE)),
-        Sets.newHashSet(new TypedName("a", BOOLEAN_TYPE)),
-        Sets.newHashSet(new TypedName("a", VOID_TYPE)));
+        ImmutableSet.of(new TypedName("a", BOOLEAN_TYPE)),
+        ImmutableSet.of(new TypedName("a", VOID_TYPE)));
   }
 
   /**
@@ -331,8 +329,8 @@ public class SemanticReverseAbstractInterpreterTest
         Token.EQ,
         createVar(blind, "a", nullableOptionalNumber),
         createNull(),
-        Sets.newHashSet(new TypedName("a", nullUndefined)),
-        Sets.newHashSet(new TypedName("a", NUMBER_TYPE)));
+        ImmutableSet.of(new TypedName("a", nullUndefined)),
+        ImmutableSet.of(new TypedName("a", NUMBER_TYPE)));
   }
 
   /**
@@ -345,10 +343,10 @@ public class SemanticReverseAbstractInterpreterTest
         Token.EQ,
         createVar(blind, "a", VOID_TYPE),
         createVar(blind, "b", VOID_TYPE),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", VOID_TYPE),
             new TypedName("b", VOID_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", NO_TYPE),
             new TypedName("b", NO_TYPE)));
   }
@@ -365,9 +363,9 @@ public class SemanticReverseAbstractInterpreterTest
           op,
           createVar(blind, "a", createUnionType(STRING_TYPE, VOID_TYPE)),
           createNumber(8),
-          Sets.newHashSet(
+          ImmutableSet.of(
               new TypedName("a", STRING_TYPE)),
-          Sets.newHashSet(new TypedName("a",
+          ImmutableSet.of(new TypedName("a",
               createUnionType(STRING_TYPE, VOID_TYPE))));
     }
   }
@@ -386,12 +384,12 @@ public class SemanticReverseAbstractInterpreterTest
               createUnionType(STRING_TYPE, NUMBER_TYPE, VOID_TYPE)),
           createVar(blind, "b",
               createUnionType(NUMBER_TYPE, NULL_TYPE)),
-          Sets.newHashSet(
+          ImmutableSet.of(
               new TypedName("a",
               createUnionType(STRING_TYPE, NUMBER_TYPE)),
               new TypedName("b",
               createUnionType(NUMBER_TYPE, NULL_TYPE))),
-          Sets.newHashSet(
+          ImmutableSet.of(
               new TypedName("a",
               createUnionType(STRING_TYPE, NUMBER_TYPE, VOID_TYPE)),
               new TypedName("b",
@@ -411,9 +409,9 @@ public class SemanticReverseAbstractInterpreterTest
           op,
           createUntypedNumber(8),
           createVar(blind, "a", createUnionType(STRING_TYPE, VOID_TYPE)),
-          Sets.newHashSet(
+          ImmutableSet.of(
               new TypedName("a", STRING_TYPE)),
-          Sets.newHashSet(new TypedName("a",
+          ImmutableSet.of(new TypedName("a",
               createUnionType(STRING_TYPE, VOID_TYPE))));
     }
   }
@@ -425,9 +423,9 @@ public class SemanticReverseAbstractInterpreterTest
       Token.AND,
       createVar(blind, "b", createUnionType(STRING_TYPE, NULL_TYPE)),
       createVar(blind, "a", createUnionType(NUMBER_TYPE, VOID_TYPE)),
-      Sets.newHashSet(new TypedName("a", NUMBER_TYPE),
+      ImmutableSet.of(new TypedName("a", NUMBER_TYPE),
           new TypedName("b", STRING_TYPE)),
-      Sets.newHashSet(new TypedName("a",
+      ImmutableSet.of(new TypedName("a",
           createUnionType(NUMBER_TYPE, VOID_TYPE)),
           new TypedName("b",
           createUnionType(STRING_TYPE, NULL_TYPE))));
@@ -440,9 +438,9 @@ public class SemanticReverseAbstractInterpreterTest
         Token.EQ,
         new Node(Token.TYPEOF, createVar(blind, "a", OBJECT_TYPE)),
         Node.newString("function"),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", U2U_CONSTRUCTOR_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", OBJECT_TYPE)));
   }
 
@@ -453,9 +451,9 @@ public class SemanticReverseAbstractInterpreterTest
         Token.EQ,
         new Node(Token.TYPEOF, createVar(blind, "a", ALL_TYPE)),
         Node.newString("function"),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", U2U_CONSTRUCTOR_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", ALL_TYPE)));
   }
 
@@ -467,9 +465,9 @@ public class SemanticReverseAbstractInterpreterTest
         new Node(Token.TYPEOF, createVar(
             blind, "a", OBJECT_NUMBER_STRING_BOOLEAN)),
         Node.newString("function"),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", U2U_CONSTRUCTOR_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", OBJECT_NUMBER_STRING_BOOLEAN)));
   }
 
@@ -480,11 +478,11 @@ public class SemanticReverseAbstractInterpreterTest
         Token.EQ,
         new Node(Token.TYPEOF, createVar(
             blind, "a", createUnionType(
-                U2U_CONSTRUCTOR_TYPE,NUMBER_STRING_BOOLEAN))),
+                U2U_CONSTRUCTOR_TYPE, NUMBER_STRING_BOOLEAN))),
         Node.newString("function"),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", U2U_CONSTRUCTOR_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("a", NUMBER_STRING_BOOLEAN)));
   }
 
@@ -495,10 +493,10 @@ public class SemanticReverseAbstractInterpreterTest
         Token.INSTANCEOF,
         createVar(blind, "x", UNKNOWN_TYPE),
         createVar(blind, "s", STRING_OBJECT_FUNCTION_TYPE),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("x", STRING_OBJECT_TYPE),
             new TypedName("s", STRING_OBJECT_FUNCTION_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("s", STRING_OBJECT_FUNCTION_TYPE)));
   }
 
@@ -510,10 +508,10 @@ public class SemanticReverseAbstractInterpreterTest
         createVar(blind, "x",
             createUnionType(STRING_OBJECT_TYPE, NUMBER_OBJECT_TYPE)),
         createVar(blind, "s", STRING_OBJECT_FUNCTION_TYPE),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("x", STRING_OBJECT_TYPE),
             new TypedName("s", STRING_OBJECT_FUNCTION_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("x", NUMBER_OBJECT_TYPE),
             new TypedName("s", STRING_OBJECT_FUNCTION_TYPE)));
   }
@@ -525,10 +523,10 @@ public class SemanticReverseAbstractInterpreterTest
         Token.INSTANCEOF,
         createVar(blind, "x", OBJECT_TYPE),
         createVar(blind, "s", STRING_OBJECT_FUNCTION_TYPE),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("x", STRING_OBJECT_TYPE),
             new TypedName("s", STRING_OBJECT_FUNCTION_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("x", OBJECT_TYPE),
             new TypedName("s", STRING_OBJECT_FUNCTION_TYPE)));
   }
@@ -540,10 +538,10 @@ public class SemanticReverseAbstractInterpreterTest
         Token.INSTANCEOF,
         createVar(blind, "x", ALL_TYPE),
         createVar(blind, "s", STRING_OBJECT_FUNCTION_TYPE),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("x", STRING_OBJECT_TYPE),
             new TypedName("s", STRING_OBJECT_FUNCTION_TYPE)),
-        Sets.newHashSet(
+        ImmutableSet.of(
             new TypedName("s", STRING_OBJECT_FUNCTION_TYPE)));
   }
 
@@ -592,7 +590,7 @@ public class SemanticReverseAbstractInterpreterTest
   private Node createVar(FlowScope scope, String name, JSType type) {
     Node n = Node.newString(Token.NAME, name);
     functionScope.declare(name, n, null, null);
-    ((LinkedFlowScope) scope).inferSlotType(name, type);
+    scope.inferSlotType(name, type);
     n.setJSType(type);
     return n;
   }

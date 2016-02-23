@@ -16,8 +16,10 @@
 
 package com.google.javascript.jscomp.ant;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.google.common.base.Strings;
-import com.google.common.collect.Lists;
+import com.google.common.io.Files;
 import com.google.javascript.jscomp.CheckLevel;
 import com.google.javascript.jscomp.CommandLineRunner;
 import com.google.javascript.jscomp.CompilationLevel;
@@ -30,6 +32,7 @@ import com.google.javascript.jscomp.Result;
 import com.google.javascript.jscomp.SourceFile;
 import com.google.javascript.jscomp.SourceMap;
 import com.google.javascript.jscomp.SourceMap.Format;
+import com.google.javascript.jscomp.SourceMap.LocationMapping;
 import com.google.javascript.jscomp.WarningLevel;
 
 import org.apache.tools.ant.BuildException;
@@ -38,6 +41,9 @@ import org.apache.tools.ant.Task;
 import org.apache.tools.ant.types.FileList;
 import org.apache.tools.ant.types.Parameter;
 import org.apache.tools.ant.types.Path;
+import org.apache.tools.ant.types.Resource;
+import org.apache.tools.ant.types.ResourceCollection;
+import org.apache.tools.ant.types.resources.FileResource;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -45,7 +51,11 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.Charset;
+import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -66,41 +76,50 @@ public final class CompileTask
   private String encoding = "UTF-8";
   private String outputEncoding = "UTF-8";
   private CompilationLevel compilationLevel;
-  private boolean customExternsOnly;
+  private CompilerOptions.Environment environment;
   private boolean manageDependencies;
   private boolean prettyPrint;
   private boolean printInputDelimiter;
+  private boolean preferSingleQuotes;
   private boolean generateExports;
   private boolean replaceProperties;
   private boolean forceRecompile;
+  private boolean angularPass;
   private String replacePropertiesPrefix;
   private File outputFile;
+  private String outputWrapper;
+  private File outputWrapperFile;
   private final List<Parameter> defineParams;
+  private final List<Parameter> entryPointParams;
   private final List<FileList> externFileLists;
   private final List<FileList> sourceFileLists;
   private final List<Path> sourcePaths;
   private final List<Warning> warnings;
   private String sourceMapFormat;
   private File sourceMapOutputFile;
+  private String sourceMapLocationMapping;
 
   public CompileTask() {
     this.languageIn = CompilerOptions.LanguageMode.ECMASCRIPT3;
     this.warningLevel = WarningLevel.DEFAULT;
     this.debugOptions = false;
     this.compilationLevel = CompilationLevel.SIMPLE_OPTIMIZATIONS;
-    this.customExternsOnly = false;
+    this.environment = CompilerOptions.Environment.BROWSER;
     this.manageDependencies = false;
     this.prettyPrint = false;
     this.printInputDelimiter = false;
+    this.preferSingleQuotes = false;
     this.generateExports = false;
     this.replaceProperties = false;
     this.forceRecompile = false;
+    this.angularPass = false;
     this.replacePropertiesPrefix = "closure.define.";
-    this.defineParams = Lists.newLinkedList();
-    this.externFileLists = Lists.newLinkedList();
-    this.sourceFileLists = Lists.newLinkedList();
-    this.sourcePaths = Lists.newLinkedList();
-    this.warnings = Lists.newLinkedList();
+    this.defineParams = new LinkedList<>();
+    this.entryPointParams = new LinkedList<>();
+    this.externFileLists = new LinkedList<>();
+    this.sourceFileLists = new LinkedList<>();
+    this.sourcePaths = new LinkedList<>();
+    this.warnings = new LinkedList<>();
   }
 
   /**
@@ -109,15 +128,30 @@ public final class CompileTask
    *     (ECMASCRIPT3, ECMASCRIPT5, ECMASCRIPT5_STRICT).
    */
   public void setLanguageIn(String value) {
-    if (value.equals("ECMASCRIPT5_STRICT") || value.equals("ES5_STRICT")) {
-      this.languageIn = CompilerOptions.LanguageMode.ECMASCRIPT5_STRICT;
-    } else if (value.equals("ECMASCRIPT5") || value.equals("ES5")) {
-      this.languageIn = CompilerOptions.LanguageMode.ECMASCRIPT5;
-    } else if (value.equals("ECMASCRIPT3") || value.equals("ES3")) {
-      this.languageIn = CompilerOptions.LanguageMode.ECMASCRIPT3;
-    } else {
-      throw new BuildException(
-          "Unrecognized 'languageIn' option value (" + value + ")");
+    switch (value) {
+      case "ECMASCRIPT6_STRICT":
+      case "ES6_STRICT":
+        this.languageIn = CompilerOptions.LanguageMode.ECMASCRIPT6_STRICT;
+        break;
+      case "ECMASCRIPT6":
+      case "ES6":
+        this.languageIn = CompilerOptions.LanguageMode.ECMASCRIPT6;
+        break;
+      case "ECMASCRIPT5_STRICT":
+      case "ES5_STRICT":
+        this.languageIn = CompilerOptions.LanguageMode.ECMASCRIPT5_STRICT;
+        break;
+      case "ECMASCRIPT5":
+      case "ES5":
+        this.languageIn = CompilerOptions.LanguageMode.ECMASCRIPT5;
+        break;
+      case "ECMASCRIPT3":
+      case "ES3":
+        this.languageIn = CompilerOptions.LanguageMode.ECMASCRIPT3;
+        break;
+      default:
+        throw new BuildException(
+            "Unrecognized 'languageIn' option value (" + value + ")");
     }
   }
 
@@ -135,6 +169,25 @@ public final class CompileTask
     } else {
       throw new BuildException(
           "Unrecognized 'warning' option value (" + value + ")");
+    }
+  }
+
+  /**
+   * Set the environment which determines the builtin extern set.
+   * @param value The name of the environment.
+   *     (BROWSER, CUSTOM).
+   */
+  public void setEnvironment(String value) {
+    switch (value) {
+      case "BROWSER":
+        this.environment = CompilerOptions.Environment.BROWSER;
+        break;
+      case "CUSTOM":
+        this.environment = CompilerOptions.Environment.CUSTOM;
+        break;
+      default:
+        throw new BuildException(
+            "Unrecognized 'environment' option value (" + value + ")");
     }
   }
 
@@ -169,17 +222,24 @@ public final class CompileTask
   }
 
   /**
-   * Use only custom externs.
-   */
-  public void setCustomExternsOnly(boolean value) {
-    this.customExternsOnly = value;
-  }
-
-  /**
    * Set output file.
    */
   public void setOutput(File value) {
     this.outputFile = value;
+  }
+
+  /**
+   * Set output wrapper.
+   */
+  public void setOutputWrapper(String value) {
+    this.outputWrapper = value;
+  }
+
+  /**
+   * Set output wrapper file.
+   */
+  public void setOutputWrapperFile(File value) {
+    this.outputWrapperFile = value;
   }
 
   /**
@@ -225,10 +285,23 @@ public final class CompileTask
   }
 
   /**
+   * Normally, when there are an equal number of single and double quotes
+   * in a string, the compiler will use double quotes. Set this to true
+   * to prefer single quotes.
+   */
+  public void setPreferSingleQuotes(boolean singlequotes) {
+    this.preferSingleQuotes = singlequotes;
+  }
+
+  /**
    * Set force recompile option
    */
   public void setForceRecompile(boolean forceRecompile) {
     this.forceRecompile = forceRecompile;
+  }
+
+  public void setAngularPass(boolean angularPass) {
+    this.angularPass = angularPass;
   }
 
   /**
@@ -258,6 +331,15 @@ public final class CompileTask
   }
 
   /**
+   * Adds a <entrypoint/> entry
+   *
+   * Each entrypoint entry must have one attribute, name.
+   */
+  public void addEntryPoint(Parameter entrypoint) {
+    this.entryPointParams.add(entrypoint);
+  }
+
+  /**
    * Sets the source files.
    */
   public void addSources(FileList list) {
@@ -282,7 +364,7 @@ public final class CompileTask
     CompilerOptions options = createCompilerOptions();
     Compiler compiler = createCompiler(options);
 
-    List<SourceFile> externs = findExternFiles();
+    List<SourceFile> externs = findExternFiles(options);
     List<SourceFile> sources = findSourceFiles();
 
     if (isStale() || forceRecompile) {
@@ -290,12 +372,39 @@ public final class CompileTask
           externs.size() + " extern(s)");
 
       Result result = compiler.compile(externs, sources, options);
+
       if (result.success) {
         StringBuilder source = new StringBuilder(compiler.toSource());
+
+        if (this.outputWrapperFile != null) {
+          try {
+            this.outputWrapper = Files.toString(this.outputWrapperFile, UTF_8);
+          } catch (Exception e) {
+            throw new BuildException("Invalid output_wrapper_file specified.");
+          }
+        }
+
+        if (this.outputWrapper != null) {
+          int pos = -1;
+          pos = this.outputWrapper.indexOf(CommandLineRunner.OUTPUT_MARKER);
+          if (pos > -1) {
+            String prefix = this.outputWrapper.substring(0, pos);
+            source.insert(0, prefix);
+
+            // end of outputWrapper
+            int suffixStart = pos + CommandLineRunner.OUTPUT_MARKER.length();
+            String suffix = this.outputWrapper.substring(suffixStart);
+            source.append(suffix);
+          } else {
+            throw new BuildException("Invalid output_wrapper specified. " +
+                "Missing '" + CommandLineRunner.OUTPUT_MARKER + "'.");
+          }
+        }
+
         if (result.sourceMap != null) {
           flushSourceMap(result.sourceMap);
           source.append(System.getProperty("line.separator"));
-          source.append("//@ sourceMappingURL=" + sourceMapOutputFile.getName());
+          source.append("//# sourceMappingURL=" + sourceMapOutputFile.getName());
         }
         writeResult(source.toString());
       } else {
@@ -324,14 +433,21 @@ public final class CompileTask
       this.compilationLevel.setDebugOptionsForCompilationLevel(options);
     }
 
-    options.prettyPrint = this.prettyPrint;
-    options.printInputDelimiter = this.printInputDelimiter;
-    options.generateExports = this.generateExports;
+    options.setEnvironment(this.environment);
+
+    options.setPrettyPrint(this.prettyPrint);
+    options.setPrintInputDelimiter(this.printInputDelimiter);
+    options.setPreferSingleQuotes(this.preferSingleQuotes);
+    options.setGenerateExports(this.generateExports);
 
     options.setLanguageIn(this.languageIn);
+    options.setOutputCharset(this.outputEncoding);
 
     this.warningLevel.setOptionsForWarningLevel(options);
     options.setManageClosureDependencies(manageDependencies);
+    convertEntryPointParameters(options);
+    options.setTrustedStrings(true);
+    options.setAngularPass(angularPass);
 
     if (replaceProperties) {
       convertPropertiesMap(options);
@@ -351,7 +467,13 @@ public final class CompileTask
     }
 
     if (!Strings.isNullOrEmpty(sourceMapFormat)) {
-      options.sourceMapFormat = Format.valueOf(sourceMapFormat);
+      options.setSourceMapFormat(Format.valueOf(sourceMapFormat));
+    }
+
+    if (!Strings.isNullOrEmpty(sourceMapLocationMapping)) {
+      String tokens[] = sourceMapLocationMapping.split("\\|", -1);
+      LocationMapping lm = new LocationMapping(tokens[0], tokens[1]);
+      options.setSourceMapLocationMappings(Arrays.asList(lm));
     }
 
     if (sourceMapOutputFile != null) {
@@ -359,7 +481,7 @@ public final class CompileTask
       if (parentFile.mkdirs()) {
         log("Created missing parent directory " + parentFile, Project.MSG_DEBUG);
       }
-      options.sourceMapOutputPath = parentFile.getAbsolutePath();
+      options.setSourceMapOutputPath(parentFile.getAbsolutePath());
     }
     return options;
   }
@@ -371,6 +493,16 @@ public final class CompileTask
   public Parameter createDefine() {
     Parameter param = new Parameter();
     defineParams.add(param);
+    return param;
+  }
+
+  /**
+   * Creates a new {@code <entrypoint/>} nested element. Supports name
+   * attribute.
+   */
+  public Parameter createEntryPoint() {
+    Parameter param = new Parameter();
+    entryPointParams.add(param);
     return param;
   }
 
@@ -387,6 +519,21 @@ public final class CompileTask
       if (!setDefine(options, key, value)) {
         log("Unexpected @define value for name=" + key + "; value=" + value);
       }
+    }
+  }
+
+  /**
+   * Converts {@code <entrypoint/>} nested elements into Compiler entrypoint
+   * replacements.
+   */
+  private void convertEntryPointParameters(CompilerOptions options) {
+    List<String> entryPoints = new LinkedList<>();
+    for (Parameter p : entryPointParams) {
+      String key = p.getName();
+      entryPoints.add(key);
+    }
+    if (this.manageDependencies) {
+      options.setManageClosureDependencies(entryPoints);
     }
   }
 
@@ -458,17 +605,15 @@ public final class CompileTask
   private Compiler createCompiler(CompilerOptions options) {
     Compiler compiler = new Compiler();
     MessageFormatter formatter =
-        options.errorFormat.toFormatter(compiler, false);
+        options.getErrorFormat().toFormatter(compiler, false);
     AntErrorManager errorManager = new AntErrorManager(formatter, this);
     compiler.setErrorManager(errorManager);
     return compiler;
   }
 
-  private List<SourceFile> findExternFiles() {
-    List<SourceFile> files = Lists.newLinkedList();
-    if (!this.customExternsOnly) {
-      files.addAll(getDefaultExterns());
-    }
+  private List<SourceFile> findExternFiles(CompilerOptions options) {
+    List<SourceFile> files = new LinkedList<>();
+    files.addAll(getBuiltinExterns(options));
 
     for (FileList list : this.externFileLists) {
       files.addAll(findJavaScriptFiles(list));
@@ -478,7 +623,7 @@ public final class CompileTask
   }
 
   private List<SourceFile> findSourceFiles() {
-    List<SourceFile> files = Lists.newLinkedList();
+    List<SourceFile> files = new LinkedList<>();
 
     for (FileList list : this.sourceFileLists) {
       files.addAll(findJavaScriptFiles(list));
@@ -492,33 +637,21 @@ public final class CompileTask
   }
 
   /**
-   * Translates an Ant file list into the file format that the compiler
-   * expects.
+   * Translates an Ant resource collection into the file list format that
+   * the compiler expects.
    */
-  private List<SourceFile> findJavaScriptFiles(FileList fileList) {
-    List<SourceFile> files = Lists.newLinkedList();
-    File baseDir = fileList.getDir(getProject());
-
-    for (String included : fileList.getFiles(getProject())) {
-      files.add(SourceFile.fromFile(new File(baseDir, included),
-          Charset.forName(encoding)));
+  private List<SourceFile> findJavaScriptFiles(ResourceCollection rc) {
+    List<SourceFile> files = new LinkedList<>();
+    Iterator<Resource> iter = rc.iterator();
+    while (iter.hasNext()) {
+      FileResource fr = (FileResource) iter.next();
+      // Construct path to file, relative to current working directory.
+      File file = Paths.get("")
+          .toAbsolutePath()
+          .relativize(fr.getFile().toPath())
+          .toFile();
+      files.add(SourceFile.fromFile(file, Charset.forName(encoding)));
     }
-
-    return files;
-  }
-
-  /**
-   * Translates an Ant Path into the file list format that the compiler
-   * expects.
-   */
-  private List<SourceFile> findJavaScriptFiles(Path path) {
-    List<SourceFile> files = Lists.newArrayList();
-
-    for (String included : path.list()) {
-      files.add(SourceFile.fromFile(new File(included),
-          Charset.forName(encoding)));
-    }
-
     return files;
   }
 
@@ -527,9 +660,9 @@ public final class CompileTask
    *
    * Adapted from {@link CommandLineRunner}.
    */
-  private List<SourceFile> getDefaultExterns() {
+  private List<SourceFile> getBuiltinExterns(CompilerOptions options) {
     try {
-      return CommandLineRunner.getDefaultExterns();
+      return CommandLineRunner.getBuiltinExterns(options);
     } catch (IOException e) {
       throw new BuildException(e);
     }
@@ -623,5 +756,9 @@ public final class CompileTask
 
   public void setSourceMapOutputFile(File sourceMapOutputFile) {
     this.sourceMapOutputFile = sourceMapOutputFile;
+  }
+
+  public void setSourceMapLocationMapping(String mapping) {
+    this.sourceMapLocationMapping = mapping;
   }
 }

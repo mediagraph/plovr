@@ -19,10 +19,10 @@ package com.google.javascript.jscomp.regex;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -86,12 +86,6 @@ public abstract class RegExpTree {
       sb.append("(?:)");
     }
     sb.append('/');
-    return sb.toString();
-  }
-
-  public final String toDebugString() {
-    StringBuilder sb = new StringBuilder();
-    appendDebugString(sb);
     return sb.toString();
   }
 
@@ -780,7 +774,7 @@ public abstract class RegExpTree {
       }
       if (flags.indexOf('i') >= 0) {
         String canonicalized = CaseCanonicalize.caseCanonicalize(text);
-        if (text != canonicalized) {
+        if (!text.equals(canonicalized)) {
           return new Text(canonicalized);
         }
       }
@@ -895,9 +889,11 @@ public abstract class RegExpTree {
       // This mirrors the branches that renders a suffix in appendSourceCode below.
       if (max == Integer.MAX_VALUE) {
         switch (min) {
-          case 0: return 1;  // *
-          case 1: return 1;  // +
-          default: return 3 + numDecimalDigits(min);  // {3,}
+          case 0:  // *
+          case 1:  // +
+            return 1;
+          default:
+            return 3 + numDecimalDigits(min); // {3,}
         }
       }
       if (min == 0 && max == 1) {
@@ -1014,7 +1010,7 @@ public abstract class RegExpTree {
 
     @Override
     public RegExpTree simplify(String flags) {
-      List<RegExpTree> alternatives = Lists.newArrayList();
+      List<RegExpTree> alternatives = new ArrayList<>();
       for (RegExpTree alternative : this.alternatives) {
         alternative = alternative.simplify(flags);
         if (alternative instanceof Alternation) {
@@ -1376,7 +1372,7 @@ public abstract class RegExpTree {
       }
       CharRanges best = ranges;
       if (flags.indexOf('i') >= 0) {
-        Set<CharRanges> options = Sets.newLinkedHashSet();
+        Set<CharRanges> options = new LinkedHashSet<>();
         options.add(CaseCanonicalize.expandToAllMatched(ranges));
         options.add(CaseCanonicalize.reduceToMinimum(ranges));
 
@@ -1524,7 +1520,7 @@ public abstract class RegExpTree {
         if (!inverted && namedGroups.length() == 2) {
           sb.append(namedGroups);
           return;
-        } else if (ranges.isEmpty() && namedGroups.length() == 0) {
+        } else if (ranges.isEmpty() && namedGroups.isEmpty()) {
           sb.append(inverted ? "[\\S\\s]" : "(?!)");
           return;
         }
@@ -1532,7 +1528,7 @@ public abstract class RegExpTree {
       sb.append('[');
       if (inverted) { sb.append('^'); }
       sb.append(namedGroups);
-      boolean rangesStartCharset = !inverted && namedGroups.length() == 0;
+      boolean rangesStartCharset = !inverted && namedGroups.isEmpty();
       boolean emitDashAtEnd = false;
       for (int i = 0, n = ranges.getNumRanges(); i < n; ++i) {
         char start = (char) ranges.start(i);
@@ -1641,7 +1637,7 @@ public abstract class RegExpTree {
     @Override
     public RegExpTree simplify(final String flags) {
       class Simplifier {
-        final List<RegExpTree> simplified = Lists.newArrayList();
+        final List<RegExpTree> simplified = new ArrayList<>();
 
         void simplify(RegExpTree t) {
           if (t instanceof Concatenation) {

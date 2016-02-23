@@ -18,7 +18,7 @@ public final class HttpUtil {
   private static final SoyTofu TOFU;
 
   static {
-    SoyFileSet.Builder builder = new SoyFileSet.Builder();
+    SoyFileSet.Builder builder = SoyFileSet.builder();
     builder.add(Resources.getResource(InputFileHandler.class, "400.soy"));
     SoyFileSet fileSet = builder.build();
     TOFU = fileSet.compileToTofu();
@@ -32,6 +32,23 @@ public final class HttpUtil {
     if (referrer != null) {
       try {
         return new URI(referrer);
+      } catch (URISyntaxException e) {
+        // OK
+      }
+    }
+    return null;
+  }
+
+  /**
+   * @return The Host header, parsed into a string so that we can
+   * get the hostname and port.
+   */
+  public static URI getHost(HttpExchange exchange) {
+    Headers headers = exchange.getRequestHeaders();
+    String host = headers.getFirst("Host");
+    if (host != null) {
+      try {
+        return new URI("http://" + host);
       } catch (URISyntaxException e) {
         // OK
       }

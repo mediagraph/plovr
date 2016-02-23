@@ -18,13 +18,14 @@ package com.google.javascript.jscomp;
 
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.Node;
+
 import junit.framework.TestCase;
 
 /**
  * Tests for {@link MustBeReachingVariableDef}.
  *
  */
-public class MustBeReachingVariableDefTest extends TestCase {
+public final class MustBeReachingVariableDefTest extends TestCase {
 
   private MustBeReachingVariableDef defUse = null;
   private Node def = null;
@@ -171,7 +172,7 @@ public class MustBeReachingVariableDefTest extends TestCase {
     src = "function _FUNCTION(param1, param2){" + src + "}";
     Node root = compiler.parseTestCode(src).getFirstChild();
     assertEquals(0, compiler.getErrorCount());
-    Scope scope = new SyntacticScopeCreator(compiler).createScope(root, null);
+    Scope scope = SyntacticScopeCreator.makeUntyped(compiler).createScope(root, null);
     ControlFlowAnalysis cfa = new ControlFlowAnalysis(compiler, false, true);
     cfa.process(null, root);
     ControlFlowGraph<Node> cfg = cfa.getCfg();
@@ -179,7 +180,7 @@ public class MustBeReachingVariableDefTest extends TestCase {
     defUse.analyze();
     def = null;
     use = null;
-    new NodeTraversal(compiler,new LabelFinder()).traverse(root);
+    NodeTraversal.traverseEs6(compiler, root, new LabelFinder());
     assertNotNull("Code should have an instruction labeled D", def);
     assertNotNull("Code should have an instruction labeled U", use);
   }

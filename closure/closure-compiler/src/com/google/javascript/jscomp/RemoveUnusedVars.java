@@ -18,18 +18,21 @@ package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
-import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.CodingConvention.SubclassRelationship;
 import com.google.javascript.jscomp.DefinitionsRemover.Definition;
-import com.google.javascript.jscomp.Scope.Var;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Garbage collection for variable and function definitions. Basically performs
@@ -65,6 +68,7 @@ import java.util.*;
  * {@code FlowSensitiveInlineVariables}, except that it works for variables
  * used across scopes.
  *
+ * @author nicksantos@google.com (Nick Santos)
  */
 class RemoveUnusedVars
     implements CompilerPass, OptimizeCalls.CallGraphCompilerPass {
@@ -80,17 +84,17 @@ class RemoveUnusedVars
   /**
    * Keep track of variables that we've referenced.
    */
-  private final Set<Var> referenced = Sets.newHashSet();
+  private final Set<Var> referenced = new HashSet<>();
 
   /**
    * Keep track of variables that might be unreferenced.
    */
-  private final List<Var> maybeUnreferenced = Lists.newArrayList();
+  private final List<Var> maybeUnreferenced = new ArrayList<>();
 
   /**
    * Keep track of scopes that we've traversed.
    */
-  private final List<Scope> allFunctionScopes = Lists.newArrayList();
+  private final List<Scope> allFunctionScopes = new ArrayList<>();
 
   /**
    * Keep track of assigns to variables that we haven't referenced.
@@ -101,7 +105,7 @@ class RemoveUnusedVars
   /**
    * The assigns, indexed by the NAME node that they assign to.
    */
-  private final Map<Node, Assign> assignsByNode = Maps.newHashMap();
+  private final Map<Node, Assign> assignsByNode = new HashMap<>();
 
   /**
    * Subclass name -> class-defining call EXPR node. (like inherits)
@@ -117,6 +121,7 @@ class RemoveUnusedVars
       ArrayListMultimap.create();
 
   private boolean modifyCallSites;
+  private boolean mustResetModifyCallSites;
 
   private CallSiteOptimizer callSiteOptimizer;
 
@@ -130,6 +135,7 @@ class RemoveUnusedVars
     this.removeGlobals = removeGlobals;
     this.preserveFunctionExpressionNames = preserveFunctionExpressionNames;
     this.modifyCallSites = modifyCallSites;
+    this.mustResetModifyCallSites = false;
   }
 
   /**
@@ -139,14 +145,29 @@ class RemoveUnusedVars
   @Override
   public void process(Node externs, Node root) {
     Preconditions.checkState(compiler.getLifeCycleStage().isNormalized());
-    SimpleDefinitionFinder defFinder = null;
-
-    if (modifyCallSites) {
-      // For testing, allow the SimpleDefinitionFinder to be build now.
-      defFinder = new SimpleDefinitionFinder(compiler);
-      defFinder.process(externs, root);
+    SimpleDefinitionFinder defFinder = compiler.getSimpleDefinitionFinder();
+    if (this.modifyCallSites) {
+      // When RemoveUnusedVars is run after OptimizeCalls, this.modifyCallSites
+      // is true. But if OptimizeCalls stops making changes, PhaseOptimizer
+      // stops running it, so we come to RemoveUnusedVars and the defFinder is
+      // null. In this case, we temporarily set this.modifyCallSites to false
+      // for this run, and then reset it back to true at the end, for
+      // subsequent runs.
+      if (defFinder == null) {
+        this.modifyCallSites = false;
+        this.mustResetModifyCallSites = true;
+      } else {
+        defFinder.process(externs, root);
+      }
     }
     process(externs, root, defFinder);
+    // When doing OptimizeCalls, RemoveUnusedVars is the last pass in the
+    // sequence, so the def finder must not be used by any subsequent passes.
+    compiler.setSimpleDefinitionFinder(null);
+    if (this.mustResetModifyCallSites) {
+      this.modifyCallSites = true;
+      this.mustResetModifyCallSites = false;
+    }
   }
 
   @Override
@@ -166,7 +187,7 @@ class RemoveUnusedVars
    * Traverses a node recursively. Call this once per pass.
    */
   private void traverseAndRemoveUnusedReferences(Node root) {
-    Scope scope = new SyntacticScopeCreator(compiler).createScope(root, null);
+    Scope scope = SyntacticScopeCreator.makeUntyped(compiler).createScope(root, null);
     traverseNode(root, null, scope);
 
     if (removeGlobals) {
@@ -316,11 +337,7 @@ class RemoveUnusedVars
     }
 
     // Exported variables are off-limits.
-    if (codingConvention.isExported(var.getName())) {
-      return false;
-    }
-
-    return true;
+    return !codingConvention.isExported(var.getName());
   }
 
   /**
@@ -339,8 +356,7 @@ class RemoveUnusedVars
     Preconditions.checkState(body.getNext() == null &&
             body.isBlock());
 
-    Scope fnScope =
-        new SyntacticScopeCreator(compiler).createScope(n, parentScope);
+    Scope fnScope = SyntacticScopeCreator.makeUntyped(compiler).createScope(n, parentScope);
     traverseNode(body, n, fnScope);
 
     collectMaybeUnreferencedVars(fnScope);
@@ -419,8 +435,8 @@ class RemoveUnusedVars
   private static class CallSiteOptimizer {
     private final AbstractCompiler compiler;
     private final SimpleDefinitionFinder defFinder;
-    private final List<Node> toRemove = Lists.newArrayList();
-    private final List<Node> toReplaceWithZero = Lists.newArrayList();
+    private final List<Node> toRemove = new ArrayList<>();
+    private final List<Node> toReplaceWithZero = new ArrayList<>();
 
     CallSiteOptimizer(
         AbstractCompiler compiler,
@@ -801,9 +817,7 @@ class RemoveUnusedVars
    * assignments to those variables as well.
    */
   private void removeUnreferencedVars() {
-    for (Iterator<Var> it = maybeUnreferenced.iterator(); it.hasNext(); ) {
-      Var var = it.next();
-
+    for (Var var : maybeUnreferenced) {
       // Remove calls to inheritance-defining functions where the unreferenced
       // class is the subclass.
       for (Node exprCallNode : classDefiningCalls.get(var)) {
@@ -976,15 +990,15 @@ class RemoveUnusedVars
           if (current.isGetElem()) {
             replacement = IR.comma(
                 current.getLastChild().detachFromParent(), replacement);
-            replacement.copyInformationFrom(current);
+            replacement.useSourceInfoIfMissingFrom(current);
           }
         }
 
         parent.replaceChild(assignNode, replacement);
       } else {
-        Node gramps = parent.getParent();
+        Node grandparent = parent.getParent();
         if (parent.isExprResult()) {
-          gramps.removeChild(parent);
+          grandparent.removeChild(parent);
         } else {
           parent.replaceChild(assignNode,
               assignNode.getLastChild().detachFromParent());

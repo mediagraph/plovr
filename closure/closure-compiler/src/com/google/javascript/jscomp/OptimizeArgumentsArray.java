@@ -17,12 +17,13 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 import com.google.javascript.jscomp.NodeTraversal.ScopedCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 
+import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -64,7 +65,7 @@ class OptimizeArgumentsArray implements CompilerPass, ScopedCallback {
   private final AbstractCompiler compiler;
 
   // A stack of arguments access list to the corresponding outer functions.
-  private final Deque<List<Node>> argumentsAccessStack = Lists.newLinkedList();
+  private final Deque<List<Node>> argumentsAccessStack = new ArrayDeque<>();
 
   // This stores a list of argument access in the current scope.
   private List<Node> currentArgumentsAccess = null;
@@ -88,7 +89,7 @@ class OptimizeArgumentsArray implements CompilerPass, ScopedCallback {
 
   @Override
   public void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, Preconditions.checkNotNull(root), this);
+    NodeTraversal.traverseEs6(compiler, Preconditions.checkNotNull(root), this);
   }
 
   @Override
@@ -107,7 +108,7 @@ class OptimizeArgumentsArray implements CompilerPass, ScopedCallback {
     if (currentArgumentsAccess != null) {
       argumentsAccessStack.push(currentArgumentsAccess);
     }
-    currentArgumentsAccess = Lists.newLinkedList();
+    currentArgumentsAccess = new LinkedList<>();
   }
 
   @Override
@@ -121,6 +122,11 @@ class OptimizeArgumentsArray implements CompilerPass, ScopedCallback {
       return;
     }
 
+    Node function = traversal.getScopeRoot();
+    if (!function.isFunction()) {
+      return;
+    }
+
     // Attempt to replace the argument access and if the AST has been change,
     // report back to the compiler.
     if (tryReplaceArguments(traversal.getScope())) {
@@ -130,7 +136,7 @@ class OptimizeArgumentsArray implements CompilerPass, ScopedCallback {
     // After the attempt to replace the arguments. The currentArgumentsAccess
     // is stale and as we exit the Scope, no longer holds all the access to the
     // current scope anymore. We'll pop the access list from the outer scope
-    // and set it as currentArgumentsAcess if the outer scope is not the global
+    // and set it as currentArgumentsAccess if the outer scope is not the global
     // scope.
     if (!argumentsAccessStack.isEmpty()) {
       currentArgumentsAccess = argumentsAccessStack.pop();
@@ -202,7 +208,7 @@ class OptimizeArgumentsArray implements CompilerPass, ScopedCallback {
       // Bail on anything but argument[c] access where c is a constant.
       // TODO(user): We might not need to bail out all the time, there might
       // be more cases that we can cover.
-      if (!getElem.isGetElem()) {
+      if (!getElem.isGetElem() || ref != getElem.getFirstChild()) {
         return false;
       }
 
@@ -210,7 +216,7 @@ class OptimizeArgumentsArray implements CompilerPass, ScopedCallback {
 
       // We have something like arguments[x] where x is not a constant. That
       // means at least one of the access is not known.
-      if (!index.isNumber()) {
+      if (!index.isNumber() || index.getDouble() < 0) {
         // TODO(user): Its possible not to give up just yet. The type
         // inference did a 'semi value propagation'. If we know that string
         // is never a subclass of the type of the index. We'd know that
@@ -250,7 +256,8 @@ class OptimizeArgumentsArray implements CompilerPass, ScopedCallback {
     for (int i = 0; i < numExtraArgs; i++) {
       String name = getNewName();
       argNames[i] = name;
-      parametersList.addChildrenToBack(IR.name(name));
+      parametersList.addChildToBack(
+          IR.name(name).useSourceInfoIfMissingFrom(parametersList));
       changed = true;
     }
 

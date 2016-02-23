@@ -16,36 +16,31 @@
 
 package com.google.template.soy.bidifunctions;
 
-import static com.google.template.soy.javasrc.restricted.SoyJavaSrcFunctionUtils.toIntegerJavaExpr;
-import static com.google.template.soy.shared.restricted.SoyJavaRuntimeFunctionUtils.toSoyData;
-
 import com.google.common.collect.ImmutableSet;
-import com.google.inject.Inject;
-import com.google.inject.Provider;
-import com.google.inject.Singleton;
-import com.google.template.soy.data.SoyData;
+import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.restricted.IntegerData;
 import com.google.template.soy.exprtree.Operator;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
-import com.google.template.soy.javasrc.restricted.JavaCodeUtils;
-import com.google.template.soy.javasrc.restricted.JavaExpr;
-import com.google.template.soy.javasrc.restricted.SoyJavaSrcFunction;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
-import com.google.template.soy.tofu.restricted.SoyAbstractTofuFunction;
+import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyExprUtils;
+import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.shared.restricted.SoyJavaFunction;
 
 import java.util.List;
 import java.util.Set;
 
+import javax.inject.Inject;
+import javax.inject.Provider;
+import javax.inject.Singleton;
 
 /**
  * Soy function that returns the current global bidi directionality (1 for LTR or -1 for RTL).
  *
- * @author Aharon Lanin
- * @author Kai Huang
  */
 @Singleton
-class BidiGlobalDirFunction extends SoyAbstractTofuFunction
-    implements SoyJsSrcFunction, SoyJavaSrcFunction {
+class BidiGlobalDirFunction implements SoyJavaFunction, SoyJsSrcFunction, SoyPySrcFunction {
 
 
   /** Provider for the current bidi global directionality. */
@@ -65,31 +60,24 @@ class BidiGlobalDirFunction extends SoyAbstractTofuFunction
     return "bidiGlobalDir";
   }
 
-
   @Override public Set<Integer> getValidArgsSizes() {
     return ImmutableSet.of(0);
   }
 
-
-  @Override public SoyData compute(List<SoyData> args) {
-
-    return toSoyData(bidiGlobalDirProvider.get().getStaticValue());
+  @Override public SoyValue computeForJava(List<SoyValue> args) {
+    return IntegerData.forValue(bidiGlobalDirProvider.get().getStaticValue());
   }
 
-
   @Override public JsExpr computeForJsSrc(List<JsExpr> args) {
-
     BidiGlobalDir bidiGlobalDir = bidiGlobalDirProvider.get();
     return new JsExpr(
-        bidiGlobalDirProvider.get().getCodeSnippet(),
+        bidiGlobalDir.getCodeSnippet(),
         bidiGlobalDir.isStaticValue() ? Integer.MAX_VALUE : Operator.CONDITIONAL.getPrecedence());
   }
 
-
-  @Override public JavaExpr computeForJavaSrc(List<JavaExpr> args) {
-
-    return toIntegerJavaExpr(JavaCodeUtils.genNewIntegerData(
-        bidiGlobalDirProvider.get().getCodeSnippet()));
+  @Override public PyExpr computeForPySrc(List<PyExpr> args) {
+    return new PyExpr(
+        bidiGlobalDirProvider.get().getCodeSnippet(),
+        PyExprUtils.pyPrecedenceForOperator(Operator.CONDITIONAL));
   }
-
 }

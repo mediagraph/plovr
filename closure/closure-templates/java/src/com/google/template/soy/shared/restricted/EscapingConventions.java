@@ -16,10 +16,11 @@
 
 package com.google.template.soy.shared.restricted;
 
-import com.google.common.base.Charsets;
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import com.google.template.soy.internal.base.Escaper;
+import com.google.common.escape.Escaper;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -47,7 +48,6 @@ import javax.annotation.ParametersAreNonnullByDefault;
  * Escaping functions are exposed as {@link Escaper}s in Java and via a JavaScript code
  * generating ant task for JavaScript.
  *
- * @author Mike Samuel
  */
 @ParametersAreNonnullByDefault
 public final class EscapingConventions {
@@ -59,6 +59,14 @@ public final class EscapingConventions {
   // over escaped characters.
   // Each escaping convention is its own public interface to java code, and the JavaScript code
   // generator uses a public accessor that ties them all together.
+
+
+  /**
+   * The list of potential languages which are used by the escapers.
+   */
+  public static enum EscapingLanguage {
+    JAVASCRIPT, PYTHON
+  }
 
 
   /**
@@ -118,10 +126,9 @@ public final class EscapingConventions {
    *     value like {@code zzz}.</dd>
    * </dl>
    */
-  public static abstract class CrossLanguageStringXform implements Escaper {
+  public static abstract class CrossLanguageStringXform extends Escaper {
     private final String directiveName;
     private final @Nullable Pattern valueFilter;
-    private final @Nullable List<String> jsNames;
     private final ImmutableList<Escape> escapes;
     /**
      * A dense mapping mirroring escapes.
@@ -139,22 +146,18 @@ public final class EscapingConventions {
     /**
      * @param valueFilter {@code null} if the directive accepts all strings as inputs.  Otherwise
      *     a regular expression that accepts only strings that can be escaped by this directive.
-     * @param jsNames The names of existing JavaScript builtins or Google Closure functions, if
-     *     any exist, that implements this escaping convention.
      * @param nonAsciiPrefix An escaping prefix in {@code "%", "\\u", "\\"} which specifies how to
      *     escape non-ASCII code units not in the sparse mapping.
      *     If null, then non-ASCII code units outside the sparse map can appear unescaped.
      */
     protected CrossLanguageStringXform(
-        @Nullable Pattern valueFilter, List<? extends String> jsNames,
-        @Nullable String nonAsciiPrefix) {
+        @Nullable Pattern valueFilter, @Nullable String nonAsciiPrefix) {
       String simpleName = getClass().getSimpleName();
       // EscapeHtml -> |escapeHtml
       this.directiveName = ("|" + Character.toLowerCase(simpleName.charAt(0)) +
                             simpleName.substring(1));
 
       this.valueFilter = valueFilter;
-      this.jsNames = ImmutableList.<String>copyOf(jsNames);
       this.escapes = defineEscapes();
 
       // Now create the maps used by the escape methods.  The below depends on defineEscapes()
@@ -225,19 +228,21 @@ public final class EscapingConventions {
     }
 
     /**
-     * The names of existing JavaScript builtins or Google Closure functions that implement
-     * the escaping convention.
-     * @return {@code null} if there is no such function.
-     */
-    public final List<String> getJsFunctionNames() {
-      return jsNames;
-    }
-
-    /**
      * The escapes need to translate the input language to the output language.
      */
     public final ImmutableList<Escape> getEscapes() {
       return escapes;
+    }
+
+    /**
+     * The names of existing language builtins or available library functions (such as Google
+     * Closure) that implement the escaping convention.
+     *
+     * @param language The language being escaped.
+     * @return {@code null} if there is no such function.
+     */
+    public List<String> getLangFunctionNames(EscapingLanguage language) {
+      return ImmutableList.<String>of();
     }
 
     /**
@@ -256,7 +261,7 @@ public final class EscapingConventions {
       return sb != null ? sb.toString() : string;
     }
 
-    @Override
+    // TODO(lukes): consider eliminating this method, it was removed from the Escaper interface.
     public final Appendable escape(final Appendable out) {
       return new Appendable() {
         @Override public Appendable append(CharSequence csq) throws IOException {
@@ -499,8 +504,7 @@ public final class EscapingConventions {
     public static final EscapeHtml INSTANCE = new EscapeHtml();
 
     private EscapeHtml() {
-      // TODO: enable goog.string.htmlEscape after it escapes single quotes.
-      super(null, ImmutableList.<String>of(/*"goog.string.htmlEscape"*/), null);
+      super(null, null);
     }
 
     @Override
@@ -513,6 +517,13 @@ public final class EscapingConventions {
           // It escapes ' to &#39; instead of &apos; which is not standardized in XML.
           .escapeAll("\0'")
           .build();
+    }
+
+    @Override public List<String> getLangFunctionNames(EscapingLanguage language) {
+      if (language == EscapingLanguage.JAVASCRIPT) {
+        return ImmutableList.<String>of("goog.string.htmlEscape");
+      }
+      return super.getLangFunctionNames(language);
     }
   }
 
@@ -543,7 +554,7 @@ public final class EscapingConventions {
     public static final NormalizeHtml INSTANCE = new NormalizeHtml();
 
     private NormalizeHtml() {
-      super(null, ImmutableList.<String>of(), null);
+      super(null, null);
     }
 
     @Override
@@ -568,7 +579,7 @@ public final class EscapingConventions {
     public static final EscapeHtmlNospace INSTANCE = new EscapeHtmlNospace();
 
     private EscapeHtmlNospace() {
-      super(null, ImmutableList.<String>of(), null);
+      super(null, null);
     }
 
     @Override
@@ -643,7 +654,7 @@ public final class EscapingConventions {
     public static final NormalizeHtmlNospace INSTANCE = new NormalizeHtmlNospace();
 
     private NormalizeHtmlNospace() {
-      super(null, ImmutableList.<String>of(), null);
+      super(null, null);
     }
 
     @Override
@@ -679,7 +690,7 @@ public final class EscapingConventions {
     public static final EscapeJsString INSTANCE = new EscapeJsString();
 
     private EscapeJsString() {
-      super(null, ImmutableList.<String>of(), null);  // TODO: Maybe use goog.string.quote
+      super(null, null);  // TODO(user): Maybe use goog.string.quote
     }
 
     @Override
@@ -717,8 +728,9 @@ public final class EscapingConventions {
     public static final EscapeJsRegex INSTANCE = new EscapeJsRegex();
 
     private EscapeJsRegex() {
-      // TODO: maybe use goog.string.regExpEscape after fixing it to escape [\r\n\u2028\u2029]
-      super(null, ImmutableList.<String>of(), null);
+      // TODO(user): maybe use goog.string.regExpEscape after fixing it to escape
+      // [\r\n\u2028\u2029]
+      super(null, null);
     }
 
     @Override
@@ -770,7 +782,7 @@ public final class EscapingConventions {
     public static final EscapeCssString INSTANCE = new EscapeCssString();
 
     private EscapeCssString() {
-      super(null, ImmutableList.<String>of(), null);
+      super(null, null);
     }
 
     @Override
@@ -823,7 +835,7 @@ public final class EscapingConventions {
     public static final FilterCssValue INSTANCE = new FilterCssValue();
 
     private FilterCssValue() {
-      super(CSS_WORD, ImmutableList.<String>of(), null);
+      super(CSS_WORD, null);
     }
 
     @Override
@@ -843,7 +855,7 @@ public final class EscapingConventions {
       // The others are transformations on strings of UTF-16 code units, but URIs are composed of
       // strings of bytes.  We assume UTF-8 as the standard way to convert between bytes and code
       // units below.
-      byte[] bytes = Character.toString(plainText).getBytes(Charsets.UTF_8);
+      byte[] bytes = Character.toString(plainText).getBytes(UTF_8);
       int numBytes = bytes.length;
       StringBuilder sb = new StringBuilder(numBytes * 3);
       for (int i = 0; i < numBytes; ++i) {
@@ -866,7 +878,7 @@ public final class EscapingConventions {
     public static final NormalizeUri INSTANCE = new NormalizeUri();
 
     private NormalizeUri() {
-      super(null, ImmutableList.<String>of(), null);
+      super(null, null);
     }
 
     @Override
@@ -917,7 +929,7 @@ public final class EscapingConventions {
       // Disallows any protocol that is not in a whitelist.
       // The below passes if there is
       // (1) Either a protocol in a whitelist (http, https, mailto).  This could be expanded but
-      //     talk to your friendly local security-team@ first.
+      //     talk to your friendly local ise-team@ first.
       // (2) or no protocol.  A protocol must be followed by a colon.  The below allows that by
       //     allowing colons only after one of the characters [/?#].
       //     A colon after a hash (#) must be in the fragment.
@@ -932,10 +944,18 @@ public final class EscapingConventions {
       // It also disallows HTML entities in the first path part of a relative path,
       // e.g. "foo&lt;bar/baz".  Our existing escaping functions should not produce that.
       // More importantly, it disallows masking of a colon, e.g. "javascript&#58;...".
+      //
+      // Also Rejects paths with the following properties:
+      // (3) paths containing /../
+      // (4) paths ending in /..
       super(
           Pattern.compile(
-              "^(?:(?:https?|mailto):|[^&:\\/?#]*(?:[\\/?#]|\\z))", Pattern.CASE_INSENSITIVE),
-          ImmutableList.<String>of(), null);
+              "^" +
+              // Reject case (3) and (4)
+              "(?![^#?]*/(?:\\.|%2E){2}(?:[/?#]|\\z))" +
+              // Accept cases (1) and (2)
+              "(?:(?:https?|mailto):|[^&:/?#]*(?:[/?#]|\\z))", Pattern.CASE_INSENSITIVE),
+          null);
     }
 
     @Override
@@ -945,7 +965,104 @@ public final class EscapingConventions {
 
     @Override
     public String getInnocuousOutput() {
+      // TODO(b/23290608, gboyer): Use about:invalid here, to prevent any content from loading.
       return "#" + INNOCUOUS_OUTPUT;
+    }
+  }
+
+
+  /**
+   * Like {@link FilterNormalizeUri}, but also accepts {@code data:} and {@code blob:} URIs, since
+   * image sources don't execute script in the same origin as the page (although image handling
+   * 0-days are available from time to time, but a templating language can't realistically try to
+   * protect against such a thing).
+   *
+   * <p>Only intended to be used with images; for videos and audio we expect some sort of further
+   * review since they can more easily be used for social engineering.  Video and audio still
+   * accept http/https because remote video and audio can still be protected against via CSP,
+   * but data URIs don't have self-evident provenance.
+   */
+  public static final class FilterNormalizeMediaUri extends CrossLanguageStringXform {
+    /** Implements the {@code |filterNormalizeMediaUri} directive. */
+    public static final FilterNormalizeMediaUri INSTANCE = new FilterNormalizeMediaUri();
+
+    private FilterNormalizeMediaUri() {
+      // For image URIs, we use a relatively permissive filter. We accept:
+      // - http and https URLs
+      // - data URLs of supported types
+      // We don't worry about sequences of "/../" here, because path traversal isn't a worry for
+      // images, and detecting /../ sequences would add unnecessary complexity here.
+      super(
+          Pattern.compile(
+              // Allow relative URIs.
+              "^[^&:/?#]*(?:[/?#]|\\z)"
+              // Allow http and https URIs.
+              + "|^https?:"
+              // Allow image data URIs. Ignore the subtype because browsers ignore them anyways.
+              // In fact, most browsers happily accept text/html or a completely empty MIME, but it
+              // doesn't hurt to verify that it at least looks vaguely correct.
+              + "|^data:image/[a-z0-9+]+"
+              + ";base64,[a-z0-9+/]+=*\\z"
+              // Blob URIs -- while there's no saying what's in them, (a) they are created on the
+              // same origin, and (b) no worse than loading a random http/https link.
+              + "|^blob:",
+              Pattern.CASE_INSENSITIVE),
+          null);
+    }
+
+    @Override
+    protected ImmutableList<Escape> defineEscapes() {
+      return NormalizeUri.INSTANCE.defineEscapes();
+    }
+
+    @Override
+    public String getInnocuousOutput() {
+      // NOTE: about:invalid is registered in http://www.w3.org/TR/css3-values/#about-invalid :
+      // "The about:invalid URI references a non-existent document with a generic error condition.
+      // It can be used when a URI is necessary, but the default value shouldn't be resolveable as
+      // any type of document."
+      return "about:invalid#" + INNOCUOUS_OUTPUT;
+    }
+  }
+
+
+  /**
+   * Accepts only data URI's that contain an image.
+   *
+   * <p>Developers use this simultaneously to allow data URI's, but also to ensure that the image
+   * tag won't initiate any HTTP requests.
+   *
+   * <p>NOTE: We may consider deprecating this now that img/data URIs are allowed by default, since
+   * it's unlikely too many projects need a mechanism to double-check that images are only loaded
+   * from data URIs; anyone else that does can simply scan the URL and fail if it detects
+   * http/https.
+   */
+  public static final class FilterImageDataUri extends CrossLanguageStringXform {
+    /** Implements the {@code |filterNormalizeUri} directive. */
+    public static final FilterImageDataUri INSTANCE = new FilterImageDataUri();
+
+    private FilterImageDataUri() {
+      super(
+          Pattern.compile(
+              "^data:image/(?:bmp|gif|jpe?g|png|tiff|webp);base64,[a-z0-9+/]+=*\\z",
+              Pattern.CASE_INSENSITIVE),
+          null);
+    }
+
+    @Override
+    protected ImmutableList<Escape> defineEscapes() {
+      // No normalization or escaping necessary -- the filter is limited to a strict subset that
+      // doesn't involve html stop-chars.
+      return ImmutableList.<Escape>of();
+    }
+
+    @Override
+    public String getInnocuousOutput() {
+      // Return something that is both clearly an image, but clearly invalid. We don't want the
+      // browser to fetch anything. We also don't necessarily want a transparent gif, since it
+      // doesn't alert developers to an issue. And finally, by not starting with GIF89a, we ensure
+      // the browser doesn't attempt to actually decode it and crash.
+      return "data:image/gif;base64,zSoyz";
     }
   }
 
@@ -959,7 +1076,7 @@ public final class EscapingConventions {
     public static final EscapeUri INSTANCE = new EscapeUri();
 
     private EscapeUri() {
-      super(null, ImmutableList.of("goog.string.urlEncode", "encodeURIComponent"), "%");
+      super(null, "%");
     }
 
     @Override
@@ -980,6 +1097,15 @@ public final class EscapingConventions {
           // All non-ASCII codepoints escaped per the constructor above.
           .build();
     }
+
+    @Override public List<String> getLangFunctionNames(EscapingLanguage language) {
+      if (language == EscapingLanguage.JAVASCRIPT) {
+        return ImmutableList.<String>of("goog.string.urlEncode", "encodeURIComponent");
+      } else if (language == EscapingLanguage.PYTHON) {
+        return ImmutableList.<String>of("urllib.quote");
+      }
+      return super.getLangFunctionNames(language);
+    }
   }
 
 
@@ -994,17 +1120,19 @@ public final class EscapingConventions {
     private FilterHtmlAttributes() {
       super(
           Pattern.compile(
-              "^" +
-              // Disallow special attribute names
-              "(?!style|on|action|archive|background|cite|classid|codebase|data|dsync|href" +
-              "|longdesc|src|usemap)" +
-              "(?:" +
+              "^"
+              // Disallow on* and src* attribute names.
+              + "(?!on|src|"
+              // Disallow specific other attribute names.
+              + "(?:style|action|archive|background|cite|classid|codebase|data|dsync|href"
+              + "|longdesc|usemap)\\s*$)"
+              + "(?:"
               // Must match letters
-              "[a-z0-9_$:-]*" +
+              + "[a-z0-9_$:-]*"
               // Match until the end.
-              ")\\z",
+              + ")\\z",
               Pattern.CASE_INSENSITIVE),
-          ImmutableList.<String>of(), null);
+          null);
     }
 
     @Override
@@ -1025,12 +1153,12 @@ public final class EscapingConventions {
     private FilterHtmlElementName() {
       super(
           Pattern.compile(
-              "^" +
+              "^"
               // Disallow special element names.
-              "(?!script|style|title|textarea|xmp|no)" +
-              "[a-z0-9_$:-]*\\z",
+              + "(?!script|style|title|textarea|xmp|no)"
+              + "[a-z0-9_$:-]*\\z",
               Pattern.CASE_INSENSITIVE),
-          ImmutableList.<String>of(), null);
+          null);
     }
 
     @Override
@@ -1057,6 +1185,8 @@ public final class EscapingConventions {
         EscapeUri.INSTANCE,
         NormalizeUri.INSTANCE,
         FilterNormalizeUri.INSTANCE,
+        FilterNormalizeMediaUri.INSTANCE,
+        FilterImageDataUri.INSTANCE,
         FilterHtmlAttributes.INSTANCE,
         FilterHtmlElementName.INSTANCE
         );

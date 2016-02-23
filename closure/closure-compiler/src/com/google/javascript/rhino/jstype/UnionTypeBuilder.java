@@ -46,9 +46,9 @@ import static com.google.javascript.rhino.jstype.JSTypeNative.UNKNOWN_TYPE;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -59,15 +59,15 @@ import java.util.List;
  *
  * @author nicksantos@google.com (Nick Santos)
  */
-class UnionTypeBuilder implements Serializable {
+public class UnionTypeBuilder implements Serializable {
   private static final long serialVersionUID = 1L;
 
-  // If the best we can do is say "this object is one of twenty things",
+  // If the best we can do is say "this object is one of thirty things",
   // then we should just give up and admit that we have no clue.
-  private static final int DEFAULT_MAX_UNION_SIZE = 20;
+  private static final int DEFAULT_MAX_UNION_SIZE = 30;
 
   private final JSTypeRegistry registry;
-  private final List<JSType> alternates = Lists.newArrayList();
+  private final List<JSType> alternates = new ArrayList<>();
   private boolean isAllType = false;
   private boolean isNativeUnknownType = false;
   private boolean areAllUnknownsChecked = true;
@@ -96,7 +96,7 @@ class UnionTypeBuilder implements Serializable {
   // Memoize the result, in case build() is called multiple times.
   private JSType result = null;
 
-  UnionTypeBuilder(JSTypeRegistry registry) {
+  public UnionTypeBuilder(JSTypeRegistry registry) {
     this(registry, DEFAULT_MAX_UNION_SIZE);
   }
 
@@ -113,11 +113,26 @@ class UnionTypeBuilder implements Serializable {
     return Collections.unmodifiableList(alternates);
   }
 
+  private boolean isSubtype(
+      JSType rightType, JSType leftType, boolean isStructural) {
+    // if thisType or thatType is an unresolved templatized type,
+    // then there is no structural interface matching
+    boolean thisUnresolved = rightType.isTemplatizedType()
+        && !rightType.toMaybeTemplatizedType().isResolved();
+    boolean thatUnresolved = leftType.isTemplatizedType()
+        && !leftType.toMaybeTemplatizedType().isResolved();
+    if (isStructural && !thisUnresolved && !thatUnresolved) {
+      return rightType.isSubtype(leftType);
+    } else {
+      return rightType.isSubtypeWithoutStructuralTyping(leftType);
+    }
+  }
+
   /**
    * Adds an alternate to the union type under construction. Returns this
    * for easy chaining.
    */
-  UnionTypeBuilder addAlternate(JSType alternate) {
+  public UnionTypeBuilder addAlternate(JSType alternate, boolean isStructural) {
     // build() returns the bottom type by default, so we can
     // just bail out early here.
     if (alternate.isNoType()) {
@@ -135,7 +150,7 @@ class UnionTypeBuilder implements Serializable {
     if (!isAllType && !isNativeUnknownType) {
       if (alternate.isUnionType()) {
         UnionType union = alternate.toMaybeUnionType();
-        for (JSType unionAlt : union.getAlternates()) {
+        for (JSType unionAlt : union.getAlternatesWithoutStructuralTyping()) {
           addAlternate(unionAlt);
         }
       } else {
@@ -175,7 +190,7 @@ class UnionTypeBuilder implements Serializable {
               current.isNoResolvedType() ||
               alternate.hasAnyTemplateTypes() ||
               current.hasAnyTemplateTypes()) {
-            if (alternate.isEquivalentTo(current)) {
+            if (alternate.isEquivalentTo(current, isStructural)) {
               // Alternate is unnecessary.
               return this;
             }
@@ -207,13 +222,13 @@ class UnionTypeBuilder implements Serializable {
               //    current:Object.<string> ==> Object.<string>|Array.<string>
 
               if (!current.isTemplatizedType()) {
-                if (alternate.isSubtype(current)) {
+                if (isSubtype(alternate, current, isStructural)) {
                   // case 1, 2
                   return this;
                 }
                 // case 3: leave current, add alternate
               } else if (!alternate.isTemplatizedType()) {
-                if (current.isSubtype(alternate)) {
+                if (isSubtype(current, alternate, isStructural)) {
                   // case 4, 5
                   removeCurrent = true;
                 }
@@ -243,10 +258,10 @@ class UnionTypeBuilder implements Serializable {
                 // case 9: leave current, add alternate
               }
               // Otherwise leave both templatized types.
-            } else if (alternate.isSubtype(current)) {
+            } else if (isSubtype(alternate, current, isStructural)) {
               // Alternate is unnecessary.
               return this;
-            } else if (current.isSubtype(alternate)) {
+            } else if (isSubtype(current, alternate, isStructural)) {
               // Alternate makes current obsolete
               removeCurrent = true;
             }
@@ -281,6 +296,14 @@ class UnionTypeBuilder implements Serializable {
   }
 
   /**
+   * Adds an alternate to the union type under construction. Returns this
+   * for easy chaining.
+   */
+  public UnionTypeBuilder addAlternate(JSType alternate) {
+    return addAlternate(alternate, false);
+  }
+
+  /**
    * Reduce the alternates into a non-union type.
    * If the alternates can't be accurately represented with a non-union
    * type, return null.
@@ -301,7 +324,7 @@ class UnionTypeBuilder implements Serializable {
       } else if (size > 1) {
         return null;
       } else if (size == 1) {
-        return alternates.iterator().next();
+        return alternates.get(0);
       } else {
         return registry.getNativeType(NO_TYPE);
       }
@@ -313,7 +336,7 @@ class UnionTypeBuilder implements Serializable {
    * @return A UnionType if it has two or more alternates, the
    *    only alternate if it has one and otherwise {@code NO_TYPE}.
    */
-  JSType build() {
+  public JSType build() {
     if (result == null) {
       result = reduceAlternatesWithoutUnion();
       if (result == null) {

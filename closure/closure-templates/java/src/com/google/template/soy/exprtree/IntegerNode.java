@@ -16,25 +16,30 @@
 
 package com.google.template.soy.exprtree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.types.SoyType;
+import com.google.template.soy.types.primitive.IntType;
+
+import java.util.Objects;
 
 /**
  * Node representing an integer value.
  *
  * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
  *
- * @author Kai Huang
  */
-public class IntegerNode extends AbstractPrimitiveNode {
-
+public final class IntegerNode extends AbstractPrimitiveNode {
 
   /** The integer value. */
   private final int value;
 
-
   /**
    * @param value The integer value.
+   * @param sourceLocation The node's source location.
    */
-  public IntegerNode(int value) {
+  public IntegerNode(int value, SourceLocation sourceLocation) {
+    super(sourceLocation);
     this.value = value;
   }
 
@@ -43,14 +48,19 @@ public class IntegerNode extends AbstractPrimitiveNode {
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected IntegerNode(IntegerNode orig) {
-    super(orig);
+  private IntegerNode(IntegerNode orig, CopyState copyState) {
+    super(orig, copyState);
     this.value = orig.value;
   }
 
 
   @Override public Kind getKind() {
     return Kind.INTEGER_NODE;
+  }
+
+
+  @Override public SoyType getType() {
+    return IntType.getInstance();
   }
 
 
@@ -65,8 +75,19 @@ public class IntegerNode extends AbstractPrimitiveNode {
   }
 
 
-  @Override public IntegerNode clone() {
-    return new IntegerNode(this);
+  @Override public IntegerNode copy(CopyState copyState) {
+    return new IntegerNode(this, copyState);
   }
 
+
+  @Override public boolean equals(Object other) {
+    if (other == null || other.getClass() != this.getClass()) { return false; }
+    IntegerNode otherInt = (IntegerNode) other;
+    return value == otherInt.value;
+  }
+
+
+  @Override public int hashCode() {
+    return Objects.hash(this.getClass(), value);
+  }
 }

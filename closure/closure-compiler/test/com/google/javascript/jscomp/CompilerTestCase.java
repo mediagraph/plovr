@@ -16,12 +16,15 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.truth.Truth.assertThat;
+import static com.google.common.truth.Truth.assert_;
+
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
+import com.google.javascript.jscomp.testing.BlackHoleErrorManager;
 import com.google.javascript.jscomp.type.ReverseAbstractInterpreter;
 import com.google.javascript.jscomp.type.SemanticReverseAbstractInterpreter;
 import com.google.javascript.rhino.Node;
@@ -30,6 +33,8 @@ import com.google.javascript.rhino.testing.BaseJSTypeTestCase;
 import junit.framework.TestCase;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -43,16 +48,20 @@ import java.util.Map;
  * exactly correct to the spacing.</p>
  *
  */
-public abstract class CompilerTestCase extends TestCase  {
+public abstract class CompilerTestCase extends TestCase {
+  protected static final Joiner LINE_JOINER = Joiner.on('\n');
 
   /** Externs for the test */
-  private final List<SourceFile> externsInputs;
+  protected final List<SourceFile> externsInputs;
 
   /** Whether to compare input and output as trees instead of strings */
-  private final boolean compareAsTree;
+  private boolean compareAsTree;
 
   /** Whether to parse type info from JSDoc comments */
   protected boolean parseTypeInfo;
+
+  /** Whether to take JSDoc into account when comparing ASTs. */
+  protected boolean compareJsDoc;
 
   /** Whether we check warnings without source information. */
   private boolean allowSourcelessWarnings = false;
@@ -60,20 +69,43 @@ public abstract class CompilerTestCase extends TestCase  {
   /** True iff closure pass runs before pass being tested. */
   private boolean closurePassEnabled = false;
 
-  /** True iff type checking pass runs before pass being tested. */
+  /** Whether the closure pass is run on the expected JS. */
+  private boolean closurePassEnabledForExpected = false;
+
+  /** Whether to rewrite Closure code before the test is run. */
+  private boolean rewriteClosureCode = false;
+
+  /**
+   * If true, run type checking together with the pass being tested. A separate
+   * flag controls whether type checking runs before or after the pass.
+   */
   private boolean typeCheckEnabled = false;
 
-  /** Error level reported by type checker. */
-  private CheckLevel typeCheckLevel;
+  /**
+   * If true, run NTI together with the pass being tested. A separate
+   * flag controls whether NTI runs before or after the pass.
+   */
+  private boolean newTypeInferenceEnabled = false;
 
-  /** Whether to the test compiler pass before the type check. */
+  @Deprecated private CheckLevel reportMissingOverrideCheckLevel = CheckLevel.WARNING;
+
+  /** Whether to test the compiler pass before the type check. */
   protected boolean runTypeCheckAfterProcessing = false;
+
+  /** Whether to test the compiler pass before NTI. */
+  protected boolean runNTIAfterProcessing = false;
+
+  /** Whether to scan externs for property names. */
+  private boolean gatherExternPropertiesEnabled = false;
 
   /** Whether the Normalize pass runs before pass being tested. */
   private boolean normalizeEnabled = false;
 
   /** Whether the expected JS strings should be normalized. */
   private boolean normalizeExpected = false;
+
+  /** Whether we run InferConsts before checking. */
+  private boolean enableInferConsts = false;
 
   /** Whether to check that all line number information is preserved. */
   private boolean checkLineNumbers = true;
@@ -101,9 +133,11 @@ public abstract class CompilerTestCase extends TestCase  {
   private Compiler lastCompiler;
 
   /**
-   * Whether to acceptES5 source.
+   * Whether to accept ES6, ES5 or ES3 source.
    */
-  private boolean acceptES5 = true;
+  private LanguageMode acceptedLanguage = LanguageMode.ECMASCRIPT5;
+
+  private LanguageMode languageOut = LanguageMode.ECMASCRIPT5;
 
   /**
    * Whether externs changes should be allowed for this pass.
@@ -135,10 +169,10 @@ public abstract class CompilerTestCase extends TestCase  {
    * </pre>
    */
   protected CompilerTestCase(String externs, boolean compareAsTree) {
-    this.externsInputs = ImmutableList.of(
-        SourceFile.fromCode("externs", externs));
+    this.externsInputs = ImmutableList.of(SourceFile.fromCode("externs", externs));
     this.compareAsTree = compareAsTree;
     this.parseTypeInfo = false;
+    this.compareJsDoc = true;
   }
 
   /**
@@ -156,7 +190,8 @@ public abstract class CompilerTestCase extends TestCase  {
     this("", true);
   }
 
-  @Override protected void tearDown() throws Exception {
+  @Override
+  protected void tearDown() throws Exception {
     super.tearDown();
     expectParseWarningsThisTest = false;
   }
@@ -168,7 +203,6 @@ public abstract class CompilerTestCase extends TestCase  {
    * @return The pass to test
    */
   protected abstract CompilerPass getProcessor(Compiler compiler);
-
 
   /**
    * Gets the compiler options to use for this test. Use getProcessor to
@@ -183,18 +217,14 @@ public abstract class CompilerTestCase extends TestCase  {
    * determine what passes should be run.
    */
   protected CompilerOptions getOptions(CompilerOptions options) {
-    if (this.acceptES5) {
-      options.setLanguageIn(LanguageMode.ECMASCRIPT5);
-    }
+    options.setLanguageIn(acceptedLanguage);
 
     // This doesn't affect whether checkSymbols is run--it just affects
     // whether variable warnings are filtered.
-    options.checkSymbols = true;
+    options.setCheckSymbols(true);
 
-    options.setWarningLevel(
-        DiagnosticGroups.MISSING_PROPERTIES, CheckLevel.WARNING);
-    options.setWarningLevel(
-        DiagnosticGroups.INVALID_CASTS, CheckLevel.WARNING);
+    options.setWarningLevel(DiagnosticGroups.MISSING_PROPERTIES, CheckLevel.WARNING);
+    options.setWarningLevel(DiagnosticGroups.INVALID_CASTS, CheckLevel.WARNING);
     options.setCodingConvention(getCodingConvention());
     return options;
   }
@@ -205,6 +235,10 @@ public abstract class CompilerTestCase extends TestCase  {
 
   public void setFilename(String filename) {
     this.filename = filename;
+  }
+
+  public String getFilename() {
+    return filename;
   }
 
   /**
@@ -228,10 +262,29 @@ public abstract class CompilerTestCase extends TestCase  {
   }
 
   /**
-   * Whether to allow ECMASCRIPT5 source parsing.
+   * What language to allow in source parsing. Also sets the output language.
    */
-  protected void enableEcmaScript5(boolean acceptES5) {
-    this.acceptES5 = acceptES5;
+  protected void setAcceptedLanguage(LanguageMode lang) {
+    setLanguage(lang, lang);
+  }
+
+  /**
+   * Sets the input and output language modes..
+   */
+  protected void setLanguage(LanguageMode langIn, LanguageMode langOut) {
+    this.acceptedLanguage = langIn;
+    setLanguageOut(langOut);
+  }
+
+  protected void setLanguageOut(LanguageMode acceptedLanguage) {
+    this.languageOut = acceptedLanguage;
+  }
+
+  /**
+   * Whether to run InferConsts before passes
+   */
+  protected void enableInferConsts(boolean enable) {
+    this.enableInferConsts = enable;
   }
 
   /**
@@ -247,11 +300,30 @@ public abstract class CompilerTestCase extends TestCase  {
    *
    * @param level the level of severity to report for type errors
    *
+   * @deprecated Use enableTypeCheck()
    * @see TypeCheck
    */
+  @Deprecated
   public void enableTypeCheck(CheckLevel level) {
-    typeCheckEnabled  = true;
-    typeCheckLevel = level;
+    enableTypeCheck();
+    reportMissingOverrideCheckLevel = level;
+  }
+
+  /**
+   * Perform type checking before running the test pass. This will check
+   * for type errors and annotate nodes with type information.
+   *
+   * @see TypeCheck
+   */
+  public void enableTypeCheck() {
+    typeCheckEnabled = true;
+  }
+
+  // Run the new type inference after the test pass. Useful for testing passes
+  // that rewrite the AST prior to typechecking, eg, AngularPass or PolymerPass.
+  void enableNewTypeInference() {
+    this.newTypeInferenceEnabled = true;
+    this.runNTIAfterProcessing = true;
   }
 
   /**
@@ -267,15 +339,30 @@ public abstract class CompilerTestCase extends TestCase  {
    * @see TypeCheck
    */
   void disableTypeCheck() {
-    typeCheckEnabled  = false;
+    typeCheckEnabled = false;
+  }
+
+  void disableNewTypeInference() {
+    this.newTypeInferenceEnabled = false;
   }
 
   /**
    * Process closure library primitives.
    */
   // TODO(nicksantos): Fix other passes to use this when appropriate.
-  void enableClosurePass() {
+  protected void enableClosurePass() {
     closurePassEnabled = true;
+  }
+
+  protected void enableClosurePassForExpected() {
+    closurePassEnabledForExpected = true;
+  }
+
+  /**
+   * Rewrite Closure code before the test is run.
+   */
+  void enableRewriteClosureCode() {
+    rewriteClosureCode = true;
   }
 
   /**
@@ -316,7 +403,7 @@ public abstract class CompilerTestCase extends TestCase  {
    */
   // TODO(nicksantos): This pass doesn't get run anymore. It should be removed.
   void enableMarkNoSideEffects() {
-    markNoSideEffects  = true;
+    markNoSideEffects = true;
   }
 
   /**
@@ -325,7 +412,14 @@ public abstract class CompilerTestCase extends TestCase  {
    * @see MarkNoSideEffectCalls
    */
   void enableComputeSideEffects() {
-    computeSideEffects  = true;
+    computeSideEffects = true;
+  }
+
+  /**
+   * Scan externs for properties that should not be renamed.
+   */
+  void enableGatherExternProperties() {
+    gatherExternPropertiesEnabled = true;
   }
 
   /**
@@ -335,19 +429,31 @@ public abstract class CompilerTestCase extends TestCase  {
     astValidationEnabled = validate;
   }
 
+  /**
+   * Whether to compare the expected output as a tree or string.
+   */
+  protected void enableCompareAsTree(boolean compareAsTree) {
+    this.compareAsTree = compareAsTree;
+  }
+
   /** Whether we should ignore parse warnings for the current test method. */
   protected void setExpectParseWarningsThisTest() {
     expectParseWarningsThisTest = true;
   }
 
   /** Returns a newly created TypeCheck. */
-  private static TypeCheck createTypeCheck(Compiler compiler,
-      CheckLevel level) {
+  private static TypeCheck createTypeCheck(Compiler compiler, CheckLevel level) {
     ReverseAbstractInterpreter rai =
-        new SemanticReverseAbstractInterpreter(compiler.getCodingConvention(),
-            compiler.getTypeRegistry());
+        new SemanticReverseAbstractInterpreter(compiler.getTypeRegistry());
 
     return new TypeCheck(compiler, rai, compiler.getTypeRegistry(), level);
+  }
+
+  private static void runNewTypeInference(Compiler compiler, Node externs, Node js) {
+    GlobalTypeInfo gti = compiler.getSymbolTable();
+    gti.process(externs, js);
+    NewTypeInference nti = new NewTypeInference(compiler);
+    nti.process(externs, js);
   }
 
   /**
@@ -357,21 +463,30 @@ public abstract class CompilerTestCase extends TestCase  {
    * @param expected Expected JS output
    */
   public void test(String js, String expected) {
-    test(js, expected, (DiagnosticType) null);
+    test(js, expected, null, null);
   }
 
   /**
-   * Verifies that the compiler pass's JS output matches the expected output,
-   * or that an expected error is encountered.
+   * Verifies that the compiler generates the given error for the given input.
    *
    * @param js Input
-   * @param expected Expected output, or null if an error is expected
-   * @param error Expected error, or null if no error is expected
+   * @param error Expected error
    */
-  public void test(String js, String expected, DiagnosticType error) {
-    test(js, expected, error, null);
+  public void testError(String js, DiagnosticType error) {
+    assertNotNull(error);
+    test(js, null, error, null);
   }
 
+  /**
+   * Verifies that the compiler generates the given warning for the given input.
+   *
+   * @param js Input
+   * @param warning Expected warning
+   */
+  public void testWarning(String js, DiagnosticType warning) {
+    assertNotNull(warning);
+    test(js, null, null, warning);
+  }
 
   /**
    * Verifies that the compiler pass's JS output matches the expected output,
@@ -383,8 +498,12 @@ public abstract class CompilerTestCase extends TestCase  {
    * @param warning Expected warning, or null if no warning is expected
    * @param description The content of the error expected
    */
-  public void test(String js, String expected, DiagnosticType error,
-                   DiagnosticType warning, String description) {
+  public void test(
+      String js,
+      String expected,
+      DiagnosticType error,
+      DiagnosticType warning,
+      String description) {
     test(externsInputs, js, expected, error, warning, description);
   }
 
@@ -398,8 +517,7 @@ public abstract class CompilerTestCase extends TestCase  {
    * @param error Expected error, or null if no error is expected
    * @param warning Expected warning, or null if no warning is expected
    */
-  public void test(String js, String expected,
-                   DiagnosticType error, DiagnosticType warning) {
+  public void test(String js, String expected, DiagnosticType error, DiagnosticType warning) {
     test(externsInputs, js, expected, error, warning, null);
   }
 
@@ -414,8 +532,8 @@ public abstract class CompilerTestCase extends TestCase  {
    * @param error Expected error, or null if no error is expected
    * @param warning Expected warning, or null if no warning is expected
    */
-  public void test(String externs, String js, String expected,
-                   DiagnosticType error, DiagnosticType warning) {
+  public void test(
+      String externs, String js, String expected, DiagnosticType error, DiagnosticType warning) {
     test(externs, js, expected, error, warning, null);
   }
 
@@ -433,11 +551,16 @@ public abstract class CompilerTestCase extends TestCase  {
    *      or null if no warning is expected or if the warning's description
    *      should not be examined
    */
-  public void test(String externs, String js, String expected,
-                   DiagnosticType error, DiagnosticType warning,
-                   String description) {
-    List<SourceFile> externsInputs = ImmutableList.of(
-        SourceFile.fromCode("externs", externs));
+  public void test(
+      String externs,
+      String js,
+      String expected,
+      DiagnosticType error,
+      DiagnosticType warning,
+      String description) {
+    SourceFile externsFile = SourceFile.fromCode("externs", externs);
+    externsFile.setIsExtern(true);
+    List<SourceFile> externsInputs = ImmutableList.of(externsFile);
     test(externsInputs, js, expected, error, warning, description);
   }
 
@@ -455,22 +578,55 @@ public abstract class CompilerTestCase extends TestCase  {
    *      or null if no warning is expected or if the warning's description
    *      should not be examined
    */
-  public void test(List<SourceFile> externs, String js, String expected,
-                   DiagnosticType error,
-                   DiagnosticType warning, String description) {
+  public void test(
+      List<SourceFile> externs,
+      String js,
+      String expected,
+      DiagnosticType error,
+      DiagnosticType warning,
+      String description) {
+    test(
+        externs,
+        ImmutableList.of(SourceFile.fromCode(filename, js)),
+        expected,
+        error,
+        warning,
+        description);
+  }
+
+  /**
+   * Verifies that the compiler pass's JS output matches the expected output
+   * and (optionally) that an expected warning is issued. Or, if an error is
+   * expected, this method just verifies that the error is encountered.
+   *
+   * @param externs Externs inputs
+   * @param js Inputs
+   * @param expected Expected output, or null if an error is expected
+   * @param error Expected error, or null if no error is expected
+   * @param warning Expected warning, or null if no warning is expected
+   * @param description The description of the expected warning,
+   *     or null if no warning is expected or if the warning's description
+   *     should not be examined
+   */
+  private void test(
+      List<SourceFile> externs,
+      List<SourceFile> js,
+      String expected,
+      DiagnosticType error,
+      DiagnosticType warning,
+      String description) {
     Compiler compiler = createCompiler();
     lastCompiler = compiler;
 
     CompilerOptions options = getOptions();
 
-    if (this.acceptES5) {
-      options.setLanguageIn(LanguageMode.ECMASCRIPT5);
-    }
+    options.setLanguageIn(acceptedLanguage);
+    options.setLanguageOut(languageOut);
+
     // Note that in this context, turning on the checkTypes option won't
     // actually cause the type check to run.
-    options.checkTypes = parseTypeInfo;
-    compiler.init(externs, ImmutableList.of(
-        SourceFile.fromCode(filename, js)), options);
+    options.setCheckTypes(parseTypeInfo);
+    compiler.init(externs, js, options);
 
     BaseJSTypeTestCase.addNativeProperties(compiler.getTypeRegistry());
 
@@ -479,7 +635,7 @@ public abstract class CompilerTestCase extends TestCase  {
 
   private String[] maybeCreateArray(String expected) {
     if (expected != null) {
-      return new String[] { expected };
+      return new String[] {expected};
     }
     return null;
   }
@@ -491,6 +647,16 @@ public abstract class CompilerTestCase extends TestCase  {
    * @param expected Expected JS output
    */
   public void test(String[] js, String[] expected) {
+    test(js, expected, null);
+  }
+
+  /**
+   * Verifies that the compiler pass's JS output matches the expected output.
+   *
+   * @param js Inputs
+   * @param expected Expected JS output
+   */
+  public void test(List<SourceFile> js, List<SourceFile> expected) {
     test(js, expected, null);
   }
 
@@ -507,6 +673,18 @@ public abstract class CompilerTestCase extends TestCase  {
   }
 
   /**
+   * Verifies that the compiler pass's JS output matches the expected output,
+   * or that an expected error is encountered.
+   *
+   * @param js Inputs
+   * @param expected Expected JS output
+   * @param error Expected error, or null if no error is expected
+   */
+  public void test(List<SourceFile> js, List<SourceFile> expected, DiagnosticType error) {
+    test(js, expected, error, null);
+  }
+
+  /**
    * Verifies that the compiler pass's JS output matches the expected output
    * and (optionally) that an expected warning is issued. Or, if an error is
    * expected, this method just verifies that the error is encountered.
@@ -516,8 +694,25 @@ public abstract class CompilerTestCase extends TestCase  {
    * @param error Expected error, or null if no error is expected
    * @param warning Expected warning, or null if no warning is expected
    */
-  public void test(String[] js, String[] expected, DiagnosticType error,
-                   DiagnosticType warning) {
+  public void test(String[] js, String[] expected, DiagnosticType error, DiagnosticType warning) {
+    test(js, expected, error, warning, null);
+  }
+
+  /**
+   * Verifies that the compiler pass's JS output matches the expected output
+   * and (optionally) that an expected warning is issued. Or, if an error is
+   * expected, this method just verifies that the error is encountered.
+   *
+   * @param js Inputs
+   * @param expected Expected JS output
+   * @param error Expected error, or null if no error is expected
+   * @param warning Expected warning, or null if no warning is expected
+   */
+  public void test(
+      List<SourceFile> js,
+      List<SourceFile> expected,
+      DiagnosticType error,
+      DiagnosticType warning) {
     test(js, expected, error, warning, null);
   }
 
@@ -534,15 +729,65 @@ public abstract class CompilerTestCase extends TestCase  {
    *      or null if no warning is expected or if the warning's description
    *      should not be examined
    */
-  public void test(String[] js, String[] expected, DiagnosticType error,
-                   DiagnosticType warning, String description) {
-    Compiler compiler = createCompiler();
-    lastCompiler = compiler;
-
-    List<SourceFile> inputs = Lists.newArrayList();
+  public void test(
+      String[] js,
+      String[] expected,
+      DiagnosticType error,
+      DiagnosticType warning,
+      String description) {
+    List<SourceFile> inputs = new ArrayList<>();
     for (int i = 0; i < js.length; i++) {
       inputs.add(SourceFile.fromCode("input" + i, js[i]));
     }
+    test(inputs, expected, error, warning, description);
+  }
+
+  /**
+   * Verifies that the compiler pass's JS output matches the expected output
+   * and (optionally) that an expected warning is issued. Or, if an error is
+   * expected, this method just verifies that the error is encountered.
+   *
+   * @param js Inputs
+   * @param expected Expected JS output
+   * @param error Expected error, or null if no error is expected
+   * @param description The description of the expected warning,
+   *     or null if no warning is expected or if the warning's description
+   *     should not be examined
+   */
+  public void test(
+      List<SourceFile> js,
+      List<SourceFile> expected,
+      DiagnosticType error,
+      DiagnosticType warning,
+      String description) {
+    Compiler compiler = createCompiler();
+    lastCompiler = compiler;
+
+    compiler.init(externsInputs, js, getOptions());
+    test(compiler, expected, error, warning, description);
+  }
+
+  /**
+   * Verifies that the compiler pass's JS output matches the expected output
+   * and (optionall) that an expected warning is issued. Or, if an error is
+   * expected, this method just verifies that the error is encountered.
+   *
+   * @param inputs Inputs
+   * @param expected Expected JS output
+   * @param error Expected error, or null if no error is expected
+   * @param description The description of the expected warning,
+   *     or null if no warning is expected or if the warning's description
+   *     should no be examined
+   */
+  public void test(
+      List<SourceFile> inputs,
+      String[] expected,
+      DiagnosticType error,
+      DiagnosticType warning,
+      String description) {
+    Compiler compiler = createCompiler();
+    lastCompiler = compiler;
+
     compiler.init(externsInputs, inputs, getOptions());
     test(compiler, expected, error, warning, description);
   }
@@ -565,8 +810,7 @@ public abstract class CompilerTestCase extends TestCase  {
    * @param expected Expected JS outputs (one per module)
    * @param error Expected error, or null if no error is expected
    */
-  public void test(JSModule[] modules, String[] expected,
-      DiagnosticType error) {
+  public void test(JSModule[] modules, String[] expected, DiagnosticType error) {
     test(modules, expected, error, null);
   }
 
@@ -580,13 +824,12 @@ public abstract class CompilerTestCase extends TestCase  {
    * @param error Expected error, or null if no error is expected
    * @param warning Expected warning, or null if no warning is expected
    */
-  public void test(JSModule[] modules, String[] expected,
-                   DiagnosticType error, DiagnosticType warning) {
+  public void test(
+      JSModule[] modules, String[] expected, DiagnosticType error, DiagnosticType warning) {
     Compiler compiler = createCompiler();
     lastCompiler = compiler;
 
-    compiler.initModules(
-        externsInputs, Lists.newArrayList(modules), getOptions());
+    compiler.initModules(externsInputs, ImmutableList.copyOf(modules), getOptions());
     test(compiler, expected, error, warning);
   }
 
@@ -614,22 +857,6 @@ public abstract class CompilerTestCase extends TestCase  {
    * Verifies that the compiler pass's JS output is the same as its input
    * and (optionally) that an expected warning is issued.
    *
-   * @param js Input and output
-   * @param diag Expected error or warning, or null if none is expected
-   * @param error true if diag is an error, false if it is a warning
-   */
-  public void testSame(String js, DiagnosticType diag, boolean error) {
-    if (error) {
-      test(js, js, diag);
-    } else {
-      test(js, js, null, diag);
-    }
-  }
-
-  /**
-   * Verifies that the compiler pass's JS output is the same as its input
-   * and (optionally) that an expected warning is issued.
-   *
    * @param externs Externs input
    * @param js Input and output
    * @param warning Expected warning, or null if no warning is expected
@@ -642,15 +869,28 @@ public abstract class CompilerTestCase extends TestCase  {
    * Verifies that the compiler pass's JS output is the same as its input
    * and (optionally) that an expected warning is issued.
    *
+   * @param js Input and output
+   * @param warning Expected warning, or null if no warning is expected
+   * @param description The description of the expected warning,
+   *      or null if no warning is expected or if the warning's description
+   *      should not be examined
+   */
+  public void testSameNoExterns(String js, DiagnosticType warning, String description) {
+    testSame("", js, warning, description, false);
+  }
+
+  /**
+   * Verifies that the compiler pass's JS output is the same as its input
+   * and (optionally) that an expected warning is issued.
+   *
    * @param externs Externs input
    * @param js Input and output
    * @param diag Expected error or warning, or null if none is expected
    * @param error true if diag is an error, false if it is a warning
    */
-  public void testSame(
-      String externs, String js, DiagnosticType diag, boolean error) {
+  public void testSame(String externs, String js, DiagnosticType diag, boolean error) {
     if (error) {
-      test(externs, js, js, diag, null);
+      test(externs, js, (String) null, diag, null);
     } else {
       test(externs, js, js, null, diag);
     }
@@ -667,11 +907,31 @@ public abstract class CompilerTestCase extends TestCase  {
    *      or null if no warning is expected or if the warning's description
    *      should not be examined
    */
-  public void testSame(String externs, String js, DiagnosticType warning,
-                       String description) {
-    List<SourceFile> externsInputs = ImmutableList.of(
-        SourceFile.fromCode("externs", externs));
-    test(externsInputs, js, js, null, warning, description);
+  public void testSame(String externs, String js, DiagnosticType warning, String description) {
+    testSame(externs, js, warning, description, false);
+  }
+
+  /**
+   * Verifies that the compiler pass's JS output is the same as its input
+   * and (optionally) that an expected warning and description is issued.
+   *
+   * @param externs Externs input
+   * @param js Input and output
+   * @param type Expected warning or error, or null if no warning is expected
+   * @param description The description of the expected warning,
+   *      or null if no warning is expected or if the warning's description
+   *      should not be examined
+   * @param error Whether the "type" parameter represents an error.
+   *   (false indicated the type is a warning). Ignored if type is null.
+   */
+  public void testSame(
+      String externs, String js, DiagnosticType type, String description, boolean error) {
+    List<SourceFile> externsInputs = ImmutableList.of(SourceFile.fromCode("externs", externs));
+    if (error) {
+      test(externsInputs, js, null, type, null, description);
+    } else {
+      test(externsInputs, js, js, null, type, description);
+    }
   }
 
   /**
@@ -684,27 +944,23 @@ public abstract class CompilerTestCase extends TestCase  {
   }
 
   /**
-   * Verifies that the compiler pass's JS output is the same as its input,
-   * and emits the given error.
+   * Verifies that the compiler pass's JS output is the same as its input.
    *
    * @param js Inputs and outputs
-   * @param error Expected error, or null if no error is expected
    */
-  public void testSame(String[] js, DiagnosticType error) {
-    test(js, js, error);
+  public void testSame(List<SourceFile> js) {
+    test(js, js);
   }
 
   /**
    * Verifies that the compiler pass's JS output is the same as its input,
-   * and emits the given error and warning.
+   * and emits the given warning.
    *
    * @param js Inputs and outputs
-   * @param error Expected error, or null if no error is expected
    * @param warning Expected warning, or null if no warning is expected
    */
-  public void testSame(
-      String[] js, DiagnosticType error, DiagnosticType warning) {
-    test(js, js, error, warning);
+  public void testSameWarning(String[] js, DiagnosticType warning) {
+    test(js, js, null, warning);
   }
 
   /**
@@ -748,9 +1004,37 @@ public abstract class CompilerTestCase extends TestCase  {
    * @param error Expected error, or null if no error is expected
    * @param warning Expected warning, or null if no warning is expected
    */
-  protected void test(Compiler compiler, String[] expected,
-                      DiagnosticType error, DiagnosticType warning) {
+  protected void test(
+      Compiler compiler, String[] expected, DiagnosticType error, DiagnosticType warning) {
     test(compiler, expected, error, warning, null);
+  }
+
+  /**
+   * Verifies that the compiler pass's JS output matches the expected output
+   * and (optionally) that an expected warning is issued. Or, if an error is
+   * expected, this method just verified that the error is encountered.
+   *
+   * @param compiler A compiler that has been initialized via
+   *     {@link Compiler#init}
+   * @param expected Expected output, or null if an error is expected
+   * @param error Expected error, or null if no error is expected
+   * @param warning Expected warning, or null if no warning is expected
+   */
+  private void test(
+      Compiler compiler,
+      String[] expected,
+      DiagnosticType error,
+      DiagnosticType warning,
+      String description) {
+    if (expected == null) {
+      test(compiler, (List<SourceFile>) null, error, warning, description);
+    } else {
+      List<SourceFile> inputs = new ArrayList<>();
+      for (int i = 0; i < expected.length; i++) {
+        inputs.add(SourceFile.fromCode("expected" + i, expected[i]));
+      }
+      test(compiler, inputs, error, warning, description);
+    }
   }
 
   /**
@@ -767,23 +1051,42 @@ public abstract class CompilerTestCase extends TestCase  {
    *      or null if no warning is expected or if the warning's description
    *      should not be examined
    */
-  private void test(Compiler compiler, String[] expected,
-                    DiagnosticType error, DiagnosticType warning,
-                    String description) {
+  private void test(
+      Compiler compiler,
+      List<SourceFile> expected,
+      DiagnosticType error,
+      DiagnosticType warning,
+      String description) {
     RecentChange recentChange = new RecentChange();
     compiler.addChangeHandler(recentChange);
 
     Node root = compiler.parseInputs();
-    assertTrue("Unexpected parse error(s): " +
-        Joiner.on("\n").join(compiler.getErrors()), root != null);
+
+    String errorMsg = LINE_JOINER.join(compiler.getErrors());
+    if (root == null && expected == null && error != null) {
+      // Might be an expected parse error.
+      assert_().withFailureMessage("Expected one parse error, but got " + errorMsg)
+          .that(compiler.getErrorCount())
+          .isEqualTo(1);
+      JSError actualError = compiler.getErrors()[0];
+      assert_().withFailureMessage("Unexpected parse error(s): " + errorMsg)
+          .that(actualError.getType())
+          .isEqualTo(error);
+      if (description != null) {
+        assertThat(actualError.description).isEqualTo(description);
+      }
+      return;
+    }
+    assert_().withFailureMessage("Unexpected parse error(s): " + errorMsg).that(root).isNotNull();
     if (!expectParseWarningsThisTest) {
-      assertTrue("Unexpected parse warnings(s): " +
-          Joiner.on("\n").join(compiler.getWarnings()),
-          compiler.getWarnings().length == 0);
+      assertEquals(
+          "Unexpected parse warnings(s): " + LINE_JOINER.join(compiler.getWarnings()),
+          0,
+          compiler.getWarnings().length);
     }
 
     if (astValidationEnabled) {
-      (new AstValidator()).validateRoot(root);
+      (new AstValidator(compiler)).validateRoot(root);
     }
     Node externsRoot = root.getFirstChild();
     Node mainRoot = root.getLastChild();
@@ -797,20 +1100,26 @@ public abstract class CompilerTestCase extends TestCase  {
     int numRepetitions = getNumRepetitions();
     ErrorManager[] errorManagers = new ErrorManager[numRepetitions];
     int aggregateWarningCount = 0;
-    List<JSError> aggregateWarnings = Lists.newArrayList();
+    List<JSError> aggregateWarnings = new ArrayList<>();
     boolean hasCodeChanged = false;
-
-    assertFalse("Code should not change before processing",
-        recentChange.hasCodeChanged());
 
     for (int i = 0; i < numRepetitions; ++i) {
       if (compiler.getErrorCount() == 0) {
-        errorManagers[i] = new BlackHoleErrorManager(compiler);
+        errorManagers[i] = new BlackHoleErrorManager();
+        compiler.setErrorManager(errorManagers[i]);
+
+        if (rewriteClosureCode && i == 0) {
+          new ClosureRewriteClass(compiler).process(null, mainRoot);
+          new ClosureRewriteModule(compiler).process(null, mainRoot);
+          new ScopedAliases(compiler, null, CompilerOptions.NULL_ALIAS_TRANSFORMATION_HANDLER)
+              .process(null, mainRoot);
+          hasCodeChanged = hasCodeChanged || recentChange.hasCodeChanged();
+        }
 
         // Only run process closure primitives once, if asked.
         if (closurePassEnabled && i == 0) {
           recentChange.reset();
-          new ProcessClosurePrimitives(compiler, null, CheckLevel.ERROR)
+          new ProcessClosurePrimitives(compiler, null, CheckLevel.ERROR, false)
               .process(null, mainRoot);
           hasCodeChanged = hasCodeChanged || recentChange.hasCodeChanged();
         }
@@ -820,13 +1129,21 @@ public abstract class CompilerTestCase extends TestCase  {
         // objects for the same type are created, and the type system
         // uses reference equality to compare many types.
         if (!runTypeCheckAfterProcessing && typeCheckEnabled && i == 0) {
-          TypeCheck check = createTypeCheck(compiler, typeCheckLevel);
+          TypeCheck check = createTypeCheck(compiler, reportMissingOverrideCheckLevel);
           check.processForTesting(externsRoot, mainRoot);
+        } else if (!this.runNTIAfterProcessing
+            && this.newTypeInferenceEnabled
+            && i == 0) {
+          runNewTypeInference(compiler, externsRoot, mainRoot);
         }
 
         // Only run the normalize pass once, if asked.
         if (normalizeEnabled && i == 0) {
           normalizeActualCode(compiler, externsRoot, mainRoot);
+        }
+
+        if (enableInferConsts && i == 0) {
+          new InferConsts(compiler).process(externsRoot, mainRoot);
         }
 
         if (computeSideEffects && i == 0) {
@@ -840,24 +1157,32 @@ public abstract class CompilerTestCase extends TestCase  {
           mark.process(externsRoot, mainRoot);
         }
 
+        if (gatherExternPropertiesEnabled && i == 0) {
+          (new GatherExternProperties(compiler)).process(externsRoot, mainRoot);
+        }
+
         recentChange.reset();
 
         getProcessor(compiler).process(externsRoot, mainRoot);
         if (astValidationEnabled) {
-          (new AstValidator()).validateRoot(root);
+          (new AstValidator(compiler)).validateRoot(root);
         }
         if (checkLineNumbers) {
           (new LineNumberCheck(compiler)).process(externsRoot, mainRoot);
         }
 
         if (runTypeCheckAfterProcessing && typeCheckEnabled && i == 0) {
-          TypeCheck check = createTypeCheck(compiler, typeCheckLevel);
+          TypeCheck check = createTypeCheck(compiler, reportMissingOverrideCheckLevel);
           check.processForTesting(externsRoot, mainRoot);
+        } else if (this.runNTIAfterProcessing
+            && this.newTypeInferenceEnabled
+            && i == 0) {
+          runNewTypeInference(compiler, externsRoot, mainRoot);
         }
 
         hasCodeChanged = hasCodeChanged || recentChange.hasCodeChanged();
         aggregateWarningCount += errorManagers[i].getWarningCount();
-        aggregateWarnings.addAll(Lists.newArrayList(compiler.getWarnings()));
+        Collections.addAll(aggregateWarnings, compiler.getWarnings());
 
         if (normalizeEnabled) {
           boolean verifyDeclaredConstants = true;
@@ -868,13 +1193,11 @@ public abstract class CompilerTestCase extends TestCase  {
     }
 
     if (error == null) {
-      assertEquals(
-          "Unexpected error(s): " + Joiner.on("\n").join(compiler.getErrors()),
-          0, compiler.getErrorCount());
+      assertEquals("Unexpected error(s): " + errorMsg, 0, compiler.getErrorCount());
 
       // Verify the symbol table.
-      ErrorManager symbolTableErrorManager =
-          new BlackHoleErrorManager(compiler);
+      ErrorManager symbolTableErrorManager = new BlackHoleErrorManager();
+      compiler.setErrorManager(symbolTableErrorManager);
       Node expectedRoot = null;
       if (expected != null) {
         expectedRoot = parseExpectedJs(expected);
@@ -884,37 +1207,33 @@ public abstract class CompilerTestCase extends TestCase  {
       JSError[] stErrors = symbolTableErrorManager.getErrors();
       if (expectedSymbolTableError != null) {
         assertEquals("There should be one error.", 1, stErrors.length);
-        assertEquals(expectedSymbolTableError, stErrors[0].getType());
+        assertThat(stErrors[0].getType()).isEqualTo(expectedSymbolTableError);
       } else {
-        assertEquals("Unexpected symbol table error(s): " +
-            Joiner.on("\n").join(stErrors),
-            0, stErrors.length);
+        assertEquals(
+            "Unexpected symbol table error(s): " + LINE_JOINER.join(stErrors), 0, stErrors.length);
       }
 
       if (warning == null) {
         assertEquals(
-            "Unexpected warning(s): " + Joiner.on("\n").join(aggregateWarnings),
-            0, aggregateWarningCount);
+            "Unexpected warning(s): " + LINE_JOINER.join(aggregateWarnings),
+            0,
+            aggregateWarningCount);
       } else {
-        assertEquals("There should be one warning, repeated " + numRepetitions +
-            " time(s).", numRepetitions, aggregateWarningCount);
+        assertEquals(
+            "There should be one warning, repeated "
+                + numRepetitions
+                + " time(s). Warnings: \n"
+                + LINE_JOINER.join(aggregateWarnings),
+            numRepetitions,
+            aggregateWarningCount);
         for (int i = 0; i < numRepetitions; ++i) {
           JSError[] warnings = errorManagers[i].getWarnings();
           JSError actual = warnings[0];
-          assertEquals(warning, actual.getType());
-
-          // Make sure that source information is always provided.
-          if (!allowSourcelessWarnings) {
-            assertTrue("Missing source file name in warning",
-                actual.sourceName != null && !actual.sourceName.isEmpty());
-            assertTrue("Missing line number in warning",
-                -1 != actual.lineNumber);
-            assertTrue("Missing char number in warning",
-                -1 != actual.getCharno());
-          }
+          assertThat(actual.getType()).isEqualTo(warning);
+          validateSourceLocation(actual);
 
           if (description != null) {
-            assertEquals(description, actual.description);
+            assertThat(actual.description).isEqualTo(description);
           }
         }
       }
@@ -931,21 +1250,28 @@ public abstract class CompilerTestCase extends TestCase  {
       // Generally, externs should not be changed by the compiler passes.
       if (externsChange && !allowExternsChanges) {
         String explanation = externsRootClone.checkTreeEquals(externsRoot);
-        fail("Unexpected changes to externs" +
-            "\nExpected: " + compiler.toSource(externsRootClone) +
-            "\nResult: " + compiler.toSource(externsRoot) +
-            "\n" + explanation);
+        fail(
+            "Unexpected changes to externs"
+                + "\nExpected: "
+                + compiler.toSource(externsRootClone)
+                + "\nResult:   "
+                + compiler.toSource(externsRoot)
+                + "\n"
+                + explanation);
       }
 
       if (!codeChange && !externsChange) {
         assertFalse(
-            "compiler.reportCodeChange() was called " +
-            "even though nothing changed",
+            "compiler.reportCodeChange() was called " + "even though nothing changed",
             hasCodeChanged);
       } else {
-        assertTrue("compiler.reportCodeChange() should have been called."
-            + "\nOriginal: " + mainRootClone.toStringTree()
-            + "\nNew: " + mainRoot.toStringTree(), hasCodeChanged);
+        assertTrue(
+            "compiler.reportCodeChange() should have been called."
+                + "\nOriginal: "
+                + mainRootClone.toStringTree()
+                + "\nNew: "
+                + mainRoot.toStringTree(),
+            hasCodeChanged);
       }
 
       // Check correctness of the changed-scopes-only traversal
@@ -953,29 +1279,53 @@ public abstract class CompilerTestCase extends TestCase  {
 
       if (expected != null) {
         if (compareAsTree) {
-          String explanation = expectedRoot.checkTreeEquals(mainRoot);
-          assertNull("\nExpected: " + compiler.toSource(expectedRoot) +
-              "\nResult: " + compiler.toSource(mainRoot) +
-              "\n" + explanation, explanation);
+          String explanation;
+          if (compareJsDoc) {
+            explanation = expectedRoot.checkTreeEqualsIncludingJsDoc(mainRoot);
+          } else {
+            explanation = expectedRoot.checkTreeEquals(mainRoot);
+          }
+          if (explanation != null) {
+            String expectedAsSource = compiler.toSource(expectedRoot);
+            String mainAsSource = compiler.toSource(mainRoot);
+            if (expectedAsSource.equals(mainAsSource)) {
+              fail("In: " + expectedAsSource + "\n" + explanation);
+            } else {
+              fail("\nExpected: "
+                  + expectedAsSource
+                  + "\nResult:   "
+                  + mainAsSource
+                  + "\n" + explanation);
+            }
+          }
         } else if (expected != null) {
-          assertEquals(
-              Joiner.on("").join(expected), compiler.toSource(mainRoot));
+          String[] expectedSources = new String[expected.size()];
+          for (int i = 0; i < expected.size(); ++i) {
+            try {
+              expectedSources[i] = expected.get(i).getCode();
+            } catch (IOException e) {
+              throw new RuntimeException("failed to get source code", e);
+            }
+          }
+          assertThat(compiler.toSource(mainRoot)).isEqualTo(Joiner.on("").join(expectedSources));
         }
       }
 
       // Verify normalization is not invalidated.
       Node normalizeCheckRootClone = root.cloneTree();
-      Node normalizeCheckExternsRootClone =
-          normalizeCheckRootClone.getFirstChild();
+      Node normalizeCheckExternsRootClone = normalizeCheckRootClone.getFirstChild();
       Node normalizeCheckMainRootClone = normalizeCheckRootClone.getLastChild();
-      new PrepareAst(compiler).process(
-          normalizeCheckExternsRootClone, normalizeCheckMainRootClone);
-      String explanation =
-          normalizeCheckMainRootClone.checkTreeEquals(mainRoot);
-      assertNull("Node structure normalization invalidated.\nExpected: " +
-          compiler.toSource(normalizeCheckMainRootClone) +
-          "\nResult: " + compiler.toSource(mainRoot) +
-          "\n" + explanation, explanation);
+      new PrepareAst(compiler).process(normalizeCheckExternsRootClone, normalizeCheckMainRootClone);
+      String explanation = normalizeCheckMainRootClone.checkTreeEquals(mainRoot);
+      assertNull(
+          "Node structure normalization invalidated."
+              + "\nExpected: "
+              + compiler.toSource(normalizeCheckMainRootClone)
+              + "\nResult:   "
+              + compiler.toSource(mainRoot)
+              + "\n"
+              + explanation,
+          explanation);
 
       // TODO(johnlenz): enable this for most test cases.
       // Currently, this invalidates test for while-loops, for-loop
@@ -983,37 +1333,52 @@ public abstract class CompilerTestCase extends TestCase  {
       // (Closure primitive rewrites, etc) runs before the Normalize pass,
       // so this can't be force on everywhere.
       if (normalizeEnabled) {
-        new Normalize(compiler, true).process(
-            normalizeCheckExternsRootClone, normalizeCheckMainRootClone);
-        explanation =  normalizeCheckMainRootClone.checkTreeEquals(mainRoot);
-        assertNull("Normalization invalidated.\nExpected: " +
-            compiler.toSource(normalizeCheckMainRootClone) +
-            "\nResult: " + compiler.toSource(mainRoot) +
-            "\n" + explanation, explanation);
+        new Normalize(compiler, true)
+            .process(normalizeCheckExternsRootClone, normalizeCheckMainRootClone);
+        explanation = normalizeCheckMainRootClone.checkTreeEquals(mainRoot);
+        assertNull(
+            "Normalization invalidated."
+                + "\nExpected: "
+                + compiler.toSource(normalizeCheckMainRootClone)
+                + "\nResult:   "
+                + compiler.toSource(mainRoot)
+                + "\n"
+                + explanation,
+            explanation);
       }
     } else {
-      String errors = "";
-      for (JSError actualError : compiler.getErrors()) {
-        errors += actualError.description + "\n";
+      assertNull("expected must be null if error != null", expected);
+      assertEquals("There should be one error. " + errorMsg, 1, compiler.getErrorCount());
+      JSError actualError = compiler.getErrors()[0];
+      assertEquals(errorMsg, error, actualError.getType());
+      validateSourceLocation(actualError);
+      if (description != null) {
+        assertThat(actualError.description).isEqualTo(description);
       }
-      assertEquals("There should be one error. " + errors,
-          1, compiler.getErrorCount());
-      assertEquals(errors, error, compiler.getErrors()[0].getType());
 
       if (warning != null) {
         String warnings = "";
-        for (JSError actualError : compiler.getWarnings()) {
-          warnings += actualError.description + "\n";
+        for (JSError actualWarning : compiler.getWarnings()) {
+          warnings += actualWarning.description + "\n";
         }
-        assertEquals("There should be one warning. " + warnings,
-            1, compiler.getWarningCount());
+        assertEquals("There should be one warning. " + warnings, 1, compiler.getWarningCount());
         assertEquals(warnings, warning, compiler.getWarnings()[0].getType());
       }
     }
   }
 
-  private void normalizeActualCode(
-      Compiler compiler, Node externsRoot, Node mainRoot) {
+  private void validateSourceLocation(JSError jserror) {
+    // Make sure that source information is always provided.
+    if (!allowSourcelessWarnings) {
+      assertTrue(
+          "Missing source file name in warning: " + jserror,
+          jserror.sourceName != null && !jserror.sourceName.isEmpty());
+      assertTrue("Missing line number in warning: " + jserror, -1 != jserror.lineNumber);
+      assertTrue("Missing char number in warning: " + jserror, -1 != jserror.getCharno());
+    }
+  }
+
+  private void normalizeActualCode(Compiler compiler, Node externsRoot, Node mainRoot) {
     Normalize normalize = new Normalize(compiler, false);
     normalize.process(externsRoot, mainRoot);
   }
@@ -1022,15 +1387,22 @@ public abstract class CompilerTestCase extends TestCase  {
    * Parses expected JS inputs and returns the root of the parse tree.
    */
   protected Node parseExpectedJs(String[] expected) {
-    Compiler compiler = createCompiler();
-    List<SourceFile> inputs = Lists.newArrayList();
+    List<SourceFile> inputs = new ArrayList<>();
     for (int i = 0; i < expected.length; i++) {
       inputs.add(SourceFile.fromCode("expected" + i, expected[i]));
     }
+    return parseExpectedJs(inputs);
+  }
+
+  /**
+   * Parses expected JS inputs and returns the root of the parse tree.
+   */
+  protected Node parseExpectedJs(List<SourceFile> inputs) {
+    Compiler compiler = createCompiler();
+
     compiler.init(externsInputs, inputs, getOptions());
     Node root = compiler.parseInputs();
-    assertTrue("Unexpected parse error(s): " +
-        Joiner.on("\n").join(compiler.getErrors()), root != null);
+    assertNotNull("Unexpected parse error(s): " + LINE_JOINER.join(compiler.getErrors()), root);
     Node externsRoot = root.getFirstChild();
     Node mainRoot = externsRoot.getNext();
     // Only run the normalize pass, if asked.
@@ -1038,7 +1410,87 @@ public abstract class CompilerTestCase extends TestCase  {
       Normalize normalize = new Normalize(compiler, false);
       normalize.process(externsRoot, mainRoot);
     }
+
+    if (closurePassEnabled && closurePassEnabledForExpected && !compiler.hasErrors()) {
+      new ProcessClosurePrimitives(compiler, null, CheckLevel.ERROR, false).process(null, mainRoot);
+    }
     return mainRoot;
+  }
+
+  protected void testExternChanges(String input, String expectedExtern) {
+    testExternChanges("", input, expectedExtern);
+  }
+
+  protected void testExternChanges(String extern, String input, String expectedExtern) {
+    testExternChanges(extern, input, expectedExtern, (DiagnosticType[]) null);
+  }
+
+  protected void testExternChanges(String input, String expectedExtern,
+      DiagnosticType... warnings) {
+    testExternChanges("", input, expectedExtern, warnings);
+  }
+
+  protected void testExternChanges(String extern, String input, String expectedExtern,
+      DiagnosticType... warnings) {
+    Compiler compiler = createCompiler();
+    CompilerOptions options = getOptions();
+    compiler.init(
+        ImmutableList.of(SourceFile.fromCode("extern", extern)),
+        ImmutableList.of(SourceFile.fromCode("input", input)),
+        options);
+    compiler.parseInputs();
+    assertThat(compiler.hasErrors()).isFalse();
+
+    Node externsAndJs = compiler.getRoot();
+    Node root = externsAndJs.getLastChild();
+
+    Node externs = externsAndJs.getFirstChild();
+
+    Node expected = compiler.parseTestCode(expectedExtern);
+    assertThat(compiler.getErrors()).isEmpty();
+
+    (getProcessor(compiler)).process(externs, root);
+
+    if (compareAsTree) {
+      // Ignore and remove empty externs, so that if we start with an empty extern and only add
+      // to the synthetic externs, we can still enable compareAsTree.
+      if (externs.hasMoreThanOneChild()) {
+        for (Node c : externs.children()) {
+          if (!c.hasChildren()) {
+            c.detachFromParent();
+          }
+        }
+      }
+
+      // Expected output parsed without implied block.
+      Preconditions.checkState(externs.isBlock());
+      Preconditions.checkState(compareJsDoc);
+      Preconditions.checkState(
+          externs.hasOneChild(), "Compare as tree only works when output has a single script.");
+      externs = externs.getFirstChild();
+      String explanation = expected.checkTreeEqualsIncludingJsDoc(externs);
+      assertNull(
+          "\nExpected: " + compiler.toSource(expected) +
+          "\nResult:   " + compiler.toSource(externs) +
+          "\n" + explanation, explanation);
+    } else {
+      String externsCode = compiler.toSource(externs);
+      String expectedCode = compiler.toSource(expected);
+      assertThat(externsCode).isEqualTo(expectedCode);
+    }
+
+    if (warnings != null) {
+      String warningMessage = "";
+      for (JSError actualWarning : compiler.getWarnings()) {
+        warningMessage += actualWarning.description + "\n";
+      }
+      assertEquals("There should be " + warnings.length + " warnings. " + warningMessage,
+          warnings.length, compiler.getWarningCount());
+      for (int i = 0; i < warnings.length; i++) {
+        DiagnosticType warning = warnings[i];
+        assertEquals(warningMessage, warning, compiler.getWarnings()[i].getType());
+      }
+    }
   }
 
   protected Node parseExpectedJs(String expected) {
@@ -1074,7 +1526,7 @@ public abstract class CompilerTestCase extends TestCase  {
    * form a bush formation. In a bush formation, module 2 depends
    * on module 1, and all other modules depend on module 2.
    */
-  static JSModule[] createModuleBush(String ... inputs) {
+  static JSModule[] createModuleBush(String... inputs) {
     Preconditions.checkState(inputs.length > 2);
     JSModule[] modules = createModules(inputs);
     for (int i = 1; i < modules.length; i++) {
@@ -1088,7 +1540,7 @@ public abstract class CompilerTestCase extends TestCase  {
    * form a tree formation. In a tree formation, module N depends on
    * module `floor(N/2)`, So the modules form a balanced binary tree.
    */
-  static JSModule[] createModuleTree(String ... inputs) {
+  static JSModule[] createModuleTree(String... inputs) {
     JSModule[] modules = createModules(inputs);
     for (int i = 1; i < modules.length; i++) {
       modules[i].addDependency(modules[(i - 1) / 2]);
@@ -1109,18 +1561,6 @@ public abstract class CompilerTestCase extends TestCase  {
     return modules;
   }
 
-  private static class BlackHoleErrorManager extends BasicErrorManager {
-    private BlackHoleErrorManager(Compiler compiler) {
-      compiler.setErrorManager(this);
-    }
-
-    @Override
-    public void println(CheckLevel level, JSError error) {}
-
-    @Override
-    public void printSummary() {}
-  }
-
   Compiler createCompiler() {
     Compiler compiler = new Compiler();
     return compiler;
@@ -1132,10 +1572,12 @@ public abstract class CompilerTestCase extends TestCase  {
 
   /** Finds the first matching qualified name node in post-traversal order. */
   protected final Node findQualifiedNameNode(final String name, Node root) {
-    final List<Node> matches = Lists.newArrayList();
-    NodeUtil.visitPostOrder(root,
+    final List<Node> matches = new ArrayList<>();
+    NodeUtil.visitPostOrder(
+        root,
         new NodeUtil.Visitor() {
-          @Override public void visit(Node n) {
+          @Override
+          public void visit(Node n) {
             if (name.equals(n.getQualifiedName())) {
               matches.add(n);
             }

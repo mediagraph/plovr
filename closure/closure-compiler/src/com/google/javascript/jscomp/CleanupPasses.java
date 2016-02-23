@@ -17,14 +17,13 @@
 package com.google.javascript.jscomp;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import com.google.javascript.jscomp.DefaultPassConfig.HotSwapPassFactory;
 import com.google.javascript.jscomp.GlobalVarReferenceMap.GlobalVarRefCleanupPass;
-import com.google.javascript.jscomp.Scope.Var;
+import com.google.javascript.rhino.FunctionTypeI;
 import com.google.javascript.rhino.Node;
-import com.google.javascript.rhino.jstype.FunctionType;
-import com.google.javascript.rhino.jstype.JSType;
+import com.google.javascript.rhino.TypeI;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -42,7 +41,7 @@ class CleanupPasses extends PassConfig {
 
   @Override
   protected List<PassFactory> getChecks() {
-    List<PassFactory> checks = Lists.newArrayList();
+    List<PassFactory> checks = new ArrayList<>();
     checks.add(fieldCleanupPassFactory);
     checks.add(scopeCleanupPassFactory);
     checks.add(globalVarRefCleanupPassFactory);
@@ -57,11 +56,6 @@ class CleanupPasses extends PassConfig {
   @Override
   protected List<PassFactory> getOptimizations() {
     return ImmutableList.of();
-  }
-
-  @Override
-  protected void setIntermediateState(State state) {
-    this.state = state;
   }
 
   final PassFactory fieldCleanupPassFactory =
@@ -112,10 +106,10 @@ class CleanupPasses extends PassConfig {
       if (creator instanceof MemoizedScopeCreator) {
         MemoizedScopeCreator scopeCreator = (MemoizedScopeCreator) creator;
         String newSrc = scriptRoot.getSourceFileName();
-        for (Var var : scopeCreator.getAllSymbols()) {
-          JSType type = var.getType();
+        for (TypedVar var : scopeCreator.getAllSymbols()) {
+          TypeI type = var.getType();
           if (type != null) {
-            FunctionType fnType = type.toMaybeFunctionType();
+            FunctionTypeI fnType = type.toMaybeFunctionType();
             if (fnType != null
                 && newSrc.equals(NodeUtil.getSourceName(fnType.getSource()))) {
               fnType.setSource(null);

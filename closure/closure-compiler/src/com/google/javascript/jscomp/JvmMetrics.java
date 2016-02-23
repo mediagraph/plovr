@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp;
 
+import com.google.common.annotations.GwtIncompatible;
+
 import java.io.PrintStream;
 import java.lang.management.CompilationMXBean;
 import java.lang.management.GarbageCollectorMXBean;
@@ -31,6 +33,7 @@ import java.util.StringTokenizer;
  * Borrowed from:
  * http://code.google.com/p/dart/source/browse/trunk/dart/compiler/java/com/google/dart/compiler/metrics/JvmMetrics.java
  */
+@GwtIncompatible("Unneccesary")
 class JvmMetrics {
 
   private static final int TABULAR_COLON_POS = 40;
@@ -104,8 +107,7 @@ class JvmMetrics {
 
     if (pretty) {
       out.println("\nJIT Stats");
-      out.println(String.format(
-          "\t%s jit time: %d ms", name, cBean.getTotalCompilationTime()));
+      out.printf("\t%s jit time: %d ms%n", name, cBean.getTotalCompilationTime());
     } else {
       out.println(normalizeTabularColonPos(String.format("%s-jit-time-ms : %d",
           normalizeName(name), cBean.getTotalCompilationTime())));
@@ -121,9 +123,9 @@ class JvmMetrics {
     } else {
       prefix = normalizeName(prefix);
       out.println(normalizeTabularColonPos(
-          String.format(prefix + "-available-bytes : %d", usage.getMax())));
+          String.format("%s-available-bytes : %d", prefix, usage.getMax())));
       out.println(normalizeTabularColonPos(
-          String.format(prefix + "-current-bytes : %d", usage.getUsed())));
+          String.format("%s-current-bytes : %d", prefix, usage.getUsed())));
     }
   }
 
@@ -138,11 +140,11 @@ class JvmMetrics {
           formatBytes(usage.getUsed()));
     } else {
       out.println(normalizeTabularColonPos(
-          String.format(prefix + "-available-bytes : %d", usage.getMax())));
+          String.format("%s-available-bytes : %d", prefix, usage.getMax())));
       out.println(normalizeTabularColonPos(
-          String.format(prefix + "-peak-bytes : %d", peakUsage.getUsed())));
+          String.format("%s-peak-bytes : %d", prefix, peakUsage.getUsed())));
       out.println(normalizeTabularColonPos(
-          String.format(prefix + "-current-bytes : %d",     usage.getUsed())));
+          String.format("%s-current-bytes : %d", prefix, usage.getUsed())));
     }
   }
 
@@ -239,17 +241,17 @@ class JvmMetrics {
       } else {
         String name = normalizeName("aggregate");
         out.println(normalizeTabularColonPos(
-            String.format("gc-" + name + "-collection-count : %d",
+            String.format("gc-%s-collection-count : %d", name,
             collectionCount)));
         out.println(normalizeTabularColonPos(
-            String.format("gc-" + name + "-collection-time-ms : %d",
+            String.format("gc-%s-collection-time-ms : %d", name,
             collectionTime)));
       }
     }
   }
 
   private static String normalizeName(String name) {
-    return name.replace(" ", "_").toLowerCase();
+    return name.replace(' ', '_').toLowerCase();
   }
 
   private static String normalizeTabularColonPos(String string) {

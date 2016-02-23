@@ -16,7 +16,7 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.collect.Lists;
+import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.NodeTraversal.Callback;
 import com.google.javascript.jscomp.NodeTraversal.ScopedCallback;
 import com.google.javascript.rhino.Node;
@@ -58,7 +58,7 @@ final class CombinedCompilerPass implements HotSwapCompilerPass,
    */
   CombinedCompilerPass(
       AbstractCompiler compiler, Callback... callbacks) {
-    this(compiler, Lists.<Callback>newArrayList(callbacks));
+    this(compiler, ImmutableList.copyOf(callbacks));
   }
 
   CombinedCompilerPass(
@@ -73,7 +73,7 @@ final class CombinedCompilerPass implements HotSwapCompilerPass,
   static void traverse(AbstractCompiler compiler, Node root,
       List<Callback> callbacks) {
     if (callbacks.size() == 1) {
-      NodeTraversal.traverse(compiler, root, callbacks.get(0));
+      NodeTraversal.traverseEs6(compiler, root, callbacks.get(0));
     } else {
       (new CombinedCompilerPass(compiler, callbacks)).process(null, root);
     }
@@ -151,12 +151,12 @@ final class CombinedCompilerPass implements HotSwapCompilerPass,
 
   @Override
   public final void process(Node externs, Node root) {
-    NodeTraversal.traverse(compiler, root, this);
+    NodeTraversal.traverseEs6(compiler, root, this);
   }
 
   @Override
   public void hotSwapScript(Node scriptRoot, Node originalRoot) {
-    NodeTraversal.traverse(compiler, scriptRoot, this);
+    NodeTraversal.traverseEs6(compiler, scriptRoot, this);
   }
 
   @Override

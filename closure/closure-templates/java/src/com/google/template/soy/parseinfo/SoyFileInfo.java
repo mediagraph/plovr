@@ -18,13 +18,11 @@ package com.google.template.soy.parseinfo;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSortedSet;
 
 
 /**
  * Parsed info about a Soy file.
  *
- * @author Kai Huang
  */
 public class SoyFileInfo {
 
@@ -47,9 +45,6 @@ public class SoyFileInfo {
   /** The Soy file's namespace. */
   private final String namespace;
 
-  /** Sorted set of params from all templates in this Soy file. */
-  private final ImmutableSortedSet<String> paramsFromAllTemplates;
-
   /** List of templates in this Soy file. */
   private final ImmutableList<SoyTemplateInfo> templates;
 
@@ -65,16 +60,14 @@ public class SoyFileInfo {
    *
    * @param fileName The source Soy file's name.
    * @param namespace The Soy file's namespace.
-   * @param paramsFromAllTemplates Sorted list of params from all templates in this Soy file.
    * @param templates List of templates in this Soy file.
    */
   public SoyFileInfo(
-      String fileName, String namespace, ImmutableSortedSet<String> paramsFromAllTemplates,
+      String fileName, String namespace,
       ImmutableList<SoyTemplateInfo> templates,
       ImmutableMap<String, CssTagsPrefixPresence> cssNameMap) {
     this.fileName = fileName;
     this.namespace = namespace;
-    this.paramsFromAllTemplates = paramsFromAllTemplates;
     this.templates = templates;
     this.cssNameMap = cssNameMap;
   }
@@ -90,11 +83,6 @@ public class SoyFileInfo {
     return namespace;
   }
 
-  /** Returns the set of params from all templates in this Soy file. */
-  public ImmutableSortedSet<String> getParamsFromAllTemplates() {
-    return paramsFromAllTemplates;
-  }
-
   /** Returns the list of templates in this Soy file. */
   public ImmutableList<SoyTemplateInfo> getTemplates() {
     return templates;
@@ -105,4 +93,11 @@ public class SoyFileInfo {
     return cssNameMap;
   }
 
+  /**
+   * Returns a list of any protocol buffer types used by the templates. The elements
+   * of the list are the default object for a given proto type.
+   */
+  public ImmutableList<Object> getProtoTypes() {
+    return ImmutableList.of();
+  }
 }

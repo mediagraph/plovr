@@ -16,16 +16,19 @@
 
 package com.google.javascript.jscomp.deps;
 
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.CharMatcher;
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
-import com.google.common.collect.Lists;
+import com.google.common.io.Files;
 import com.google.javascript.jscomp.ErrorManager;
 
-import java.io.FileReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -39,7 +42,8 @@ import java.util.regex.Pattern;
  *
  * @author agrieve@google.com (Andrew Grieve)
  */
-public class DepsFileParser extends JsFileLineParser {
+@GwtIncompatible("java.util.regex")
+public final class DepsFileParser extends JsFileLineParser {
 
   private static Logger logger = Logger.getLogger(DepsFileParser.class.getName());
 
@@ -55,7 +59,8 @@ public class DepsFileParser extends JsFileLineParser {
    * goog.addDependency({1}, {2}, {3});
    */
   private final Matcher depArgsMatch =
-      Pattern.compile("\\s*([^,]*), (\\[[^\\]]*\\]), (\\[[^\\]]*\\])\\s*").matcher("");
+      Pattern.compile(
+          "\\s*([^,]*), (\\[[^\\]]*\\]), (\\[[^\\]]*\\])(?:, (true|false))?\\s*").matcher("");
 
   /**
    * The dependency information extracted from the current file.
@@ -93,7 +98,7 @@ public class DepsFileParser extends JsFileLineParser {
    * @throws IOException Thrown if the file could not be read.
    */
   public List<DependencyInfo> parseFile(String filePath) throws IOException {
-    return parseFileReader(filePath, new FileReader(filePath));
+    return parseFileReader(filePath, Files.newReader(new File(filePath), StandardCharsets.UTF_8));
   }
 
   /**
@@ -119,7 +124,7 @@ public class DepsFileParser extends JsFileLineParser {
    * @return A list of DependencyInfo objects.
    */
   public List<DependencyInfo> parseFileReader(String filePath, Reader reader) {
-    depInfos = Lists.newArrayList();
+    depInfos = new ArrayList<>();
     logger.fine("Parsing Dep: " + filePath);
     doParse(filePath, reader);
     return depInfos;
@@ -139,7 +144,7 @@ public class DepsFileParser extends JsFileLineParser {
 
     // Quick sanity check that will catch most cases. This is a performance
     // win for people with a lot of JS.
-    if (line.indexOf("addDependency") != -1) {
+    if (line.contains("addDependency")) {
       depMatcher.reset(line);
       // See if the line looks like: goog.addDependency(...)
       if (depMatcher.matches()) {
@@ -155,11 +160,18 @@ public class DepsFileParser extends JsFileLineParser {
         }
         // Parse the file path.
         String path = pathTranslator.apply(parseJsString(depArgsMatch.group(1)));
+        String moduleMatch = depArgsMatch.group(4);
+        // Legacy deps files may not have a "isModule" parameter, those files are not modules.
+        boolean isModule = moduleMatch == null ? false : parseJsBoolean(moduleMatch);
+
         DependencyInfo depInfo = new SimpleDependencyInfo(path, filePath,
             // Parse the provides.
             parseJsStringArray(depArgsMatch.group(2)),
             // Parse the requires.
-            parseJsStringArray(depArgsMatch.group(3)));
+            parseJsStringArray(depArgsMatch.group(3)),
+            // "isModule"
+            isModule
+            );
 
         if (logger.isLoggable(Level.FINE)) {
           logger.fine("Found dep: " + depInfo);

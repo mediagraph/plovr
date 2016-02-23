@@ -16,52 +16,77 @@
 
 package com.google.template.soy.shared;
 
-import com.google.common.base.Charsets;
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.Files;
 import com.google.common.io.Resources;
 import com.google.template.soy.SoyUtils;
-import com.google.template.soy.data.internalutils.DataUtils;
+import com.google.template.soy.basetree.SyntaxVersion;
+import com.google.template.soy.data.internalutils.InternalValueUtils;
 import com.google.template.soy.data.restricted.PrimitiveData;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Map;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+
 
 /**
  * Compilation options applicable to the Soy frontend and/or to multiple Soy backends.
  *
- * @author Kai Huang
  */
-public class SoyGeneralOptions implements Cloneable {
+public final class SoyGeneralOptions implements Cloneable {
 
-
-  /**
-   * Schemes for handling {@code css} commands.
-   */
-  public static enum CssHandlingScheme {
-    LITERAL, REFERENCE, BACKEND_SPECIFIC;
-  }
-
+  /** User-declared syntax version, or null if not set. */
+  @Nullable private SyntaxVersion declaredSyntaxVersion;
 
   /** Whether to allow external calls (calls to undefined templates). Null if not explicitly set. */
   private Boolean allowExternalCalls;
 
-  /** Scheme for handling 'css' commands. */
-  private CssHandlingScheme cssHandlingScheme;
+  /** Whether Strict autoescaping is required. */
+  private boolean strictAutoescapingRequired;
 
   /** Map from compile-time global name to value. */
   private ImmutableMap<String, PrimitiveData> compileTimeGlobals;
 
+  /** Whether to automatically mark scripts that appear literally in templates as allowed to run. */
+  private boolean supportContentSecurityPolicy;
 
-  public SoyGeneralOptions() {
-    allowExternalCalls = null;
-    cssHandlingScheme = CssHandlingScheme.LITERAL;
-    compileTimeGlobals = null;
+  public SoyGeneralOptions() {}
+
+  private SoyGeneralOptions(SoyGeneralOptions orig) {
+    this.declaredSyntaxVersion = orig.declaredSyntaxVersion;
+    this.allowExternalCalls = orig.allowExternalCalls;
+    this.strictAutoescapingRequired = orig.strictAutoescapingRequired;
+    this.compileTimeGlobals = orig.compileTimeGlobals;
+    this.supportContentSecurityPolicy = orig.supportContentSecurityPolicy;
   }
 
+  /**
+   * Sets the user-declared syntax version name for the Soy file bundle.
+   * @param versionName The syntax version name, e.g. "1.0", "2.0", "2.3".
+   */
+  public void setDeclaredSyntaxVersionName(@Nonnull String versionName) {
+    this.declaredSyntaxVersion = SyntaxVersion.forName(versionName);
+  }
+
+  /**
+   * Returns the user-declared syntax version, or the given default value if the user did not
+   * declare a syntax version.
+   *
+   * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
+   *
+   * @param defaultSyntaxVersion The default value to return if the user did not declare a syntax
+   *     version.
+   */
+  public SyntaxVersion getDeclaredSyntaxVersion(SyntaxVersion defaultSyntaxVersion) {
+    return (declaredSyntaxVersion != null) ? declaredSyntaxVersion : defaultSyntaxVersion;
+  }
 
   /**
    * Sets whether to allow external calls (calls to undefined templates).
@@ -71,7 +96,6 @@ public class SoyGeneralOptions implements Cloneable {
     this.allowExternalCalls = allowExternalCalls;
   }
 
-
   /**
    * Returns whether to allow external calls (calls to undefined templates). If this option was
    * never explicitly set, then returns null.
@@ -80,24 +104,20 @@ public class SoyGeneralOptions implements Cloneable {
     return allowExternalCalls;
   }
 
-
   /**
-   * Sets the scheme for handling {@code css} commands.
-   *
-   * @param cssHandlingScheme The css-handling scheme to set.
+   * Sets whether strict autoescaping is required.
+   * @param strictAutoescapingRequired Whether autoescaping is required.
    */
-  public void setCssHandlingScheme(CssHandlingScheme cssHandlingScheme) {
-    this.cssHandlingScheme = cssHandlingScheme;
+  public void setStrictAutoescapingRequired(boolean strictAutoescapingRequired) {
+    this.strictAutoescapingRequired = strictAutoescapingRequired;
   }
 
-
   /**
-   * Returns the scheme for handling {@code css} commands.
+   * Returns whether strict autoescaping is required.
    */
-  public CssHandlingScheme getCssHandlingScheme() {
-    return cssHandlingScheme;
+  public boolean isStrictAutoescapingRequired() {
+    return strictAutoescapingRequired;
   }
-
 
   /**
    * Sets the map from compile-time global name to value.
@@ -111,10 +131,10 @@ public class SoyGeneralOptions implements Cloneable {
    *        Soy primitive type.
    */
   public void setCompileTimeGlobals(Map<String, ?> compileTimeGlobalsMap) {
-    setCompileTimeGlobalsInternal(DataUtils.convertCompileTimeGlobalsMap(compileTimeGlobalsMap));
+    setCompileTimeGlobalsInternal(
+        InternalValueUtils.convertCompileTimeGlobalsMap(compileTimeGlobalsMap));
   }
 
-  
   /**
    * Sets the map from compile-time global name to value using Soy primitive types.
    *
@@ -125,7 +145,6 @@ public class SoyGeneralOptions implements Cloneable {
     Preconditions.checkState(compileTimeGlobals == null, "Compile-time globals already set.");
     compileTimeGlobals = compileTimeGlobalsMap;
   }
-
 
   /**
    * Sets the file containing compile-time globals.
@@ -146,9 +165,8 @@ public class SoyGeneralOptions implements Cloneable {
    */
   public void setCompileTimeGlobals(File compileTimeGlobalsFile) throws IOException {
     setCompileTimeGlobalsInternal(SoyUtils.parseCompileTimeGlobals(
-        Files.newReaderSupplier(compileTimeGlobalsFile, Charsets.UTF_8)));
+        Files.asCharSource(compileTimeGlobalsFile, UTF_8)));
   }
-
 
   /**
    * Sets the resource file containing compile-time globals.
@@ -169,24 +187,41 @@ public class SoyGeneralOptions implements Cloneable {
    */
   public void setCompileTimeGlobals(URL compileTimeGlobalsResource) throws IOException {
     setCompileTimeGlobalsInternal(SoyUtils.parseCompileTimeGlobals(
-        Resources.newReaderSupplier(compileTimeGlobalsResource, Charsets.UTF_8)));
+        Resources.asCharSource(compileTimeGlobalsResource, UTF_8)));
   }
-
 
   /**
    * Returns the map from compile-time global name to value.
    */
   public ImmutableMap<String, PrimitiveData> getCompileTimeGlobals() {
-    return compileTimeGlobals;
+    return compileTimeGlobals == null
+        ? ImmutableMap.<String, PrimitiveData>of()
+        : compileTimeGlobals;
   }
 
-
-  @Override public SoyGeneralOptions clone() {
-    try {
-      return (SoyGeneralOptions) super.clone();
-    } catch (CloneNotSupportedException cnse) {
-      throw new RuntimeException("Cloneable interface removed from SoyGeneralOptions.");
-    }
+  /**
+   * Pass true to enable CSP (Content Security Policy) support which adds an extra pass that marks
+   * inline scripts in templates specially so the browser can distinguish scripts written by trusted
+   * template authors from scripts injected via XSS.
+   * <p>
+   * Scripts are marked using a per-page-render secret stored in the injected variable
+   * {@code $ij.csp_nonce}.
+   * Scripts in non-contextually auto-escaped templates may not be found.
+   */
+  public void setSupportContentSecurityPolicy(boolean supportContentSecurityPolicy) {
+    this.supportContentSecurityPolicy = supportContentSecurityPolicy;
   }
 
+  /**
+   * True when CSP (Content Security Policy) support is enabled causing inline scripts to be marked
+   * so that the browser can run scripts specified by the template author but not ones injected via
+   * XSS.
+   */
+  public boolean supportContentSecurityPolicy() {
+    return supportContentSecurityPolicy;
+  }
+
+  @Override public final SoyGeneralOptions clone() {
+    return new SoyGeneralOptions(this);
+  }
 }

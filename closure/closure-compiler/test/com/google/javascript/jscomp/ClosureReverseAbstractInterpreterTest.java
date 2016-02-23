@@ -23,7 +23,7 @@ import com.google.javascript.rhino.Token;
 import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.testing.Asserts;
 
-public class ClosureReverseAbstractInterpreterTest extends
+public final class ClosureReverseAbstractInterpreterTest extends
     CompilerTypeTestCase {
 
   public void testGoogIsDef1() throws Exception {
@@ -205,7 +205,7 @@ public class ClosureReverseAbstractInterpreterTest extends
   public void testGoogIsArray2() throws Exception {
     testClosureFunction("goog.isArray",
         ALL_TYPE,
-        ALL_TYPE, // TODO(johnlenz): should be ARRAY_TYPE?
+        ARRAY_TYPE,
         ALL_TYPE);
   }
 
@@ -273,16 +273,15 @@ public class ClosureReverseAbstractInterpreterTest extends
     Node call = n.getLastChild().getLastChild();
     Node name = call.getLastChild();
 
-    Scope scope = new SyntacticScopeCreator(compiler).createScope(n, null);
+    TypedScope scope = SyntacticScopeCreator.makeTyped(compiler).createScope(n, null);
     FlowScope flowScope = LinkedFlowScope.createEntryLattice(scope);
 
     assertEquals(Token.CALL, call.getType());
     assertEquals(Token.NAME, name.getType());
 
-    GoogleCodingConvention convention = new GoogleCodingConvention();
     flowScope.inferSlotType("a", type);
     ClosureReverseAbstractInterpreter rai =
-        new ClosureReverseAbstractInterpreter(convention, registry);
+        new ClosureReverseAbstractInterpreter(registry);
 
     // trueScope
     Asserts.assertTypeEquals(

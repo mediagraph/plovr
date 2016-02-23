@@ -16,20 +16,53 @@
 
 package com.google.template.soy.data;
 
+import com.google.template.soy.data.internal.RenderableThunk;
+import com.google.template.soy.data.restricted.SoyString;
+
+import java.io.IOException;
+
 import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
 import javax.annotation.concurrent.Immutable;
 
-
 /**
  * A chunk of sanitized content of a known kind, e.g. the output of an HTML sanitizer.
  *
- * @author Mike Samuel
  */
 @ParametersAreNonnullByDefault
 @Immutable
-public final class SanitizedContent extends SoyData {
+public abstract class SanitizedContent extends SoyData implements SoyString {
+  /**
+   * Creates a SanitizedContent object.
+   *
+   * <p>Package-private. Ideally, if one is available, you should use an existing serializer,
+   * sanitizer, verifier, or extractor that returns SanitizedContent objects. Or, you can use
+   * UnsafeSanitizedContentOrdainer in this package, to make it clear that creating these objects
+   * from arbitrary content is risky unless you absolutely know the input is safe. See the
+   * comments in UnsafeSanitizedContentOrdainer for more recommendations.
+   *
+   * @param content A string of valid content with the given content kind.
+   * @param kind Describes the kind of string that content is.
+   * @param dir The content's direction; null if unknown and thus to be estimated when
+   *     necessary.
+   */
+  static SanitizedContent create(String content, ContentKind kind, @Nullable Dir dir) {
+    return new ConstantContent(content, kind, dir);
+  }
 
+  /**
+   * Creates a lazy SanitizedContent object.
+   *
+   * <p>Package-private. This is meant exclusively for use by the rendering infrastructure
+   *
+   * @param thunk A lazy thunk that renders the valid content.
+   * @param kind Describes the kind of string that content is.
+   * @param dir The content's direction; null if unknown and thus to be estimated when
+   *     necessary.
+   */
+  static SanitizedContent createLazy(RenderableThunk thunk, ContentKind kind, @Nullable Dir dir) {
+    return new LazyContent(thunk, kind, dir);
+  }
 
   /**
    * A kind of textual content.
@@ -51,21 +84,11 @@ public final class SanitizedContent extends SoyData {
      */
     JS,
 
-    /**
-     * A sequence of code units that can appear between quotes (either single or double) in a JS
-     * program without causing a parse error, and without causing any side effects.
-     * <p>
-     * The content should not contain unescaped quotes, newlines, or anything else that would
-     * cause parsing to fail or to cause a JS parser to finish the string it is parsing inside
-     * the content.
-     * <p>
-     * The content must also not end inside an escape sequence ; no partial octal escape sequences
-     * or odd number of '{@code \}'s at the end.
-     */
-    JS_STR_CHARS,
-
     /** A properly encoded portion of a URI. */
     URI,
+
+    /** Resource URIs used in scrips sources, stylesheets, etc which are not in attacker control. */
+    TRUSTED_RESOURCE_URI,
 
     /** An attribute name and value, such as {@code dir="ltr"}. */
     ATTRIBUTES,
@@ -82,41 +105,32 @@ public final class SanitizedContent extends SoyData {
      * This is effectively the "null" entry of this enum, and is sometimes used to explicitly mark
      * content that should never be used unescaped. Since any string is safe to use as text, being
      * of ContentKind.TEXT makes no guarantees about its safety in any other context such as HTML.
+     *
+     * <p>In the soy type system, {@code TEXT} is equivalent to the string type.
      */
     TEXT
     ;
 
   }
 
-
-  private final String content;
   private final ContentKind contentKind;
+  private final Dir contentDir;
 
 
   /**
-   * Creates a SanitizedContent object.
-   *
-   * Package-private. Ideally, if one is available, you should use an existing serializer,
-   * sanitizer, verifier, or extractor that returns SanitizedContent objects. Or, you can use
-   * UnsafeSanitizedContentOrdainer in this package, to make it clear that creating these objects
-   * from arbitrary content is risky unless you absolutely know the input is safe. See the
-   * comments in UnsafeSanitizedContentOrdainer for more recommendations.
-   *
-   * @param content A string of valid content with the given content kind.
-   * @param contentKind Describes the kind of string that content is.
+   * Private constructor to limit subclasses to this file.  This is important to ensure that all
+   * implementations of this class are fully vetted by security.
    */
-  SanitizedContent(String content, ContentKind contentKind) {
-    this.content = content;
+  private SanitizedContent(ContentKind contentKind, @Nullable Dir contentDir) {
     this.contentKind = contentKind;
+    this.contentDir = contentDir;
   }
 
 
   /**
    * Returns a string of valid content with kind {@link #getContentKind}.
    */
-  public String getContent() {
-    return content;
-  }
+  public abstract String getContent();
 
 
   /**
@@ -127,29 +141,92 @@ public final class SanitizedContent extends SoyData {
   }
 
 
+  /**
+   * Returns the content's direction; null indicates that the direction is unknown, and is to be
+   * estimated when necessary.
+   */
+  @Nullable
+  public Dir getContentDirection() {
+    return contentDir;
+  }
+
+
+  @Deprecated
   @Override
   public boolean toBoolean() {
-    return content.length() != 0;  // Consistent with StringData
+    return getContent().length() != 0;  // Consistent with StringData
   }
 
 
   @Override
   public String toString() {
-    return content;
+    return getContent();
+  }
+
+
+  /**
+   * Returns the string value.
+   *
+   * <p>In contexts where a string value is required, SanitizedContent is permitted.
+   */
+  @Override
+  public String stringValue() {
+    return getContent();
   }
 
 
   @Override
   public boolean equals(@Nullable Object other) {
-    return other instanceof SanitizedContent &&
-        this.contentKind == ((SanitizedContent) other).contentKind &&
-        this.content.equals(((SanitizedContent) other).content);
+    return other instanceof SanitizedContent
+        && this.contentKind == ((SanitizedContent) other).contentKind
+        && this.contentDir == ((SanitizedContent) other).contentDir
+        && this.getContent().equals(((SanitizedContent) other).getContent());
   }
 
 
   @Override
   public int hashCode() {
-    return content.hashCode() + 31 * contentKind.hashCode();
+    return getContent().hashCode() + 31 * contentKind.hashCode();
   }
 
+  private static final class ConstantContent extends SanitizedContent {
+    final String content;
+
+    ConstantContent(String content, ContentKind contentKind, @Nullable Dir contentDir) {
+      super(contentKind, contentDir);
+      this.content = content;
+    }
+
+    @Override
+    public void render(Appendable appendable) throws IOException {
+      appendable.append(content);
+    }
+
+    @Override
+    public String getContent() {
+      return content;
+    }
+  }
+
+  private static final class LazyContent extends SanitizedContent {
+    // N.B. This is nearly identical to StringData.LazyString.  When changing this you
+    // probably need to change that also.
+
+    final RenderableThunk thunk;
+
+    LazyContent(RenderableThunk thunk, ContentKind contentKind, @Nullable Dir contentDir) {
+      super(contentKind, contentDir);
+      this.thunk = thunk;
+    }
+
+    @Override
+    public void render(Appendable appendable) throws IOException {
+      thunk.render(appendable);
+    }
+
+    @Override
+    public String getContent() {
+      return thunk.renderAsString();
+    }
+  }
 }

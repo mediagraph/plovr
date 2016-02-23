@@ -20,7 +20,12 @@ package com.google.javascript.jscomp;
  * Tests for variable declaration collapsing.
  *
  */
-public class CollapseVariableDeclarationsTest extends CompilerTestCase {
+public final class CollapseVariableDeclarationsTest extends CompilerTestCase {
+  @Override
+  public void setUp() {
+    compareJsDoc = false;
+  }
+
   public void testCollapsing() throws Exception {
     // Basic collapsing
     test("var a;var b;",
@@ -80,6 +85,10 @@ public class CollapseVariableDeclarationsTest extends CompilerTestCase {
          "var x, y = 3; x = 5; var z = 7;");
     test("var a = 1; var x; var y = 3; x = 5;",
          "var a = 1, x, y = 3; x = 5;");
+  }
+
+  public void testArgumentsAssignment() {
+    testSame("function f() {arguments = 1;}");
   }
 
   @Override

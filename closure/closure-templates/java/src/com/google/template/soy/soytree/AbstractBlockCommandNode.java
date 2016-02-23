@@ -16,28 +16,28 @@
 
 package com.google.template.soy.soytree;
 
+import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.BlockCommandNode;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
-
 
 /**
  * Abstract implementation of a BlockNode and CommandNode.
  *
- * <p> Important: Do not use outside of Soy code (treat as superpackage-private).
- *
- * @author Kai Huang
  */
-public abstract class AbstractBlockCommandNode extends AbstractParentCommandNode<StandaloneNode>
+abstract class AbstractBlockCommandNode extends AbstractParentCommandNode<StandaloneNode>
     implements BlockCommandNode {
 
 
   /**
    * @param id The id for this node.
+   * @param sourceLocation The node's source location.
    * @param commandName The name of the Soy command.
    * @param commandText The command text, or empty string if none.
    */
-  public AbstractBlockCommandNode(int id, String commandName, String commandText) {
-    super(id, commandName, commandText);
+  public AbstractBlockCommandNode(
+      int id, SourceLocation sourceLocation, String commandName, String commandText) {
+    super(id, sourceLocation, commandName, commandText);
   }
 
 
@@ -45,8 +45,8 @@ public abstract class AbstractBlockCommandNode extends AbstractParentCommandNode
    * Copy constructor.
    * @param orig The node to copy.
    */
-  protected AbstractBlockCommandNode(AbstractBlockCommandNode orig) {
-    super(orig);
+  protected AbstractBlockCommandNode(AbstractBlockCommandNode orig, CopyState copyState) {
+    super(orig, copyState);
   }
 
 }

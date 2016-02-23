@@ -104,7 +104,7 @@ gadgets.rpc.init = function() {};
 /**
  * Receives and processes an RPC request. (Not to be used directly.)
  * Only used by IFPC.
- * @param {Array.<string>} fragment An RPC request fragment encoded as
+ * @param {Array<string>} fragment An RPC request fragment encoded as
  *     an array. The first 4 elements are target id, source id & call id,
  *     total packet number, packet id. The last element stores the actual
  *     JSON-encoded and URI escaped packet data.
@@ -179,6 +179,14 @@ gadgets.rpc.setRelayUrl = function(targetId, url, opt_useLegacy) {};
 gadgets.rpc.setupReceiver = function(targetId, opt_receiverUrl, opt_authToken) {};
 
 /**
+ * Remove relay URL and auth token registration for a target frame.
+ *
+ * Note: Does not delete the iframe.
+ * @param {string} receiverId The id of the target gadget.
+ */
+gadgets.rpc.removeReceiver = function(receiverId) {};
+
+/**
  * @param {string} serviceName The RPC service to unregister the handler for.
  */
 gadgets.rpc.unregister = function(serviceName) {};
@@ -198,7 +206,7 @@ gadgets.Prefs = function(opt_moduleId) {};
 
 /**
  * @param {string} key The user preference key.
- * @return {Array.<string>} The array value of the preference.
+ * @return {Array<string>} The array value of the preference.
  */
 gadgets.Prefs.prototype.getArray = function(key) {};
 
@@ -255,7 +263,7 @@ gadgets.Prefs.prototype.set = function(key, value) {};
 
 /**
  * @param {string} key The preference key.
- * @param {Array.<string>} array The preference array.
+ * @param {Array<string>} array The preference array.
  */
 gadgets.Prefs.prototype.setArray = function(key, array) {};
 
@@ -379,7 +387,7 @@ gadgets.io.MethodType.PUT;
  */
 gadgets.io.ResponseObject = {};
 /**@type {Object}*/ gadgets.io.ResponseObject.data;
-/**@type {Array.<string>}*/ gadgets.io.ResponseObject.errors;
+/**@type {Array<string>}*/ gadgets.io.ResponseObject.errors;
 /**@type {Object}*/ gadgets.io.ResponseObject.headers;
 /**@type {number}*/ gadgets.io.ResponseObject.rc;
 /**@type {string}*/ gadgets.io.ResponseObject.text;
@@ -410,7 +418,7 @@ gadgets.views.getSupportedViews = function() {};
 
 /**
  * @param {gadgets.views.View|string} view The view to navigate to.
- * @param {Object=} opt_params Map.<String, String>: Parameters to pass to the
+ * @param {Object=} opt_params Map<String, String>: Parameters to pass to the
  *     gadget after it has been navigated to on the surface.
  * @param {string=} opt_ownerId The ID of the owner of the page to navigate to;
  *     defaults to the current owner.
@@ -595,4 +603,3 @@ gadgets.util.createIframeElement = function(opt_attribs) {};
  * @return {Element} The DOM node representing body.
  */
 gadgets.util.getBodyElement = function() {};
-

@@ -60,10 +60,7 @@ import javax.annotation.Nullable;
  */
 class InferJSDocInfo extends AbstractPostOrderCallback
     implements HotSwapCompilerPass {
-
   private final AbstractCompiler compiler;
-  @SuppressWarnings("unused")
-  private boolean inExterns;
 
   InferJSDocInfo(AbstractCompiler compiler) {
     this.compiler = compiler;
@@ -72,12 +69,10 @@ class InferJSDocInfo extends AbstractPostOrderCallback
   @Override
   public void process(Node externs, Node root) {
     if (externs != null) {
-      inExterns = true;
-      NodeTraversal.traverse(compiler, externs, this);
+      NodeTraversal.traverseEs6(compiler, externs, this);
     }
     if (root != null) {
-      inExterns = false;
-      NodeTraversal.traverse(compiler, root, this);
+      NodeTraversal.traverseEs6(compiler, root, this);
     }
   }
 
@@ -85,8 +80,7 @@ class InferJSDocInfo extends AbstractPostOrderCallback
   public void hotSwapScript(Node root, Node originalRoot) {
     Preconditions.checkNotNull(root);
     Preconditions.checkState(root.isScript());
-    inExterns = false;
-    NodeTraversal.traverse(compiler, root, this);
+    NodeTraversal.traverseEs6(compiler, root, this);
   }
 
   @Override
@@ -115,7 +109,7 @@ class InferJSDocInfo extends AbstractPostOrderCallback
         // /** ... */ x = function () { ... }
         // 3) A NAME parent.
         // var x, /** ... */ y = function() { ... }
-        // 4) A VAR gramps.
+        // 4) A VAR grandparent.
         // /** ... */ var x = function() { ... }
         docInfo = n.getJSDocInfo();
         if (docInfo == null &&
@@ -144,6 +138,22 @@ class InferJSDocInfo extends AbstractPostOrderCallback
         }
 
         attachJSDocInfoToNominalTypeOrShape(objType, docInfo, n.getString());
+        break;
+
+      case Token.STRING_KEY:
+      case Token.GETTER_DEF:
+      case Token.SETTER_DEF:
+        docInfo = n.getJSDocInfo();
+        if (docInfo == null) {
+          return;
+        }
+        ObjectType owningType = dereferenceToObject(parent.getJSType());
+        if (owningType != null) {
+          String propName = n.getString();
+          if (owningType.hasOwnProperty(propName)) {
+            owningType.setPropertyJSDocInfo(propName, docInfo);
+          }
+        }
         break;
 
       case Token.GETPROP:
@@ -191,14 +201,14 @@ class InferJSDocInfo extends AbstractPostOrderCallback
   /**
    * Dereferences the given type to an object, or returns null.
    */
-  private ObjectType dereferenceToObject(JSType type) {
+  private static ObjectType dereferenceToObject(JSType type) {
     return ObjectType.cast(type == null ? null : type.dereference());
   }
 
   /**
    * Handle cases #1 and #3 in the class doc.
    */
-  private void attachJSDocInfoToNominalTypeOrShape(
+  private static void attachJSDocInfoToNominalTypeOrShape(
       ObjectType objType, JSDocInfo docInfo, @Nullable String qName) {
     if (objType.isConstructor() ||
         objType.isEnumType() ||
@@ -209,14 +219,12 @@ class InferJSDocInfo extends AbstractPostOrderCallback
         objType.setJSDocInfo(docInfo);
 
         if (objType.isConstructor() || objType.isInterface()) {
-          JSType.toMaybeFunctionType(objType).getInstanceType().setJSDocInfo(
-              docInfo);
+          JSType.toMaybeFunctionType(objType).getInstanceType().setJSDocInfo(docInfo);
         } else if (objType instanceof EnumType) {
           ((EnumType) objType).getElementsType().setJSDocInfo(docInfo);
         }
       }
-    } else if (!objType.isNativeObjectType() &&
-        objType.isFunctionType()) {
+    } else if (!objType.isNativeObjectType() && objType.isFunctionType()) {
       // Structural functions.
       objType.setJSDocInfo(docInfo);
     }
